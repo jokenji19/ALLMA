@@ -307,37 +307,60 @@ class ALLMACore:
                             f"<start_of_turn>model\n"
                         )
                         
-                        logging.info(f"Prompt inviato a Gemma: {full_prompt}")
+                        logging.info(f"Prompt inviato a Gemma (len={len(full_prompt)} chars)")
                         
-                        output = self._llm(
-                            full_prompt,
-                            max_tokens=256,
-                            stop=["<end_of_turn>"],
-                            echo=False,
-                            temperature=0.7 + (emotional_state.intensity * 0.2) # Temperatura dinamica basata sull'emozione
-                        )
-                        response_text = output['choices'][0]['text'].strip()
+                        # RETRY LOGIC for LLM calls (max 3 attempts)
+                        max_retries = 3
+                        response_text = None
+                        last_error = None
                         
-                        # Crea un oggetto risposta compatibile
-                        response = ProcessedResponse(
-                            content=response_text,
-                            emotion=emotional_state.primary_emotion,
-                            topics=[topic],
-                            emotion_detected=emotional_state.confidence > 0.5,
-                            project_context=project_context,
-                            user_preferences=user_preferences,
-                            knowledge_integrated=False,
-                            confidence=emotional_state.confidence,
-                            is_valid=True
-                        )
+                        for attempt in range(max_retries):
+                            try:
+                                output = self._llm(
+                                    full_prompt,
+                                    max_tokens=256,
+                                    stop=["<end_of_turn>"],
+                                    echo=False,
+                                    temperature=0.7 + (emotional_state.intensity * 0.2)
+                                )
+                                response_text = output['choices'][0]['text'].strip()
+                                logging.info(f"✅ LLM inference success (attempt {attempt + 1})")
+                                break  # Success
+                            except Exception as llm_error:
+                                last_error = llm_error
+                                logging.warning(f"⚠️  LLM inference failed (attempt {attempt + 1}/{max_retries}): {llm_error}")
+                                if attempt < max_retries - 1:
+                                    import time
+                                    time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                        
+                        # Gestione fallback se tutti i retry falliscono
+                        if response_text is None:
+                            logging.error(f"❌ LLM inference failed dopo {max_retries} tentativi. Fallback a response_generator")
+                            logging.error(f"Last error: {last_error}")
+                            response = self.response_generator.generate_response(message, response_context)
+                        else:
+                            # Crea un oggetto risposta compatibile
+                            response = ProcessedResponse(
+                                content=response_text,
+                                emotion=emotional_state.primary_emotion,
+                                topics=[topic],
+                                emotion_detected=emotional_state.confidence > 0.5,
+                                project_context=project_context,
+                                user_preferences=user_preferences,
+                                knowledge_integrated=False,
+                                confidence=emotional_state.confidence,
+                                is_valid=True
+                            )
                     else:
                         # Fallback se il modello non c'è
                         response = self.response_generator.generate_response(message, response_context)
-                except ImportError:
-                    logging.error("llama_cpp non installato. Impossibile usare LLM locale.")
+                except ImportError as ie:
+                    logging.error(f"❌ ImportError: llama_cpp non installato. Details: {ie}")
+                    logging.info("🔄 Fallback a response_generator (base)")
                     response = self.response_generator.generate_response(message, response_context)
                 except Exception as e:
-                    logging.error(f"Errore inferenza LLM locale: {e}")
+                    logging.error(f"❌ Errore critico in mobile LLM processing: {type(e).__name__}: {e}", exc_info=True)
+                    logging.info("🔄 Graceful degradation a response_generator")
                     response = self.response_generator.generate_response(message, response_context)
             else:
                 response = self.response_generator.generate_response(message, response_context)
