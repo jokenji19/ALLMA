@@ -1,0 +1,75 @@
+<ChatScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
+
+        MDTopAppBar:
+            title: "ALLMA"
+            elevation: 4
+            pos_hint: {"top": 1}
+            md_bg_color: app.theme_cls.primary_color
+            specific_text_color: app.theme_cls.accent_color
+            right_action_items: [["dots-vertical", lambda x: app.open_menu()]]
+
+        MDBoxLayout:
+            orientation: "vertical"
+            padding: dp(10)
+            spacing: dp(10)
+
+            RecycleView:
+                id: chat_list
+                viewclass: 'ChatMessage'
+                RecycleBoxLayout:
+                    default_size: None, dp(48)
+                    default_size_hint: 1, None
+                    size_hint_y: None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    spacing: dp(8)
+
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(60)
+                spacing: dp(10)
+                padding: [dp(5), dp(5), dp(5), dp(5)]
+
+                MDTextField:
+                    id: message_input
+                    hint_text: "Scrivi un messaggio..."
+                    mode: "round"
+                    fill_color_normal: app.theme_cls.bg_dark
+                    text_color_normal: 1, 1, 1, 1
+                    size_hint_x: 0.85
+                    multiline: False
+                    on_text_validate: root.send_message()
+
+                MDIconButton:
+                    icon: "send"
+                    theme_text_color: "Custom"
+                    text_color: app.theme_cls.primary_color
+                    user_font_size: "32sp"
+                    size_hint_x: 0.15
+                    on_release: root.send_message()
+
+<ChatMessage>:
+    size_hint_y: None
+    height: self.minimum_height
+    padding: dp(10)
+    
+    MDCard:
+        size_hint: None, None
+        size: self.minimum_size
+        width: min(root.width * 0.8, self.minimum_width)
+        pos_hint: {'right': 1} if root.is_user else {'left': 1}
+        md_bg_color: app.theme_cls.primary_color if root.is_user else app.theme_cls.accent_color
+        radius: [15, 15, 0, 15] if root.is_user else [15, 15, 15, 0]
+        padding: dp(10)
+        elevation: 2
+
+        MDLabel:
+            text: root.text
+            color: 1, 1, 1, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            size_hint_x: None
+            width: self.texture_size[0]
+            text_size: root.width * 0.7, None

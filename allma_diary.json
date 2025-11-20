@@ -1,0 +1,71 @@
+{
+  "entries": [
+    {
+      "timestamp": 1738439212.184216,
+      "datetime": "2025-02-01 20:46:52",
+      "content": "Mi sento ispirato a aiutare gli altri con comprensione",
+      "context": {
+        "source_type": "memory"
+      },
+      "emotional_state": "inspiration",
+      "emotional_details": {
+        "primary": "inspiration",
+        "secondary": null,
+        "intensity": 0.5
+      },
+      "personality_changes": {
+        "openness": 0.51,
+        "empathy": 0.5130769230769231,
+        "curiosity": 0.5078632478632479,
+        "autonomy": 0.509059829059829
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.51",
+        "La mia empathy è aumentata di 0.51",
+        "La mia curiosity è aumentata di 0.51",
+        "La mia autonomy è aumentata di 0.51"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1738439212.184216,
+      "datetime": "2025-02-01 20:46:52",
+      "content": "Mi sento ispirato a aiutare gli altri con comprensione",
+      "context": {
+        "source_type": "memory"
+      },
+      "emotional_state": "inspiration",
+      "emotional_details": {
+        "primary": "inspiration",
+        "secondary": null,
+        "intensity": 0.5
+      },
+      "personality_changes": {
+        "openness": 0.51,
+        "empathy": 0.5130769230769231,
+        "curiosity": 0.5078632478632479,
+        "autonomy": 0.509059829059829
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.51",
+        "La mia empathy è aumentata di 0.51",
+        "La mia curiosity è aumentata di 0.51",
+        "La mia autonomy è aumentata di 0.51"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    }
+  ],
+  "personality_evolution": []
+}
