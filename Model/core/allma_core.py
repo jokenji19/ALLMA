@@ -34,6 +34,7 @@ from Model.learning_system.incremental_learning import (
     ConfidenceLevel
 )
 from Model.learning_system.topic_extractor import TopicExtractor
+from Model.emotional_system.emotional_milestones import get_emotional_milestones
 from collections import defaultdict
 from transformers import pipeline
 
@@ -115,6 +116,9 @@ class ALLMACore:
                 metadata={"type": "initial_knowledge"}
             )
             self.incremental_learner.add_learning_unit(initial_python_knowledge)
+        
+        # Inizializza Emotional Milestones system
+        self.emotional_milestones = get_emotional_milestones()
         
     def start_conversation(
         self,
@@ -373,9 +377,41 @@ class ALLMACore:
                 'topic': topic
             }, user_id)
             
+            # 🎭 EMOTIONAL MILESTONES: Registra momento emotivo
+            self.emotional_milestones.record_emotion(
+                user_id=user_id,
+                emotion=emotional_state.primary_emotion,
+                intensity=emotional_state.intensity,
+                message=message,
+                context=topic
+            )
+            
+            # 🎭 EMOTIONAL MILESTONES: Controlla se riflettere
+            should_reflect, reflection_type = self.emotional_milestones.should_reflect(
+                user_id=user_id,
+                current_emotion=emotional_state.primary_emotion,
+                current_intensity=emotional_state.intensity
+            )
+            
+            # Se triggera riflessione, aggiungila alla risposta
+            final_content = response.content
+            if should_reflect and reflection_type:
+                reflection = self.emotional_milestones.generate_reflection(
+                    user_id=user_id,
+                    reflection_type=reflection_type,
+                    current_context={
+                        'emotion': emotional_state.primary_emotion,
+                        'intensity': emotional_state.intensity,
+                        'topic': topic
+                    }
+                )
+                # Aggiunge riflessione PRIMA della risposta principale
+                final_content = f"{reflection}\n\n---\n\n{response.content}"
+                logging.info(f"🎭 Emotional Milestone triggered: {reflection_type}")
+            
             # Crea la risposta processata (preservando knowledge_integrated se presente)
             processed_response = ProcessedResponse(
-                content=response.content,
+                content=final_content,
                 emotion=emotional_state.primary_emotion,
                 topics=[topic],
                 emotion_detected=emotional_state.confidence > 0.5,
