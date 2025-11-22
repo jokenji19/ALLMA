@@ -35,6 +35,7 @@ from Model.learning_system.incremental_learning import (
 )
 from Model.learning_system.topic_extractor import TopicExtractor
 from Model.emotional_system.emotional_milestones import get_emotional_milestones
+from Model.core.reasoning_engine import ReasoningEngine
 from collections import defaultdict
 from transformers import pipeline
 
@@ -119,6 +120,9 @@ class ALLMACore:
         
         # Inizializza Emotional Milestones system
         self.emotional_milestones = get_emotional_milestones()
+        
+        # Inizializza Reasoning Engine (Consciousness Stream)
+        self.reasoning_engine = ReasoningEngine()
         
     def start_conversation(
         self,
@@ -246,32 +250,52 @@ class ALLMACore:
                                 if internal_knowledge:
                                     break
                     
-                    high_confidence_response = None
-                    
-                    if internal_knowledge:
-                        # Filtra solo le risposte con alta confidenza (3 = HIGH)
-                        high_conf_items = [k for k in internal_knowledge if k.get('confidence', 0) >= 3]
-                        if high_conf_items:
-                            # Prendi la più recente
-                            best_match = max(high_conf_items, key=lambda x: x.get('timestamp', ''))
-                            logging.info(f"💡 ALLMA INDIPENDENTE: Risposta trovata in memoria per '{topic}'")
-                            high_confidence_response = best_match['content']
+                    # 3. Recupero Contesto (Memoria)
+                    # Recupera ricordi rilevanti PRIMA per usarli nel ragionamento
+                    relevant_memories = []
+                    try:
+                        relevant_memories = self.memory_system.get_relevant_context(user_id, topic, limit=3)
+                    except Exception as e:
+                        logging.warning(f"Errore recupero memoria iniziale: {e}")
 
-                    if high_confidence_response:
-                        # ALLMA risponde da sola (INDIPENDENZA)
-                        response = ProcessedResponse(
-                            content=high_confidence_response,
-                            emotion=emotional_state.primary_emotion,
-                            topics=[topic],
-                            emotion_detected=emotional_state.confidence > 0.5,
-                            project_context=project_context,
+                    # 🧠 REASONING ENGINE: Flusso di Coscienza
+                    # ALLMA "pensa" prima di agire
+                    thought_process = self.reasoning_engine.generate_thought_process(
+                        user_input=message,
+                        context={'relevant_memories': relevant_memories},
+                        emotional_state=emotional_state
+                    )
+                    logging.info(f"🧠 PENSIERO: {thought_process.raw_thought}")
+
+                    # 4. Confidence Check (Evolutionary Symbiosis)
+                    # Verifica se abbiamo già conoscenza consolidata su questo topic
+                    knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
+                    
+                    # Se abbiamo conoscenza ad alta confidenza, usiamola (INDIPENDENZA)
+                    if knowledge and knowledge.confidence == ConfidenceLevel.HIGH:
+                        logging.info(f"💡 Conoscenza consolidata trovata per '{topic}'. Rispondo indipendentemente.")
+                        
+                        # Usa il generatore di risposte contestuale
+                        response_context = ResponseContext(
+                            user_id=user_id,
+                            conversation_id=conversation_id,
+                            emotional_state=emotional_state,
+                            topic=topic,
+                            memory_context=relevant_memories,
                             user_preferences=user_preferences,
-                            knowledge_integrated=True,
-                            confidence=1.0,
-                            is_valid=True
+                            project_context=project_context,
+                            thought_process=thought_process.raw_thought
                         )
+                        
+                        response = self.response_generator.generate_response(message, response_context)
+                        
+                        # Marca come knowledge integrated (indipendente)
+                        response.knowledge_integrated = True
+                        response.confidence = 1.0
+                        
                         # Registra il successo per aumentare automaticamente la confidenza
                         self.incremental_learner.record_success(topic)
+                        
                     elif self._llm:
                         # ALLMA non sa, chiede a Gemma (SIMBIOSI)
                         # COSTRUZIONE DEL PROMPT "SIMBIOTICO"
@@ -285,28 +309,20 @@ class ALLMACore:
                         # 2. Stato Emotivo Attuale
                         emotion_context = f"Stato emotivo attuale: {emotional_state.primary_emotion} (Intensità: {emotional_state.intensity:.2f})"
                         
-                        # 3. Contesto di Memoria (se presente)
+                        # 3. Contesto di Memoria e PENSIERO
                         memory_context_str = ""
-                        try:
-                            # Recupera ricordi rilevanti usando il memory system
-                            relevant_memories = self.memory_system.get_relevant_context(user_id, topic, limit=2)
-                            if relevant_memories:
-                                memories = [m['content'] for m in relevant_memories]
-                                memory_context_str = f"Ricordi rilevanti: {'; '.join(memories)}"
-                        except Exception as e:
-                            logging.warning(f"Errore recupero memoria per prompt: {e}")
+                        if relevant_memories:
+                            memories = [m['content'] for m in relevant_memories]
+                            memory_context_str = f"Ricordi rilevanti: {'; '.join(memories)}"
+                        
+                        thought_context = f"Tuo Pensiero Interno: {thought_process.raw_thought}"
                         
                         # 4. Assemblaggio Prompt per Gemma (Format ChatML/Gemma)
-                        # <start_of_turn>user
-                        # System: ...
-                        # Context: ...
-                        # User: ... <end_of_turn>
-                        # <start_of_turn>model
-                        
                         full_prompt = (
                             f"<start_of_turn>user\n"
                             f"System: {system_prompt}\n"
                             f"Context: {emotion_context}. {memory_context_str}\n"
+                            f"Internal Thought: {thought_context}\n"
                             f"User: {message}<end_of_turn>\n"
                             f"<start_of_turn>model\n"
                         )
@@ -358,6 +374,7 @@ class ALLMACore:
                     else:
                         # Fallback se il modello non c'è
                         response = self.response_generator.generate_response(message, response_context)
+
                 except ImportError as ie:
                     logging.error(f"❌ ImportError: llama_cpp non installato. Details: {ie}")
                     logging.info("🔄 Fallback a response_generator (base)")
