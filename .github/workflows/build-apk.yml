@@ -22,7 +22,7 @@ jobs:
         docker run --rm \
           --volume "$PWD":/home/user/hostcwd \
           kivy/buildozer \
-          android debug
+          /bin/bash -c "yes | buildozer android debug"
           
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
