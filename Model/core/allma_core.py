@@ -36,6 +36,7 @@ from Model.learning_system.incremental_learning import (
 from Model.learning_system.topic_extractor import TopicExtractor
 from Model.emotional_system.emotional_milestones import get_emotional_milestones
 from Model.core.reasoning_engine import ReasoningEngine
+from Model.agency_system.proactive_core import ProactiveAgency
 from collections import defaultdict
 from transformers import pipeline
 
@@ -123,6 +124,12 @@ class ALLMACore:
         
         # Inizializza Reasoning Engine (Consciousness Stream)
         self.reasoning_engine = ReasoningEngine()
+        
+        # Inizializza Proactive Agency
+        self.proactive_agency = ProactiveAgency(
+            memory_system=self.memory_system,
+            reasoning_engine=self.reasoning_engine
+        )
         
     def start_conversation(
         self,
