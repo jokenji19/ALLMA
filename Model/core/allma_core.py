@@ -37,6 +37,7 @@ from Model.learning_system.topic_extractor import TopicExtractor
 from Model.emotional_system.emotional_milestones import get_emotional_milestones
 from Model.core.reasoning_engine import ReasoningEngine
 from Model.agency_system.proactive_core import ProactiveAgency
+from Model.response_system.dynamic_response_engine import DynamicResponseEngine
 from collections import defaultdict
 from transformers import pipeline
 
@@ -130,6 +131,9 @@ class ALLMACore:
             memory_system=self.memory_system,
             reasoning_engine=self.reasoning_engine
         )
+        
+        # Inizializza Dynamic Response Engine (No Templates)
+        self.dynamic_response = DynamicResponseEngine()
         
     def start_conversation(
         self,
@@ -390,8 +394,23 @@ class ALLMACore:
                     response = self.response_generator.generate_response(message, response_context)
                 except Exception as e:
                     logging.error(f"❌ Errore critico in mobile LLM processing: {type(e).__name__}: {e}", exc_info=True)
-                    logging.info("🔄 Graceful degradation a response_generator")
-                    response = self.response_generator.generate_response(message, response_context)
+                    logging.info("🔄 Graceful degradation a Dynamic Response Engine")
+                    
+                    # Genera scusa dinamica
+                    error_msg = self.dynamic_response.generate_system_response('error', {'error': str(e)})
+                    
+                    # Crea risposta compatibile
+                    response = ProcessedResponse(
+                        content=error_msg,
+                        emotion=emotional_state.primary_emotion,
+                        topics=[topic],
+                        emotion_detected=False,
+                        project_context=project_context,
+                        user_preferences=user_preferences,
+                        knowledge_integrated=False,
+                        confidence=0.0,
+                        is_valid=True
+                    )
             else:
                 response = self.response_generator.generate_response(message, response_context)
             
