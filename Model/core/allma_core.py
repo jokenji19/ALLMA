@@ -39,6 +39,7 @@ from Model.core.reasoning_engine import ReasoningEngine
 from Model.agency_system.proactive_core import ProactiveAgency
 from Model.response_system.dynamic_response_engine import DynamicResponseEngine
 from Model.vision_system.vision_core import VisionSystem
+from Model.voice_system.voice_core import VoiceSystem
 from collections import defaultdict
 from transformers import pipeline
 
@@ -138,6 +139,9 @@ class ALLMACore:
         
         # Inizializza Vision System (Occhi)
         self.vision_system = VisionSystem()
+        
+        # Inizializza Voice System (Voce)
+        self.voice_system = VoiceSystem()
         
     def start_conversation(
         self,
@@ -376,6 +380,12 @@ class ALLMACore:
                             logging.error(f"Last error: {last_error}")
                             response = self.response_generator.generate_response(message, response_context)
                         else:
+                            # Calcola parametri voce
+                            voice_params = self.voice_system.get_voice_parameters(
+                                emotional_state.primary_emotion,
+                                emotional_state.intensity
+                            )
+                            
                             # Crea un oggetto risposta compatibile
                             response = ProcessedResponse(
                                 content=response_text,
@@ -388,6 +398,8 @@ class ALLMACore:
                                 confidence=emotional_state.confidence,
                                 is_valid=True
                             )
+                            # Allega parametri voce
+                            response.voice_params = voice_params
                     else:
                         # Fallback se il modello non c'è
                         response = self.response_generator.generate_response(message, response_context)
