@@ -34,7 +34,9 @@ jobs:
         
     - name: Build APK with Buildozer
       run: |
-        buildozer android debug
+        yes | buildozer android debug
+      env:
+        ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
         
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
