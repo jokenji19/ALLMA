@@ -379,6 +379,10 @@ class ALLMACore:
                             logging.error(f"❌ LLM inference failed dopo {max_retries} tentativi. Fallback a response_generator")
                             logging.error(f"Last error: {last_error}")
                             response = self.response_generator.generate_response(message, response_context)
+                            # Voce per fallback
+                            response.voice_params = self.voice_system.get_voice_parameters(
+                                response.emotion, 0.5
+                            )
                         else:
                             # Calcola parametri voce
                             voice_params = self.voice_system.get_voice_parameters(
@@ -403,11 +407,19 @@ class ALLMACore:
                     else:
                         # Fallback se il modello non c'è
                         response = self.response_generator.generate_response(message, response_context)
+                        # Voce per fallback
+                        response.voice_params = self.voice_system.get_voice_parameters(
+                            response.emotion, 0.5
+                        )
 
                 except ImportError as ie:
                     logging.error(f"❌ ImportError: llama_cpp non installato. Details: {ie}")
                     logging.info("🔄 Fallback a response_generator (base)")
                     response = self.response_generator.generate_response(message, response_context)
+                    # Voce per fallback
+                    response.voice_params = self.voice_system.get_voice_parameters(
+                        response.emotion, 0.5
+                    )
                 except Exception as e:
                     logging.error(f"❌ Errore critico in mobile LLM processing: {type(e).__name__}: {e}", exc_info=True)
                     logging.info("🔄 Graceful degradation a Dynamic Response Engine")
@@ -427,8 +439,16 @@ class ALLMACore:
                         confidence=0.0,
                         is_valid=True
                     )
+                    # Voce per errore
+                    response.voice_params = self.voice_system.get_voice_parameters(
+                        'sadness', 0.5
+                    )
             else:
                 response = self.response_generator.generate_response(message, response_context)
+                # Voce per fallback
+                response.voice_params = self.voice_system.get_voice_parameters(
+                    response.emotion, 0.5
+                )
             
             # Integra l'apprendimento
             self.incremental_learner.learn_from_interaction({
@@ -882,7 +902,7 @@ class ALLMACore:
             if related_knowledge:
                 # Usa la conoscenza esistente
                 unit = related_knowledge[0]
-                return ProcessedResponse(
+                response = ProcessedResponse(
                     content=unit.content,
                     emotion="neutral",
                     topics=[topic],
@@ -890,8 +910,14 @@ class ALLMACore:
                     project_context=project_context_obj,
                     user_preferences=user_preferences,
                     knowledge_integrated=True,
-                    confidence=0.0
+                    confidence=1.0,
+                    is_valid=True
                 )
+                # Voce per conoscenza (sicura)
+                response.voice_params = self.voice_system.get_voice_parameters(
+                    "neutral", 0.5
+                )
+                return response
             else:
                 # Genera nuova risposta
                 context = ResponseContext(
@@ -918,7 +944,7 @@ class ALLMACore:
                     )
                     self.incremental_learner.add_learning_unit(unit)
                     
-                return ProcessedResponse(
+                final_response = ProcessedResponse(
                     content=response.content,
                     emotion="neutral",
                     topics=[topic],
@@ -926,8 +952,14 @@ class ALLMACore:
                     project_context=project_context_obj,
                     user_preferences=user_preferences,
                     knowledge_integrated=True,
-                    confidence=0.0
+                    confidence=0.0,
+                    is_valid=True
                 )
+                # Voce per nuova risposta
+                final_response.voice_params = self.voice_system.get_voice_parameters(
+                    "neutral", 0.5
+                )
+                return final_response
         except Exception as e:
             logging.error(f"Errore nella generazione risposta: {e}")
             raise
