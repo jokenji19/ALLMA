@@ -7,37 +7,23 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        
-    - name: Install Buildozer dependencies
+    - name: Build APK with Docker (Official Kivy Image)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git zip unzip openjdk-17-jdk wget
-        sudo apt-get install -y python3-pip build-essential libsqlite3-dev
-        sudo apt-get install -y libffi-dev libssl-dev zlib1g-dev
-        sudo apt-get install -y libncurses5-dev libgdbm-dev libnss3-dev
-        sudo apt-get install -y autoconf libtool libtool-bin pkg-config
+        # Fix permissions for the workspace
+        chmod -R 777 .
         
-    - name: Install Buildozer
-      run: |
-        pip install --upgrade buildozer
-        pip install --upgrade cython==0.29.36
-        
-    - name: Build APK with Buildozer
-      run: |
-        yes | buildozer android debug
-      env:
-        ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
-        
+        # Run buildozer inside the official Kivy Docker container
+        docker run --rm \
+          --volume "$PWD":/home/user/hostcwd \
+          kivy/buildozer \
+          buildozer android debug
+          
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
