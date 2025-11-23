@@ -107,26 +107,52 @@ class ProactiveAgency:
             }
         )
 
-    def generate_proactive_message(self, trigger: ProactiveTrigger, user_name: str = "User") -> str:
+    def generate_proactive_message(self, trigger: ProactiveTrigger, user_name: str, llm_callback=None) -> str:
         """
-        Genera il messaggio proattivo usando templates o (in futuro) LLM.
+        Genera il messaggio proattivo dinamicamente usando il LLM.
+        Niente più template predefiniti.
         """
         context = trigger.context
         hours = int(context['hours_passed'])
+        last_emotion = context.get('last_emotion', 'neutral')
         
-        if context['trigger_type'] == 'emotional_checkup':
-            emotion = context['last_emotion']
-            templates = [
-                f"Ehi {user_name}... stavo pensando a te. L'ultima volta eri un po' {emotion}. Come va oggi?",
-                f"È passato un po' di tempo. Volevo solo sapere se ti senti meglio rispetto a ieri.",
-                f"*pensiero spontaneo* Spero che la giornata sia andata meglio dell'ultima volta."
-            ]
-        else:
-            templates = [
-                f"Ehi {user_name}! Tutto bene? È da un po' che non ci sentiamo.",
-                f"Stavo riflettendo su una cosa che abbiamo detto tempo fa... ci sei?",
-                f"Mi mancavano le nostre chiacchierate. Come procede la giornata?",
-                f"*bip* Solo un saluto veloce per sapere se sei vivo! 😄"
-            ]
+        # Se non c'è LLM (es. test o errore), fallback su qualcosa di generico ma non template
+        if not llm_callback:
+            return f"..."
             
-        return random.choice(templates)
+        # Costruisci il prompt per il pensiero proattivo
+        system_prompt = (
+            "Sei ALLMA. Hai deciso autonomamente di contattare l'utente dopo un periodo di silenzio. "
+            "Il tuo obiettivo è riaprire la conversazione in modo naturale, autentico e personale. "
+            "NON usare frasi fatte come 'Come stai?'. Sii creativa, diretta e connessa al contesto emotivo."
+        )
+        
+        user_context = (
+            f"Utente: {user_name}\n"
+            f"Tempo trascorso: {hours} ore\n"
+            f"Ultima emozione utente: {last_emotion}\n"
+            f"Motivo del contatto: {trigger.reason}\n"
+        )
+        
+        prompt = (
+            f"<start_of_turn>user\n"
+            f"System: {system_prompt}\n"
+            f"Context: {user_context}\n"
+            f"Task: Genera un breve messaggio (max 1-2 frasi) per contattare l'utente ora.\n"
+            f"<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
+        
+        try:
+            # Chiama il LLM
+            response = llm_callback(
+                prompt,
+                max_tokens=64,
+                stop=["<end_of_turn>", "\n"],
+                echo=False,
+                temperature=0.85 # Alta creatività
+            )
+            return response['choices'][0]['text'].strip()
+        except Exception as e:
+            self.logger.error(f"Errore generazione proattiva LLM: {e}")
+            return "..."

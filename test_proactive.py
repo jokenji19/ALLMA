@@ -73,10 +73,15 @@ def test_proactive_agency():
     print(f"🤖 Trigger Contatto: {trigger.should_contact}")
     print(f"📈 Urgenza Score: {trigger.urgency_score:.2f}")
     
+    # Mock LLM per il test
+    def mock_llm(prompt, **kwargs):
+        print(f"\n[MOCK LLM] Generating from prompt:\n{prompt[:100]}...")
+        return {'choices': [{'text': "Messaggio generato dinamicamente dal cervello di ALLMA!"}]}
+
     if trigger.should_contact:
-        msg = allma.proactive_agency.generate_proactive_message(trigger, "Marco")
+        msg = allma.proactive_agency.generate_proactive_message(trigger, "Marco", llm_callback=mock_llm)
         print(f"\n🔔 NOTIFICA GENERATA:\n'{msg}'")
-        print("✅ CORRETTO: Iniziativa presa.")
+        print("✅ CORRETTO: Iniziativa presa e messaggio generato.")
     else:
         print("⚠️  Nessun contatto (potrebbe essere il random check o soglia non superata).")
         
@@ -100,9 +105,9 @@ def test_proactive_agency():
     print(f"📈 Urgenza Score: {trigger.urgency_score:.2f}")
     
     if trigger.should_contact:
-        msg = allma.proactive_agency.generate_proactive_message(trigger, "Marco")
+        msg = allma.proactive_agency.generate_proactive_message(trigger, "Marco", llm_callback=mock_llm)
         print(f"\n🔔 NOTIFICA GENERATA:\n'{msg}'")
-        print("✅ CORRETTO: Iniziativa presa.")
+        print("✅ CORRETTO: Iniziativa presa e messaggio generato.")
     else:
         print("⚠️  Nessun contatto.")
 
