@@ -38,6 +38,7 @@ from Model.emotional_system.emotional_milestones import get_emotional_milestones
 from Model.core.reasoning_engine import ReasoningEngine
 from Model.agency_system.proactive_core import ProactiveAgency
 from Model.response_system.dynamic_response_engine import DynamicResponseEngine
+from Model.vision_system.vision_core import VisionSystem
 from collections import defaultdict
 from transformers import pipeline
 
@@ -134,6 +135,9 @@ class ALLMACore:
         
         # Inizializza Dynamic Response Engine (No Templates)
         self.dynamic_response = DynamicResponseEngine()
+        
+        # Inizializza Vision System (Occhi)
+        self.vision_system = VisionSystem()
         
     def start_conversation(
         self,
@@ -809,6 +813,113 @@ class ALLMACore:
             "is_stored": is_stored
         }
         
+    def process_visual_input(self, user_id: str, image_path: str, message: str = "") -> ProcessedResponse:
+        """
+        Processa un input visivo (immagine + eventuale testo).
+        
+        Args:
+            user_id: ID utente
+            image_path: Path dell'immagine
+            message: Messaggio opzionale dell'utente (es. "Cosa vedi?")
+            
+        Returns:
+            Risposta processata
+        """
+        logging.info(f"👁️ Processing visual input: {image_path}")
+        
+        # 1. Analisi Visiva
+        visual_description = self.vision_system.analyze_image(image_path)
+        logging.info(f"👁️ Descrizione Visiva: {visual_description}")
+        
+        # 2. Costruisci un messaggio composito per il cervello testuale
+        # "L'utente ha inviato un'immagine che mostra: [descrizione]. Ha scritto: [messaggio]"
+        composite_message = (
+            f"[SYSTEM: L'utente ha inviato un'immagine. "
+            f"Analisi visiva: {visual_description}] "
+            f"{message}"
+        )
+        
+        # 3. Passa tutto al normale flusso di processamento (così usa memoria, emozioni, reasoning)
+        return self.process_message(composite_message, user_id)
+
+    def process_message(self, message: str, user_id: str, project_context: str = "") -> ProcessedResponse:
+        """
+        Genera una risposta di apprendimento.
+        
+        Args:
+            user_id: ID dell'utente
+            query: Query dell'utente
+            
+        Returns:
+            Risposta processata
+        """
+        if not user_id or not message:
+            raise ValueError("User ID e query sono richiesti")
+            
+        try:
+            # Cerca conoscenza correlata
+            related_knowledge = self.incremental_learner.find_related_knowledge(
+                message
+            )
+            
+            # Ottieni il topic e il contesto
+            topic = self.topic_extractor.extract_topic(message)
+            project_context_obj = self._get_project_context(user_id, topic)
+            user_preferences = self.preference_analyzer.analyze_learning_style(user_id)
+            
+            if related_knowledge:
+                # Usa la conoscenza esistente
+                unit = related_knowledge[0]
+                return ProcessedResponse(
+                    content=unit.content,
+                    emotion="neutral",
+                    topics=[topic],
+                    emotion_detected=False,
+                    project_context=project_context_obj,
+                    user_preferences=user_preferences,
+                    knowledge_integrated=True,
+                    confidence=0.0
+                )
+            else:
+                # Genera nuova risposta
+                context = ResponseContext(
+                    user_id=user_id,
+                    current_topic=topic,
+                    technical_level=self._determine_technical_level(user_id),
+                    conversation_history=[],
+                    user_preferences=user_preferences
+                )
+                
+                response = self.response_generator.generate_response(
+                    message,
+                    context
+                )
+                
+                # Integra la nuova conoscenza
+                if response.is_valid:
+                    unit = LearningUnit(
+                        topic=context.current_topic,
+                        content=response.content,
+                        source="generated",
+                        confidence=ConfidenceLevel.LOW,
+                        timestamp=datetime.now()
+                    )
+                    self.incremental_learner.add_learning_unit(unit)
+                    
+                return ProcessedResponse(
+                    content=response.content,
+                    emotion="neutral",
+                    topics=[topic],
+                    emotion_detected=False,
+                    project_context=project_context_obj,
+                    user_preferences=user_preferences,
+                    knowledge_integrated=True,
+                    confidence=0.0
+                )
+        except Exception as e:
+            logging.error(f"Errore nella generazione risposta: {e}")
+            raise
+
     def generate_learning_response(
         self,
         user_id: str,
