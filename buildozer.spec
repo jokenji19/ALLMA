@@ -32,7 +32,7 @@ version = 0.1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy==2.3.0,kivymd==1.1.1,sqlite3,numpy,pillow,requests,llama-cpp-python
+requirements = python3,kivy==2.3.0,kivymd==1.1.1,sqlite3,numpy,pillow,requests,llama-cpp-python,transformers,scikit-learn,plyer,torch,torchvision
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -68,7 +68,7 @@ fullscreen = 0
 android.presplash_color = #1E1E1E
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE
 
 # (int) Target Android API, should be as high as possible.
 android.api = 33
