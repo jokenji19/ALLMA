@@ -44,6 +44,7 @@ class ReasoningEngine:
     ) -> ThoughtTrace:
         """
         Genera un processo di pensiero completo basato sull'input e contesto.
+        Include un loop di Self-Correction (Metacognizione).
         """
         # 1. Analisi Superficiale (Veloce)
         surface = self._analyze_surface(user_input)
@@ -54,11 +55,20 @@ class ReasoningEngine:
         # 3. Connessioni di Memoria (Logica)
         connections = self._find_logical_connections(context)
         
-        # 4. Strategia
+        # 4. Strategia Iniziale
         strategy = self._formulate_strategy(deep, connections)
         
-        # 5. Sintesi del Monologo
+        # 5. Sintesi del Monologo Iniziale
         raw_thought = self._synthesize_monologue(surface, deep, connections, strategy)
+        
+        # 6. SELF-CORRECTION (Metacognizione)
+        # Critica il pensiero e correggi se necessario
+        critique, correction = self._critique_thought(raw_thought, emotional_state, strategy)
+        
+        if correction:
+            # Applica la correzione
+            strategy = f"{strategy} [CORREZIONE METACOGNITIVA: {correction}]"
+            raw_thought = f"{raw_thought} || 🛑 CRITICA: {critique} -> ✅ NUOVA STRATEGIA: {correction}"
         
         return ThoughtTrace(
             timestamp=datetime.now(),
@@ -68,6 +78,42 @@ class ReasoningEngine:
             strategy=strategy,
             raw_thought=raw_thought
         )
+
+    def _critique_thought(self, thought: str, emotional_state: Any, strategy: str) -> (Optional[str], Optional[str]):
+        """
+        Analizza il pensiero per potenziali errori o mancanza di tatto.
+        Returns: (Critica, Correzione) o (None, None)
+        """
+        emotion = emotional_state.primary_emotion
+        intensity = emotional_state.intensity
+        
+        # Regola 1: Empatia Tattica
+        # Se l'utente è molto triste/arrabbiato e la strategia non è di supporto
+        negative_emotions = ['sadness', 'anger', 'fear', 'grief']
+        if emotion in negative_emotions and intensity > 0.6:
+            if "scherzare" in strategy.lower() or "soluzione" in strategy.lower():
+                return (
+                    "Rischio di insensibilità. L'utente è vulnerabile.",
+                    "Abbandona l'ironia/soluzioni. Priorità assoluta: Validazione emotiva e calore."
+                )
+
+        # Regola 2: Coerenza Memoria
+        # Se il pensiero dice "Non so nulla" ma ci sono ricordi (euristica)
+        if "Nessun ricordo" in thought and "Ricordo collegato" in thought:
+             return (
+                 "Contraddizione logica: Dico di non ricordare ma ho citato ricordi.",
+                 "Integra esplicitamente i ricordi citati nella risposta."
+             )
+             
+        # Regola 3: Safety/Tono (Uncensored ma consapevole)
+        # Se la strategia è troppo aggressiva senza motivo
+        if "aggressiv" in strategy.lower() and intensity < 0.4:
+            return (
+                "Reazione sproporzionata. L'utente è calmo.",
+                "Riduci l'intensità. Mantieni toni pacati."
+            )
+
+        return None, None
 
     def _analyze_surface(self, text: str) -> str:
         """Analizza cosa è stato detto letteralmente"""
