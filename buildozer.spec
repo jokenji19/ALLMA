@@ -38,6 +38,9 @@ requirements = python3,kivy==2.3.0,kivymd==1.1.1,sqlite3,numpy,pillow,requests,p
 
 # (str) Python for android branch to use, if not master, useful to try new features
 p4a.branch = develop
+
+# (str) Python for android branch to use, if not master, useful to try new features
+p4a.branch = develop
 # (str) Python for android branch to use, if not master, useful to try new features
 p4a.branch = develop
 
