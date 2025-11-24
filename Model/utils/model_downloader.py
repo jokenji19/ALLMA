@@ -22,9 +22,19 @@ class ModelDownloader:
                 "size_mb": 1800
             },
             "moondream": {
-                "url": "https://huggingface.co/vikhyatk/moondream2/resolve/main/moondream2-text-model.gguf", # Placeholder URL, va verificato quello corretto per GGUF
+                "url": "https://huggingface.co/vikhyatk/moondream2/resolve/main/moondream2-text-model.gguf", 
                 "filename": "moondream2.gguf",
                 "size_mb": 500
+            },
+            "emotion": {
+                "url": "https://huggingface.co/j-hartmann/emotion-english-distilroberta-base/resolve/main/pytorch_model.bin", # Scarichiamo il binario PyTorch standard
+                # Nota: Per usarlo con ONNX o GGUF servirebbe conversione, ma per ora proviamo a scaricare la cartella o il file principale.
+                # Meglio: Usiamo una versione ONNX quantizzata se esiste, o scarichiamo i file config.
+                # Per semplicità ora, scarichiamo un pacchetto zip che poi estraiamo, o simuliamo il download se usiamo API online.
+                # MA dato che siamo offline-first, scarichiamo il modello ONNX che è più portabile su Android.
+                "url": "https://huggingface.co/Xenova/emotion-english-distilroberta-base/resolve/main/onnx/model_quantized.onnx",
+                "filename": "emotion_model.onnx",
+                "size_mb": 80
             }
         }
 

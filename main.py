@@ -101,6 +101,9 @@ class DownloadScreen(MDScreen):
         elif model_key == 'moondream':
             self.ids.progress_moondream.value = percent
             self.ids.label_moondream.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
+        elif model_key == 'emotion':
+            self.ids.progress_emotion.value = percent
+            self.ids.label_emotion.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
 
     def on_download_complete(self, success):
         if success:
