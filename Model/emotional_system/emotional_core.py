@@ -3,9 +3,19 @@
 from typing import Dict, List, Optional, Tuple, Any
 import json
 from dataclasses import dataclass, field
-from transformers import pipeline
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
+try:
+    from transformers import pipeline
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+
+try:
+    import numpy as np
+    from sklearn.preprocessing import MinMaxScaler
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    import numpy as np
+    SKLEARN_AVAILABLE = False
 
 @dataclass
 class EmotionalState:
@@ -36,12 +46,23 @@ class EmotionalCore:
     
     def __init__(self):
         """Inizializza il sistema emotivo."""
-        self.emotion_classifier = pipeline(
-            "text-classification",
-            model="j-hartmann/emotion-english-distilroberta-base",
-            return_all_scores=True
-        )
-        self.intensity_scaler = MinMaxScaler()
+        if TRANSFORMERS_AVAILABLE:
+            try:
+                self.emotion_classifier = pipeline(
+                    "text-classification",
+                    model="j-hartmann/emotion-english-distilroberta-base",
+                    return_all_scores=True
+                )
+            except Exception as e:
+                print(f"Warning: Could not load emotion classifier: {e}")
+                self.emotion_classifier = None
+        else:
+            self.emotion_classifier = None
+
+        if SKLEARN_AVAILABLE:
+            self.intensity_scaler = MinMaxScaler()
+        else:
+            self.intensity_scaler = None
         self.emotion_history: Dict[str, List[EmotionalState]] = {}
         self.current_emotion = None
         self.emotion_intensity = 0.0
@@ -149,8 +170,19 @@ class EmotionalCore:
             print(f"DEBUG - Translated text: {translated_text}")
             
             # Analizza emozioni dal testo tradotto
-            result = self.emotion_classifier(translated_text)
-            print(f"DEBUG - Raw result: {result}")
+            if self.emotion_classifier:
+                result = self.emotion_classifier(translated_text)
+                print(f"DEBUG - Raw result: {result}")
+            else:
+                # Fallback se il classificatore non è disponibile
+                print("DEBUG - Emotion classifier not available, using fallback")
+                return EmotionalState(
+                    primary_emotion="neutral",
+                    confidence=0.5,
+                    secondary_emotions={},
+                    intensity=0.1,
+                    context=context
+                )
             
             if not result or not isinstance(result, list):
                 raise ValueError("Invalid classifier output")

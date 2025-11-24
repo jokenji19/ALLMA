@@ -41,7 +41,12 @@ from Model.response_system.dynamic_response_engine import DynamicResponseEngine
 from Model.vision_system.vision_core import VisionSystem
 from Model.voice_system.voice_core import VoiceSystem
 from collections import defaultdict
-from transformers import pipeline
+try:
+    from transformers import pipeline
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    logging.warning("Transformers library not found. Running in lightweight mode.")
 
 class ALLMACore:
     def __init__(
