@@ -125,9 +125,11 @@ class ALLMAApp(MDApp):
         self.theme_cls.accent_palette = "Teal"
         self.theme_cls.theme_style = "Dark"
         
-        # Carica i file KV
-        Builder.load_file("UI/chat_screen.kv")
-        Builder.load_file("UI/download_screen.kv")
+        # Carica i file KV con percorso assoluto sicuro
+        import os
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
+        Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
         
         self.sm = ScreenManager()
         
