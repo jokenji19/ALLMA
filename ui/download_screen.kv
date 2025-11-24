@@ -1,0 +1,90 @@
+<DownloadScreen>:
+    name: 'download'
+    
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: dp(20)
+        spacing: dp(20)
+        
+        MDLabel:
+            text: "ALLMA Setup"
+            halign: "center"
+            font_style: "H4"
+            theme_text_color: "Primary"
+            size_hint_y: None
+            height: self.texture_size[1]
+            
+        MDLabel:
+            text: "Per attivare la mia intelligenza, devo scaricare i miei modelli neurali (circa 2.3 GB). Assicurati di essere sotto Wi-Fi."
+            halign: "center"
+            theme_text_color: "Secondary"
+            size_hint_y: None
+            height: self.texture_size[1]
+            
+        MDBoxLayout:
+            orientation: 'vertical'
+            spacing: dp(10)
+            size_hint_y: None
+            height: dp(150)
+            
+            MDLabel:
+                text: "Gemma 2B (Cervello Linguistico)"
+                theme_text_color: "Primary"
+                
+            MDProgressBar:
+                id: progress_gemma
+                value: 0
+                max: 100
+                
+            MDLabel:
+                id: label_gemma
+                text: "In attesa..."
+                theme_text_color: "Secondary"
+                font_style: "Caption"
+                
+            Widget:
+                size_hint_y: None
+                height: dp(10)
+                
+            MDLabel:
+                text: "Moondream (Visione)"
+                theme_text_color: "Primary"
+                
+            MDProgressBar:
+                id: progress_moondream
+                value: 0
+                max: 100
+                
+            MDLabel:
+                id: label_moondream
+                text: "In attesa..."
+                theme_text_color: "Secondary"
+                font_style: "Caption"
+
+            Widget:
+                size_hint_y: None
+                height: dp(10)
+
+            MDLabel:
+                text: "DistilRoberta (Emozioni)"
+                theme_text_color: "Primary"
+                
+            MDProgressBar:
+                id: progress_emotion
+                value: 0
+                max: 100
+                
+            MDLabel:
+                id: label_emotion
+                text: "In attesa..."
+                theme_text_color: "Secondary"
+                font_style: "Caption"
+
+        Widget:
+            # Spacer
+
+        MDFillRoundFlatButton:
+            id: btn_start
+            text: "AVVIA DOWNLOAD"
+            pos_hint: {"center_x": .5}
+            on_release: root.start_download()
