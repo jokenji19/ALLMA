@@ -21,8 +21,9 @@ jobs:
         # Run buildozer inside the official Kivy Docker container
         docker run --rm \
           --volume "$PWD":/home/user/hostcwd \
+          --entrypoint /bin/bash \
           kivy/buildozer \
-          /bin/bash -c "yes | buildozer android debug"
+          -c "yes | buildozer android debug"
           
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
