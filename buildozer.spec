@@ -34,7 +34,7 @@ version = 0.1
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) are excluded
 # These will be downloaded at runtime by the app
-requirements = python3,kivy==2.3.0,kivymd==1.1.1,sqlite3,numpy,pillow,requests,plyer
+requirements = python3,kivy==2.3.0,kivymd==1.1.1,sqlite3,numpy==1.24.3,pillow,requests,plyer
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
