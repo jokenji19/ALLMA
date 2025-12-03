@@ -24,10 +24,33 @@ if platform == 'android':
     )
 
 # FIX CRITICO: Aggiungi la cartella corrente al path di Python
-# Questo è essenziale per trovare il pacchetto 'Model'
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 logging.info(f"Added to sys.path: {current_dir}")
+
+# SELF-HEALING: Cerca la cartella 'Model' ovunque
+def find_model_package(start_dir):
+    logging.info(f"Searching for Model in {start_dir}...")
+    for root, dirs, files in os.walk(start_dir):
+        if 'Model' in dirs:
+            model_path = os.path.join(root, 'Model')
+            parent_dir = os.path.dirname(model_path)
+            logging.info(f"FOUND MODEL AT: {model_path}")
+            if parent_dir not in sys.path:
+                sys.path.append(parent_dir)
+                logging.info(f"Added {parent_dir} to sys.path")
+            return True
+        # Non scendere troppo in profondità per evitare loop o lentezza
+        if root.count(os.sep) - start_dir.count(os.sep) > 2:
+            del dirs[:]
+    return False
+
+# Prova a trovare Model
+if not find_model_package(current_dir):
+    # Prova dentro _python_bundle se esiste
+    bundle_dir = os.path.join(current_dir, '_python_bundle')
+    if os.path.exists(bundle_dir):
+        find_model_package(bundle_dir)
 
 # Importa Model DOPO aver sistemato il path
 try:
@@ -38,8 +61,14 @@ except ImportError as e:
     # DEBUG: List directory contents to see if Model exists
     try:
         files = os.listdir(current_dir)
+        bundle_files = []
+        if os.path.exists(os.path.join(current_dir, '_python_bundle')):
+             bundle_files = os.listdir(os.path.join(current_dir, '_python_bundle'))
+        
         logging.critical(f"DIR CONTENTS: {files}")
-        error_details = f"{e}\n\nFILES: {files}"
+        logging.critical(f"BUNDLE CONTENTS: {bundle_files}")
+        
+        error_details = f"{e}\n\nROOT: {files}\n\nBUNDLE: {bundle_files}"
     except Exception as list_err:
         error_details = f"{e}\n\nList Error: {list_err}"
         
