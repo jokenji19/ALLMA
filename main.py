@@ -63,7 +63,7 @@ except ImportError as e:
         files = os.listdir(current_dir)
         bundle_files = []
         if os.path.exists(os.path.join(current_dir, '_python_bundle')):
-             bundle_files = os.listdir(os.path.join(current_dir, '_python_bundle'))
+            bundle_files = os.listdir(os.path.join(current_dir, '_python_bundle'))
         
         logging.critical(f"DIR CONTENTS: {files}")
         logging.critical(f"BUNDLE CONTENTS: {bundle_files}")
