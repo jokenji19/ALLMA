@@ -35,9 +35,20 @@ try:
     from Model.core.allma_core import ALLMACore
 except ImportError as e:
     logging.critical(f"IMPORT ERROR: {e}")
+    # DEBUG: List directory contents to see if Model exists
+    try:
+        files = os.listdir(current_dir)
+        logging.critical(f"DIR CONTENTS: {files}")
+        error_details = f"{e}\n\nFILES: {files}"
+    except Exception as list_err:
+        error_details = f"{e}\n\nList Error: {list_err}"
+        
     # Non crashare subito, lascia che l'app mostri l'errore nella UI
     ModelDownloader = None
     ALLMACore = None
+    
+    # Salva l'errore in una variabile globale per mostrarlo nella UI
+    IMPORT_ERROR_MSG = error_details
 
 class ChatMessage(MDBoxLayout):
     text = StringProperty()
@@ -154,7 +165,8 @@ class ALLMAApp(MDApp):
         
         if not ALLMACore:
             from kivy.uix.label import Label
-            return Label(text="ERRORE CRITICO:\nModulo 'Model' non trovato.\nControlla il log.", halign="center")
+            msg = globals().get('IMPORT_ERROR_MSG', 'Unknown Error')
+            return Label(text=f"ERRORE CRITICO:\n{msg}", halign="center", text_size=(None, None))
 
         # Carica i file KV con percorso assoluto sicuro
         base_path = os.path.dirname(os.path.abspath(__file__))
