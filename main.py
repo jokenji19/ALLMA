@@ -62,13 +62,31 @@ except ImportError as e:
     try:
         files = os.listdir(current_dir)
         bundle_files = []
-        if os.path.exists(os.path.join(current_dir, '_python_bundle')):
-            bundle_files = os.listdir(os.path.join(current_dir, '_python_bundle'))
+        site_packages_files = []
+        modules_files = []
         
+        bundle_path = os.path.join(current_dir, '_python_bundle')
+        if os.path.exists(bundle_path):
+            bundle_files = os.listdir(bundle_path)
+            
+            # Check site-packages
+            sp_path = os.path.join(bundle_path, 'site-packages')
+            if os.path.exists(sp_path):
+                site_packages_files = os.listdir(sp_path)
+                # Try to add site-packages to path just in case
+                if sp_path not in sys.path:
+                    sys.path.append(sp_path)
+            
+            # Check modules
+            mod_path = os.path.join(bundle_path, 'modules')
+            if os.path.exists(mod_path):
+                modules_files = os.listdir(mod_path)
+
         logging.critical(f"DIR CONTENTS: {files}")
         logging.critical(f"BUNDLE CONTENTS: {bundle_files}")
+        logging.critical(f"SITE-PACKAGES: {site_packages_files}")
         
-        error_details = f"{e}\n\nROOT: {files}\n\nBUNDLE: {bundle_files}"
+        error_details = f"{e}\n\nROOT: {files}\n\nBUNDLE: {bundle_files}\n\nSITE-PACKAGES: {site_packages_files}"
     except Exception as list_err:
         error_details = f"{e}\n\nList Error: {list_err}"
         
