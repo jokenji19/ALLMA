@@ -1,63 +1,201 @@
 import os
+import sys
 import logging
 import traceback
 import threading
-from kivy.app import App
-from kivy.uix.label import Label
-from kivy.utils import platform
+from kivy.lang import Builder
 from kivy.clock import Clock
+from kivy.properties import StringProperty, BooleanProperty
+from kivymd.app import MDApp
+from kivymd.uix.screen import MDScreen
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivy.uix.screenmanager import ScreenManager
+from kivy.utils import platform
 
 # Configura logging
 if platform == 'android':
     from android.storage import app_storage_path
     log_dir = app_storage_path()
-    log_file = os.path.join(log_dir, 'allma_dep_test.log')
-    logging.basicConfig(filename=log_file, level=logging.DEBUG)
+    log_file = os.path.join(log_dir, 'allma_crash.log')
+    logging.basicConfig(
+        filename=log_file,
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
-class DepTestApp(App):
-    def build(self):
-        self.label = Label(text="TESTING DEPENDENCIES...\n\n1. Kivy: OK", halign="center")
-        # Avvia il test in un thread separato per non bloccare la UI (e vedere l'aggiornamento)
-        threading.Thread(target=self.run_tests).start()
-        return self.label
+# FIX CRITICO: Aggiungi la cartella corrente al path di Python
+# Questo è essenziale per trovare il pacchetto 'Model'
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+logging.info(f"Added to sys.path: {current_dir}")
 
-    def update_text(self, text):
-        Clock.schedule_once(lambda dt: setattr(self.label, 'text', self.label.text + "\n" + text))
+# Importa Model DOPO aver sistemato il path
+try:
+    from Model.utils.model_downloader import ModelDownloader
+    from Model.core.allma_core import ALLMACore
+except ImportError as e:
+    logging.critical(f"IMPORT ERROR: {e}")
+    # Non crashare subito, lascia che l'app mostri l'errore nella UI
+    ModelDownloader = None
+    ALLMACore = None
 
-    def run_tests(self):
+class ChatMessage(MDBoxLayout):
+    text = StringProperty()
+    is_user = BooleanProperty(False)
+
+class ChatScreen(MDScreen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.app = MDApp.get_running_app()
+
+    def send_message(self):
+        input_field = self.ids.message_input
+        message = input_field.text.strip()
+        
+        if not message:
+            return
+
+        # Aggiungi messaggio utente alla lista
+        self.add_message(message, is_user=True)
+        input_field.text = ""
+
+        # Processa la risposta in un thread separato per non bloccare la UI
+        threading.Thread(target=self.process_response, args=(message,)).start()
+
+    def add_message(self, text, is_user):
+        self.ids.chat_list.data.append({
+            'viewclass': 'ChatMessage',
+            'text': text,
+            'is_user': is_user
+        })
+
+    def process_response(self, message):
         try:
-            import time
-            time.sleep(1) # Dai tempo alla UI di apparire
+            # Simula un ID utente fisso per la versione locale
+            user_id = "local_user"
+            conversation_id = "local_chat"
             
-            # TEST 1: Pillow (PIL)
-            self.update_text("2. Testing Pillow...")
-            import PIL
-            from PIL import Image
-            self.update_text("   -> Pillow OK")
-            time.sleep(0.5)
+            # Assicurati che la conversazione esista
+            if not self.app.allma.conversational_memory.get_conversation_history(conversation_id):
+                self.app.allma.start_conversation(user_id)
 
-            # TEST 2: KivyMD
-            self.update_text("3. Testing KivyMD...")
-            import kivymd.app
-            self.update_text("   -> KivyMD App OK")
-            from kivymd.uix.screen import MDScreen
-            self.update_text("   -> KivyMD Screen OK")
-            time.sleep(0.5)
+            response = self.app.allma.process_message(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                message=message
+            )
             
-            # TEST 3: Model
-            self.update_text("4. Testing Model...")
-            from Model.utils.model_downloader import ModelDownloader
-            self.update_text("   -> Model Downloader OK")
+            # Aggiorna la UI nel thread principale
+            Clock.schedule_once(lambda dt: self.add_message(response.content, is_user=False))
             
-            self.update_text("\nALL TESTS PASSED! \nIf it crashes now, it's the logic.")
-
         except Exception as e:
-            logging.critical(f"TEST FAILED: {e}")
-            self.update_text(f"\nFAIL: {e}")
-            if platform == 'android':
-                from android.storage import app_storage_path
-                with open(os.path.join(app_storage_path(), 'crash_dep_test.txt'), 'w') as f:
-                    f.write(traceback.format_exc())
+            error_msg = f"Errore: {str(e)}"
+            Clock.schedule_once(lambda dt: self.add_message(error_msg, is_user=False))
+
+class DownloadScreen(MDScreen):
+    def start_download(self):
+        self.ids.btn_start.disabled = True
+        self.ids.btn_start.text = "DOWNLOAD IN CORSO..."
+        
+        if not ModelDownloader:
+             self.ids.btn_start.text = "ERRORE: Modulo Model non trovato"
+             return
+
+        downloader = ModelDownloader()
+        missing = downloader.check_models_missing()
+        
+        if not missing:
+            self.go_to_chat()
+            return
+
+        def progress_callback(model_key, current, total):
+            # Calcola percentuale
+            if total > 0:
+                percent = (current / total) * 100
+                
+                # Aggiorna UI nel thread principale
+                Clock.schedule_once(lambda dt: self.update_progress(model_key, percent, current, total))
+
+        def completion_callback(success):
+            Clock.schedule_once(lambda dt: self.on_download_complete(success))
+
+        downloader.start_background_download(missing, progress_callback, completion_callback)
+
+    def update_progress(self, model_key, percent, current, total):
+        if model_key == 'gemma':
+            self.ids.progress_gemma.value = percent
+            self.ids.label_gemma.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
+        elif model_key == 'moondream':
+            self.ids.progress_moondream.value = percent
+            self.ids.label_moondream.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
+        elif model_key == 'emotion':
+            self.ids.progress_emotion.value = percent
+            self.ids.label_emotion.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
+
+    def on_download_complete(self, success):
+        if success:
+            self.ids.btn_start.text = "COMPLETATO!"
+            Clock.schedule_once(lambda dt: self.go_to_chat(), 1)
+        else:
+            self.ids.btn_start.disabled = False
+            self.ids.btn_start.text = "ERRORE - RIPROVA"
+
+    def go_to_chat(self):
+        app = MDApp.get_running_app()
+        # Inizializza ALLMA ora che i modelli ci sono
+        app.initialize_allma()
+        self.manager.current = 'chat'
+
+class ALLMAApp(MDApp):
+    def build(self):
+        self.theme_cls.primary_palette = "Blue"
+        self.theme_cls.accent_palette = "Teal"
+        self.theme_cls.theme_style = "Dark"
+        
+        if not ALLMACore:
+            from kivy.uix.label import Label
+            return Label(text="ERRORE CRITICO:\nModulo 'Model' non trovato.\nControlla il log.", halign="center")
+
+        # Carica i file KV con percorso assoluto sicuro
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
+        Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
+        
+        self.sm = ScreenManager()
+        
+        # Controlla se i modelli esistono
+        self.downloader = ModelDownloader()
+        missing_models = self.downloader.check_models_missing()
+        
+        if missing_models:
+            self.sm.add_widget(DownloadScreen(name='download'))
+            self.sm.add_widget(ChatScreen(name='chat'))
+            self.sm.current = 'download'
+        else:
+            self.sm.add_widget(ChatScreen(name='chat'))
+            self.sm.add_widget(DownloadScreen(name='download'))
+            self.initialize_allma()
+            self.sm.current = 'chat'
+            
+        return self.sm
+
+    def initialize_allma(self):
+        if not hasattr(self, 'allma'):
+            # Passiamo il path dei modelli ad ALLMACore
+            models_dir = self.downloader._get_models_dir()
+            # Nota: ALLMACore dovrà essere aggiornato per accettare models_dir
+            self.allma = ALLMACore(mobile_mode=True) # TODO: Passare models_dir
+
+if __name__ == "__main__":
+    try:
+        ALLMAApp().run()
+    except Exception as e:
+        logging.critical(f"CRITICAL CRASH: {e}", exc_info=True)
+        # Se siamo su Android, proviamo a salvare l'errore in un file visibile se possibile
+        if platform == 'android':
+            from android.storage import app_storage_path
+            with open(os.path.join(app_storage_path(), 'crash_dump.txt'), 'w') as f:
+                f.write(traceback.format_exc())
 
 if __name__ == "__main__":
     try:
