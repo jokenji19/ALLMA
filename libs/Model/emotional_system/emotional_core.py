@@ -9,13 +9,15 @@ try:
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
 
-try:
-    import numpy as np
-    from sklearn.preprocessing import MinMaxScaler
-    SKLEARN_AVAILABLE = True
-except ImportError:
-    import numpy as np
-    SKLEARN_AVAILABLE = False
+# SKLEARN REMOVED: Not used and causes crash on Android
+# try:
+#     import numpy as np
+#     from sklearn.preprocessing import MinMaxScaler
+#     SKLEARN_AVAILABLE = True
+# except ImportError:
+#     import numpy as np
+#     SKLEARN_AVAILABLE = False
+import numpy as np
 
 @dataclass
 class EmotionalState:
@@ -59,10 +61,7 @@ class EmotionalCore:
         else:
             self.emotion_classifier = None
 
-        if SKLEARN_AVAILABLE:
-            self.intensity_scaler = MinMaxScaler()
-        else:
-            self.intensity_scaler = None
+        # self.intensity_scaler = None # Removed unused scaler
         self.emotion_history: Dict[str, List[EmotionalState]] = {}
         self.current_emotion = None
         self.emotion_intensity = 0.0
