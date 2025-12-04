@@ -112,16 +112,65 @@ try:
     from Model.utils.model_downloader import ModelDownloader
     # Se arriviamo qui, il modello è stato trovato!
 except ImportError as e:
-        error_details = f"{e}\n\nROOT: {files}\n\nBUNDLE: {bundle_files}\n\nSITE-PACKAGES: {site_packages_files}"
-    except Exception as list_err:
-        error_details = f"{e}\n\nList Error: {list_err}"
-        
-    # Non crashare subito, lascia che l'app mostri l'errore nella UI
-    ModelDownloader = None
-    ALLMACore = None
+    # Se fallisce ancora, mostra UI di errore con debug avanzato
+    error_trace = traceback.format_exc()
     
-    # Salva l'errore in una variabile globale per mostrarlo nella UI
-    IMPORT_ERROR_MSG = error_details
+    # Raccogli info sui file per debug
+    files_root = str(os.listdir(current_dir)) if os.path.exists(current_dir) else "DIR_NOT_FOUND"
+    
+    # Debug Assets
+    assets_dir = os.path.join(current_dir, 'assets')
+    files_assets = str(os.listdir(assets_dir)) if os.path.exists(assets_dir) else "ASSETS_NOT_FOUND"
+    
+    # Debug Bundle
+    bundle_path = os.path.join(current_dir, '_python_bundle')
+    files_bundle = str(os.listdir(bundle_path)) if os.path.exists(bundle_path) else "BUNDLE_NOT_FOUND"
+    
+    # Debug Bundle Assets
+    bundle_assets = os.path.join(bundle_path, 'assets')
+    files_bundle_assets = str(os.listdir(bundle_assets)) if os.path.exists(bundle_assets) else "BUNDLE_ASSETS_NOT_FOUND"
+
+    class ErrorApp(MDApp):
+        def build(self):
+            return Builder.load_string(f'''
+MDScreen:
+    md_bg_color: 0, 0, 0, 1
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: dp(20)
+        MDLabel:
+            text: "ERRORE CRITICO: {str(e)}"
+            color: 1, 0, 0, 1
+            halign: "center"
+            font_style: "H5"
+        MDLabel:
+            text: "ROOT: {files_root}"
+            color: 1, 1, 1, 1
+            font_style: "Caption"
+            size_hint_y: None
+            height: self.texture_size[1]
+        MDLabel:
+            text: "ASSETS: {files_assets}"
+            color: 0, 1, 0, 1
+            font_style: "Caption"
+            size_hint_y: None
+            height: self.texture_size[1]
+        MDLabel:
+            text: "BUNDLE: {files_bundle}"
+            color: 0.5, 0.5, 1, 1
+            font_style: "Caption"
+            size_hint_y: None
+            height: self.texture_size[1]
+        MDLabel:
+            text: "B_ASSETS: {files_bundle_assets}"
+            color: 1, 0.5, 0, 1
+            font_style: "Caption"
+            size_hint_y: None
+            height: self.texture_size[1]
+            ''')
+
+    ErrorApp().run()
+    sys.exit(1)
 
 class ChatMessage(MDBoxLayout):
     text = StringProperty()
