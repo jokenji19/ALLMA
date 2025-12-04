@@ -50,12 +50,53 @@ def find_model_package(start_dir):
             del dirs[:]
     return False
 
+# ZIP STRATEGY: Se non troviamo il modello, proviamo a scompattare lo zip
+def extract_model_zip(start_dir):
+    import zipfile
+    zip_path = os.path.join(start_dir, 'model_code.zip')
+    
+    # Cerca anche in _python_bundle se non c'è nella root
+    if not os.path.exists(zip_path):
+        bundle_zip = os.path.join(start_dir, '_python_bundle', 'model_code.zip')
+        if os.path.exists(bundle_zip):
+            zip_path = bundle_zip
+            
+    if os.path.exists(zip_path):
+        logging.info(f"FOUND ZIP AT: {zip_path}")
+        try:
+            extract_dir = os.path.join(app_storage_path(), 'extracted_model')
+            if not os.path.exists(extract_dir):
+                os.makedirs(extract_dir)
+                
+            logging.info(f"Extracting to {extract_dir}...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+                
+            # Aggiungi il percorso estratto a sys.path
+            # Lo zip contiene "libs/Model" o "Model", quindi dobbiamo aggiungere la root estratta
+            sys.path.append(extract_dir)
+            
+            # Se lo zip conteneva "libs/Model", dobbiamo aggiungere "extract_dir/libs"
+            if os.path.exists(os.path.join(extract_dir, 'libs')):
+                sys.path.append(os.path.join(extract_dir, 'libs'))
+                
+            logging.info("Extraction successful and path added.")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to extract zip: {e}")
+            return False
+    return False
+
 # Prova a trovare Model
 if not find_model_package(current_dir):
     # Prova dentro _python_bundle se esiste
     bundle_dir = os.path.join(current_dir, '_python_bundle')
     if os.path.exists(bundle_dir):
-        find_model_package(bundle_dir)
+        if not find_model_package(bundle_dir):
+            # ULTIMA SPIAGGIA: Estrai lo ZIP
+            extract_model_zip(current_dir)
+    else:
+        extract_model_zip(current_dir)
 
 # Importa Model DOPO aver sistemato il path
 try:

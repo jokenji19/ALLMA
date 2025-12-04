@@ -2,32 +2,47 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Build APK with Docker (Official Kivy Image)
-      run: |
-        # Fix permissions for the workspace
-        chmod -R 777 .
-        
-        # Run buildozer inside the official Kivy Docker container
-        docker run --rm \
-          --volume "$PWD":/home/user/hostcwd \
-          --entrypoint /bin/bash \
-          kivy/buildozer \
-          -c "yes | buildozer android debug"
-          
-    - name: Upload APK artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: allma-debug-apk
-        path: bin/*.apk
-        retention-days: 30
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build APK with Docker (Official Kivy Image)
+        run: |
+          # Fix permissions for the workspace
+          chmod -R 777 .
+
+          # ZIP STRATEGY: Create a zip of the Model code to bypass packaging issues
+          # We zip the contents of libs/Model into model_code.zip in the root
+          if [ -d "libs/Model" ]; then
+            echo "Zipping libs/Model..."
+            # Install zip if missing (unlikely on ubuntu-latest but safe)
+            sudo apt-get update && sudo apt-get install -y zip
+            zip -r model_code.zip libs/Model
+          elif [ -d "Model" ]; then
+             echo "Zipping Model..."
+             zip -r model_code.zip Model
+          else
+             echo "WARNING: Model directory not found for zipping!"
+             ls -R
+          fi
+
+          # Run buildozer inside the official Kivy Docker container
+          docker run --rm \
+            --volume "$PWD":/home/user/hostcwd \
+            --entrypoint /bin/bash \
+            kivy/buildozer \
+            -c "yes | buildozer android debug"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: allma-debug-apk
+          path: bin/*.apk
+          retention-days: 30
