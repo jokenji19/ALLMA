@@ -23,12 +23,18 @@ if platform == 'android':
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-# FIX CRITICO: Aggiungi la cartella corrente al path di Python
+# FIX CRITICO: Aggiungi la cartella corrente e libs al path di Python
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
-logging.info(f"Added to sys.path: {current_dir}")
 
-# SELF-HEALING: Cerca la cartella 'Model' ovunque
+# Aggiungi la cartella libs (dove abbiamo spostato Model)
+libs_dir = os.path.join(current_dir, 'libs')
+if os.path.exists(libs_dir):
+    sys.path.append(libs_dir)
+    logging.info(f"Added to sys.path: {libs_dir}")
+
+# SELF-HEALING: Cerca la cartella 'Model' ovunque (backup)
+def find_model_package(start_dir):
 def find_model_package(start_dir):
     logging.info(f"Searching for Model in {start_dir}...")
     for root, dirs, files in os.walk(start_dir):
