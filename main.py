@@ -50,6 +50,23 @@ def find_model_package(start_dir):
             del dirs[:]
     return False
 
+# NUCLEAR OPTION: Scarica lo zip direttamente da GitHub se non c'è
+def download_model_code_from_github(target_path):
+    import requests
+    url = "https://raw.githubusercontent.com/jokenji19/ALLMA/main/assets/model_code.zip"
+    logging.info(f"Attempting NUCLEAR DOWNLOAD from {url}")
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(target_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        logging.info("NUCLEAR DOWNLOAD SUCCESSFUL")
+        return True
+    except Exception as e:
+        logging.error(f"NUCLEAR DOWNLOAD FAILED: {e}")
+        return False
+
 # ZIP STRATEGY: Se non troviamo il modello, proviamo a scompattare lo zip
 def extract_model_zip(start_dir):
     import zipfile
@@ -68,10 +85,25 @@ def extract_model_zip(start_dir):
         if os.path.exists(root_zip):
             zip_path = root_zip
 
+    # NUCLEAR FALLBACK: Se non c'è, scaricalo!
+    if not os.path.exists(zip_path):
+        logging.warning("ZIP NOT FOUND LOCALLY. INITIATING NUCLEAR OPTION.")
+        # Salva nella cartella privata dell'app
+        nuclear_path = os.path.join(app_storage_path(), 'model_code.zip')
+        if download_model_code_from_github(nuclear_path):
+            zip_path = nuclear_path
+        else:
+            logging.critical("NUCLEAR OPTION FAILED.")
+
     if os.path.exists(zip_path):
         logging.info(f"FOUND ZIP AT: {zip_path}")
         try:
             extract_dir = os.path.join(app_storage_path(), 'extracted_model')
+            # Rimuovi vecchia estrazione se esiste per forzare aggiornamento
+            # if os.path.exists(extract_dir):
+            #     import shutil
+            #     shutil.rmtree(extract_dir)
+            
             if not os.path.exists(extract_dir):
                 os.makedirs(extract_dir)
                 
@@ -80,7 +112,6 @@ def extract_model_zip(start_dir):
                 zip_ref.extractall(extract_dir)
                 
             # Aggiungi il percorso estratto a sys.path
-            # Lo zip contiene "libs/Model" o "Model", quindi dobbiamo aggiungere la root estratta
             sys.path.append(extract_dir)
             
             # Se lo zip conteneva "libs/Model", dobbiamo aggiungere "extract_dir/libs"
@@ -98,11 +129,13 @@ def extract_model_zip(start_dir):
 if not find_model_package(current_dir):
     # Prova dentro _python_bundle se esiste
     bundle_dir = os.path.join(current_dir, '_python_bundle')
+    found = False
     if os.path.exists(bundle_dir):
-        if not find_model_package(bundle_dir):
-            # ULTIMA SPIAGGIA: Estrai lo ZIP
-            extract_model_zip(current_dir)
-    else:
+        if find_model_package(bundle_dir):
+            found = True
+            
+    if not found:
+        # ULTIMA SPIAGGIA: Estrai lo ZIP (o scaricalo)
         extract_model_zip(current_dir)
 
 # Importa Model DOPO aver sistemato il path
