@@ -53,14 +53,21 @@ def find_model_package(start_dir):
 # ZIP STRATEGY: Se non troviamo il modello, proviamo a scompattare lo zip
 def extract_model_zip(start_dir):
     import zipfile
-    zip_path = os.path.join(start_dir, 'model_code.zip')
+    # Cerca in assets (posizione standard)
+    zip_path = os.path.join(start_dir, 'assets', 'model_code.zip')
     
-    # Cerca anche in _python_bundle se non c'è nella root
+    # Cerca anche in _python_bundle/assets
     if not os.path.exists(zip_path):
-        bundle_zip = os.path.join(start_dir, '_python_bundle', 'model_code.zip')
+        bundle_zip = os.path.join(start_dir, '_python_bundle', 'assets', 'model_code.zip')
         if os.path.exists(bundle_zip):
             zip_path = bundle_zip
             
+    # Fallback: cerca nella root (vecchia posizione)
+    if not os.path.exists(zip_path):
+        root_zip = os.path.join(start_dir, 'model_code.zip')
+        if os.path.exists(root_zip):
+            zip_path = root_zip
+
     if os.path.exists(zip_path):
         logging.info(f"FOUND ZIP AT: {zip_path}")
         try:
