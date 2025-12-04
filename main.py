@@ -35,7 +35,6 @@ if os.path.exists(libs_dir):
 
 # SELF-HEALING: Cerca la cartella 'Model' ovunque (backup)
 def find_model_package(start_dir):
-def find_model_package(start_dir):
     logging.info(f"Searching for Model in {start_dir}...")
     for root, dirs, files in os.walk(start_dir):
         if 'Model' in dirs:
