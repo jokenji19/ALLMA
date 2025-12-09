@@ -149,7 +149,11 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import torch
 import torch.nn as nn
-from sklearn.metrics import mean_squared_error
+# from sklearn.metrics import mean_squared_error
+import numpy as np
+
+def mean_squared_error(y_true, y_pred):
+    return np.mean((np.array(y_true) - np.array(y_pred))**2)
 from datetime import datetime
 
 @dataclass

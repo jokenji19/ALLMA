@@ -4,7 +4,15 @@ import numpy as np
 from datetime import datetime
 import torch
 from transformers import AutoTokenizer, AutoModel
-from sklearn.metrics.pairwise import cosine_similarity
+# from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+
+def cosine_similarity(v1, v2):
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+    if norm1 == 0 or norm2 == 0:
+        return np.array([[0.0]])
+    return np.array([[np.dot(v1, v2.T) / (norm1 * norm2)]])
 
 @dataclass
 class Context:
