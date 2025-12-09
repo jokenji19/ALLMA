@@ -314,44 +314,73 @@ class DownloadScreen(MDScreen):
 
 class ALLMAApp(MDApp):
     def build(self):
-        self.theme_cls.primary_palette = "Blue"
-        self.theme_cls.accent_palette = "Teal"
-        self.theme_cls.theme_style = "Dark"
-        
-        if not ALLMACore:
-            from kivy.uix.label import Label
-            msg = globals().get('IMPORT_ERROR_MSG', 'Unknown Error')
-            return Label(text=f"ERRORE CRITICO:\n{msg}", halign="center", text_size=(None, None))
-
-        # Carica i file KV con percorso assoluto sicuro
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
-        Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
-        
-        self.sm = ScreenManager()
-        
-        # Controlla se i modelli esistono
-        self.downloader = ModelDownloader()
-        missing_models = self.downloader.check_models_missing()
-        
-        if missing_models:
-            self.sm.add_widget(DownloadScreen(name='download'))
-            self.sm.add_widget(ChatScreen(name='chat'))
-            self.sm.current = 'download'
-        else:
-            self.sm.add_widget(ChatScreen(name='chat'))
-            self.sm.add_widget(DownloadScreen(name='download'))
-            self.initialize_allma()
-            self.sm.current = 'chat'
+        try:
+            self.theme_cls.primary_palette = "Blue"
+            self.theme_cls.accent_palette = "Teal"
+            self.theme_cls.theme_style = "Dark"
             
-        return self.sm
+            if not ALLMACore:
+                from kivy.uix.label import Label
+                msg = globals().get('IMPORT_ERROR_MSG', 'Unknown Import Error')
+                return Label(text=f"ERRORE CRITICO (IMPORT):\n{msg}", halign="center", text_size=(None, None))
+
+            # Carica i file KV con percorso assoluto sicuro
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            try:
+                Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
+                Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
+            except Exception as kv_err:
+                logging.error(f"KV Load Error: {kv_err}")
+                from kivy.uix.label import Label
+                return Label(text=f"KV ERROR: {kv_err}")
+            
+            self.sm = ScreenManager()
+            
+            # Controlla se i modelli esistono
+            try:
+                self.downloader = ModelDownloader()
+                missing_models = self.downloader.check_models_missing()
+                
+                if missing_models:
+                    self.sm.add_widget(DownloadScreen(name='download'))
+                    self.sm.add_widget(ChatScreen(name='chat'))
+                    self.sm.current = 'download'
+                else:
+                    self.sm.add_widget(ChatScreen(name='chat'))
+                    self.sm.add_widget(DownloadScreen(name='download'))
+                    self.initialize_allma()
+                    self.sm.current = 'chat'
+            except Exception as downloader_err:
+                 logging.critical(f"Downloader Crash: {downloader_err}", exc_info=True)
+                 return self.show_crash_ui(f"DOWNLOADER ERROR: {downloader_err}")
+                
+            return self.sm
+        except Exception as e:
+            logging.critical(f"BUILD CRASH: {e}", exc_info=True)
+            return self.show_crash_ui(f"BUILD CRASH: {e}")
 
     def initialize_allma(self):
-        if not hasattr(self, 'allma'):
-            # Passiamo il path dei modelli ad ALLMACore
-            models_dir = self.downloader._get_models_dir()
-            # Nota: ALLMACore dovrà essere aggiornato per accettare models_dir
-            self.allma = ALLMACore(mobile_mode=True) # TODO: Passare models_dir
+        try:
+            if not hasattr(self, 'allma'):
+                # Passiamo il path dei modelli ad ALLMACore
+                models_dir = self.downloader._get_models_dir()
+                # Nota: ALLMACore dovrà essere aggiornato per accettare models_dir
+                self.allma = ALLMACore(mobile_mode=True) # TODO: Passare models_dir
+        except Exception as e:
+             logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
+             # Se crasha qui, dobbiamo mostrare l'errore all'utente
+             # Poiché la UI è già caricata, possiamo provare a cambiare schermata o popup
+             # Ma per sicurezza, usiamo show_crash_ui se possibile o logghiamo
+             if hasattr(self, 'sm'):
+                 from kivy.uix.label import Label
+                 self.sm.clear_widgets()
+                 self.sm.add_widget(MDScreen(name='crash'))
+                 self.sm.get_screen('crash').add_widget(Label(text=f"ALLMA INIT CRASH:\n{e}", halign='center'))
+                 self.sm.current = 'crash'
+    
+    def show_crash_ui(self, error_msg):
+        from kivy.uix.label import Label
+        return Label(text=f"RUNTIME CRASH:\n{error_msg}\n\nCheck logs.", halign="center")
 
 if __name__ == "__main__":
     try:
@@ -361,15 +390,8 @@ if __name__ == "__main__":
         # Se siamo su Android, proviamo a salvare l'errore in un file visibile se possibile
         if platform == 'android':
             from android.storage import app_storage_path
-            with open(os.path.join(app_storage_path(), 'crash_dump.txt'), 'w') as f:
-                f.write(traceback.format_exc())
-
-if __name__ == "__main__":
-    try:
-        DepTestApp().run()
-    except Exception as e:
-        logging.critical(f"CRASH: {e}")
-        if platform == 'android':
-            from android.storage import app_storage_path
-            with open(os.path.join(app_storage_path(), 'crash_fatal.txt'), 'w') as f:
-                f.write(traceback.format_exc())
+            try:
+                with open(os.path.join(app_storage_path(), 'crash_dump.txt'), 'w') as f:
+                    f.write(traceback.format_exc())
+            except:
+                pass
