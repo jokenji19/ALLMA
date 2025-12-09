@@ -368,11 +368,32 @@ class ALLMAApp(MDApp):
                 # Definisci path assoluto per il DB per evitare errori "No such file"
                 if platform == 'android':
                     from android.storage import app_storage_path
-                    db_path = os.path.join(app_storage_path(), 'allma.db')
+                    storage = app_storage_path()
+                    # Assicurati che storage esista
+                    if not os.path.exists(storage):
+                        try:
+                            os.makedirs(storage)
+                            logging.info(f"Created storage dir: {storage}")
+                        except Exception as create_err:
+                            logging.error(f"Failed to create storage dir: {create_err}")
+                            
+                    db_path = os.path.join(storage, 'allma.db')
+                    # Test write permissions
+                    try:
+                        with open(os.path.join(storage, 'test_write.txt'), 'w') as f:
+                            f.write("test")
+                        logging.info("Write permission OK")
+                    except Exception as write_err:
+                        logging.critical(f"Write permission FAILED: {write_err}")
                 else:
                     db_path = 'allma.db'
                 
                 logging.info(f"Initializing ALLMA with models={models_dir}, db={db_path}")
+                
+                # Check if DB file location is valid
+                db_dir = os.path.dirname(db_path)
+                if db_dir and not os.path.exists(db_dir):
+                     os.makedirs(db_dir)
                 
                 self.allma = ALLMACore(
                     mobile_mode=True,
@@ -381,12 +402,13 @@ class ALLMAApp(MDApp):
                 )
         except Exception as e:
              logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
-             # Se crasha qui, dobbiamo mostrare l'errore all'utente
              if hasattr(self, 'sm'):
                  from kivy.uix.label import Label
                  self.sm.clear_widgets()
                  self.sm.add_widget(MDScreen(name='crash'))
-                 self.sm.get_screen('crash').add_widget(Label(text=f"ALLMA INIT CRASH:\n{e}", halign='center'))
+                 # Mostra più contesto nell'errore
+                 error_details = f"ALLMA INIT CRASH:\n{e}\n\nDB: {db_path if 'db_path' in locals() else 'N/A'}"
+                 self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
                  self.sm.current = 'crash'
     
     def show_crash_ui(self, error_msg):
@@ -402,7 +424,11 @@ if __name__ == "__main__":
         if platform == 'android':
             from android.storage import app_storage_path
             try:
-                with open(os.path.join(app_storage_path(), 'crash_dump.txt'), 'w') as f:
+                 # Usa app_storage_path() ma catcha errori se non esiste
+                path = app_storage_path()
+                if not os.path.exists(path):
+                    os.makedirs(path)
+                with open(os.path.join(path, 'crash_dump.txt'), 'w') as f:
                     f.write(traceback.format_exc())
             except:
                 pass
