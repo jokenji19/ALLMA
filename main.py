@@ -364,13 +364,24 @@ class ALLMAApp(MDApp):
             if not hasattr(self, 'allma'):
                 # Passiamo il path dei modelli ad ALLMACore
                 models_dir = self.downloader._get_models_dir()
-                # Nota: ALLMACore dovrà essere aggiornato per accettare models_dir
-                self.allma = ALLMACore(mobile_mode=True) # TODO: Passare models_dir
+                
+                # Definisci path assoluto per il DB per evitare errori "No such file"
+                if platform == 'android':
+                    from android.storage import app_storage_path
+                    db_path = os.path.join(app_storage_path(), 'allma.db')
+                else:
+                    db_path = 'allma.db'
+                
+                logging.info(f"Initializing ALLMA with models={models_dir}, db={db_path}")
+                
+                self.allma = ALLMACore(
+                    mobile_mode=True,
+                    models_dir=models_dir,
+                    db_path=db_path
+                )
         except Exception as e:
              logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
              # Se crasha qui, dobbiamo mostrare l'errore all'utente
-             # Poiché la UI è già caricata, possiamo provare a cambiare schermata o popup
-             # Ma per sicurezza, usiamo show_crash_ui se possibile o logghiamo
              if hasattr(self, 'sm'):
                  from kivy.uix.label import Label
                  self.sm.clear_widgets()

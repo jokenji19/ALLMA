@@ -62,42 +62,28 @@ class ALLMACore:
         personality: Optional[Personality] = None,
         topic_extractor: Optional[TopicExtractor] = None,
         db_path: str = "allma.db",
+        models_dir: Optional[str] = None, # Added argument
         emotion_pipeline=None,
         mobile_mode: bool = False
     ):
         """
         Inizializza il core di ALLMA
-        
-        Args:
-            memory_system: Sistema di memoria (opzionale)
-            conversational_memory: Memoria conversazionale (opzionale)
-            knowledge_memory: Memoria di conoscenza (opzionale)
-            project_tracker: Tracker dei progetti (opzionale)
-            emotional_core: Core emotivo (opzionale)
-            preference_analyzer: Analizzatore delle preferenze (opzionale)
-            response_generator: Generatore di risposte (opzionale)
-            incremental_learner: Sistema di apprendimento incrementale (opzionale)
-            personality: Personalità (opzionale)
-            topic_extractor: Estrattore di topic (opzionale)
-            db_path: Percorso del database (opzionale)
-            emotion_pipeline: Pipeline per l'analisi delle emozioni (opzionale)
-            mobile_mode: Se True, attiva ottimizzazioni per dispositivi mobili
         """
         self.mobile_mode = mobile_mode
+        self.models_dir = models_dir # Store it
         
         # Inizializza i componenti se non forniti
-        self.memory_system = memory_system or TemporalMemorySystem()
+        self.memory_system = memory_system or TemporalMemorySystem(db_path=db_path)
         self.conversational_memory = conversational_memory or ConversationalMemory()
         self.knowledge_memory = knowledge_memory or KnowledgeMemory(db_path)
         self.project_tracker = project_tracker or ProjectTracker(db_path)
         self.emotional_core = emotional_core or EmotionalCore()
-        self.preference_analyzer = preference_analyzer or UserPreferenceAnalyzer()
-        self.response_generator = response_generator or ContextualResponseGenerator()
-        self.incremental_learner = incremental_learner or IncrementalLearner()
-        self.personality = personality or Personality()
-        self.topic_extractor = topic_extractor or TopicExtractor()
+        
+        # Ensure db_path is used consistently
         self.db_path = db_path
         self._lock = threading.Lock()
+
+        # ... (rest of init)
         
         # Inizializza il modello di emotion detection solo se non siamo in mobile mode o se fornito esplicitamente
         if emotion_pipeline:
@@ -236,12 +222,23 @@ class ALLMACore:
                 try:
                     from llama_cpp import Llama
                     
-                    # Cerca il modello nella cartella assets (per Android) o locale
-                    model_path = "assets/model.bin"
-                    if not os.path.exists(model_path):
-                        # Fallback per test locale
-                        model_path = "model.bin"
+                    # Cerca il modello nella cartella models_dir se fornita
+                    # Mappiamo "gemma" come default
+                    model_filename = "gemma-2b-it-q4_k_m.gguf"
+                    
+                    if self.models_dir:
+                        model_path = os.path.join(self.models_dir, model_filename)
+                    else:
+                        model_path = os.path.join("assets", "model.bin") # Fallback legacy
                         
+                    if not os.path.exists(model_path):
+                         # Fallback locale per test
+                         if os.path.exists("model.bin"):
+                             model_path = "model.bin"
+                         elif os.path.exists(model_filename):
+                             model_path = model_filename
+
+                    
                     if not hasattr(self, '_llm') or self._llm is None:
                         if os.path.exists(model_path):
                             logging.info(f"Caricamento modello locale da {model_path}...")
@@ -252,7 +249,7 @@ class ALLMACore:
                                 verbose=False
                             )
                         else:
-                            logging.warning("Modello locale non trovato. Uso risposte predefinite.")
+                            logging.warning(f"Modello locale non trovato in {model_path}. Uso risposte predefinite.")
                             self._llm = None
 
                     # --- SIMBIOSI EVOLUTIVA: CONFIDENCE CHECK ---
