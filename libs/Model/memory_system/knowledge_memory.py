@@ -13,6 +13,16 @@ class KnowledgeMemory:
             db_path: Percorso del database SQLite
         """
         self.db_path = db_path
+        
+        # Ensure directory exists
+        import os
+        dirname = os.path.dirname(db_path)
+        if dirname and not os.path.exists(dirname):
+            try:
+                os.makedirs(dirname)
+            except Exception as e:
+                print(f"Failed to create KnowledgeMemory DB dir: {e}")
+
         self._init_db()
         
     def _init_db(self):

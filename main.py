@@ -315,6 +315,7 @@ class DownloadScreen(MDScreen):
 class ALLMAApp(MDApp):
     def build(self):
         try:
+            BUILD_VERSION = "Build 62" # Marker for user verification
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -322,7 +323,7 @@ class ALLMAApp(MDApp):
             if not ALLMACore:
                 from kivy.uix.label import Label
                 msg = globals().get('IMPORT_ERROR_MSG', 'Unknown Import Error')
-                return Label(text=f"ERRORE CRITICO (IMPORT):\n{msg}", halign="center", text_size=(None, None))
+                return Label(text=f"ERRORE CRITICO ({BUILD_VERSION}):\n{msg}", halign="center", text_size=(None, None))
 
             # Carica i file KV con percorso assoluto sicuro
             base_path = os.path.dirname(os.path.abspath(__file__))
@@ -395,6 +396,12 @@ class ALLMAApp(MDApp):
                 if db_dir and not os.path.exists(db_dir):
                      os.makedirs(db_dir)
                 
+                # Manual Touch of DB File
+                if not os.path.exists(db_path):
+                    logging.info("DB file doesn't exist, creating empty file...")
+                    with open(db_path, 'w') as f:
+                        pass
+                
                 self.allma = ALLMACore(
                     mobile_mode=True,
                     models_dir=models_dir,
@@ -404,10 +411,16 @@ class ALLMAApp(MDApp):
              logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
              if hasattr(self, 'sm'):
                  from kivy.uix.label import Label
+                 # Gather debugging info
+                 try:
+                     storage_files = str(os.listdir(os.path.dirname(db_path)))
+                 except:
+                     storage_files = "Cannot list dir"
+                     
                  self.sm.clear_widgets()
                  self.sm.add_widget(MDScreen(name='crash'))
                  # Mostra più contesto nell'errore
-                 error_details = f"ALLMA INIT CRASH:\n{e}\n\nDB: {db_path if 'db_path' in locals() else 'N/A'}"
+                 error_details = f"CRASH (Build 62):\n{str(e)}\n\nDB Path: {db_path}\nFiles: {storage_files}"
                  self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
                  self.sm.current = 'crash'
     
