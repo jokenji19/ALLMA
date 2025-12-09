@@ -315,7 +315,15 @@ class DownloadScreen(MDScreen):
 class ALLMAApp(MDApp):
     def build(self):
         try:
-            BUILD_VERSION = "Build 62" # Marker for user verification
+            if platform == 'android':
+                from android.permissions import request_permissions, Permission
+                request_permissions([
+                    Permission.WRITE_EXTERNAL_STORAGE, 
+                    Permission.READ_EXTERNAL_STORAGE, 
+                    Permission.INTERNET
+                ])
+                
+            BUILD_VERSION = "Build 63" # Marker for user verification
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
