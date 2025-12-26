@@ -13,15 +13,25 @@ from kivy.uix.screenmanager import ScreenManager
 from kivy.utils import platform
 
 # Configura logging
+# Configura logging con protezione per la directory mancante
 if platform == 'android':
-    from android.storage import app_storage_path
-    log_dir = app_storage_path()
-    log_file = os.path.join(log_dir, 'allma_crash.log')
-    logging.basicConfig(
-        filename=log_file,
-        level=logging.DEBUG,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    try:
+        from android.storage import app_storage_path
+        log_dir = app_storage_path()
+        if not os.path.exists(log_dir):
+            try:
+                os.makedirs(log_dir)
+            except OSError as e:
+                print(f"Failed to create log dir: {e}")
+                
+        log_file = os.path.join(log_dir, 'allma_crash.log')
+        logging.basicConfig(
+            filename=log_file,
+            level=logging.DEBUG,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+    except Exception as e:
+        print(f"Logging setup failed: {e}")
 
 # FIX CRITICO: Aggiungi la cartella corrente e libs al path di Python
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -323,7 +333,7 @@ class ALLMAApp(MDApp):
                     Permission.INTERNET
                 ])
                 
-            BUILD_VERSION = "Build 63" # Marker for user verification
+            BUILD_VERSION = "Build 64" # Aggiornato dopo fix logging
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
