@@ -202,26 +202,22 @@ def extract_model_zip(start_dir):
             return False
     return False
 
-# Prova a trovare Model
-if not find_model_package(current_dir):
-    # Prova dentro _python_bundle se esiste
-    bundle_dir = os.path.join(current_dir, '_python_bundle')
-    found = False
-    if os.path.exists(bundle_dir):
-        if find_model_package(bundle_dir):
-            found = True
-            
-    if not found:
-        # ULTIMA SPIAGGIA: Estrai lo ZIP (o scaricalo)
-        extract_model_zip(current_dir)
+# Prova a trovare Model - SPOSTATO IN ALLMAApp.build
+# if not find_model_package(current_dir):
+#     # ... logic moved ...
 
-# Importa Model DOPO aver sistemato il path
+# Importa Model DOPO aver sistemato il path (Lazy import in app)
 try:
-    # Tenta importazione critica
+    # Tenta importazione critica - SOLO SE ESISTE GIA'
+    # Se non esiste, lo faremo in build()
     from Model.core.allma_core import ALLMACore
     from Model.utils.model_downloader import ModelDownloader
-    # Se arriviamo qui, il modello è stato trovato!
-except ImportError as e:
+    ALLMACore_imported = True
+except ImportError:
+    ALLMACore_imported = False
+    ALLMACore = None
+    ModelDownloader = None
+    logging.warning("ALLMACore not found initially. Will try in build()")
     # Se fallisce ancora, mostra UI di errore con debug avanzato
     error_trace = traceback.format_exc()
     
@@ -400,15 +396,65 @@ class ALLMAApp(MDApp):
                     Permission.INTERNET
                 ])
                 
-            BUILD_VERSION = "Build 65" # Kivy user_data_dir strategy
+            BUILD_VERSION = "Build 66" # Moved Extraction to Build
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
+
+            # --- CRITICAL SETUP START ---
+            # 1. Ensure storage exists
+            storage = self.user_data_dir
+            if not os.path.exists(storage):
+                try:
+                    os.makedirs(storage)
+                    logging.info("Created user_data_dir")
+                except Exception as e:
+                    logging.error(f"Failed user_data_dir creation: {e}")
+
+            # 2. Extract/Setup Model Code if needed (Lazy Load)
+            global ALLMACore, ModelDownloader, ALLMACore_imported
             
+            if not ALLMACore_imported:
+                logging.info("ALLMACore not imported yet. Attempting setup...")
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # Logic copied from global scope
+                if not find_model_package(current_dir):
+                    bundle_dir = os.path.join(current_dir, '_python_bundle')
+                    found = False
+                    if os.path.exists(bundle_dir):
+                        if find_model_package(bundle_dir):
+                            found = True
+                    
+                    if not found:
+                        # Extract passing the SAFE storage path
+                        logging.info("Invoking extract_model_zip with safe storage...")
+                        # Pass explicit storage path to extract_model_zip if possible?
+                        # Current extract_model_zip uses app_storage_path() internally.
+                        # We must ensure app_storage_path() is working or patched.
+                        # BUT we can modify sys.path here.
+                        extract_model_zip(current_dir)
+                
+                # Retry Import
+                try:
+                    import Model.core.allma_core
+                    import Model.utils.model_downloader
+                    from Model.core.allma_core import ALLMACore as AC
+                    from Model.utils.model_downloader import ModelDownloader as MD
+                    ALLMACore = AC
+                    ModelDownloader = MD
+                    ALLMACore_imported = True
+                    logging.info("Lazy Import SUCCESS!")
+                except ImportError as e:
+                    logging.critical(f"Lazy Import FAILED: {e}")
+                    from kivy.uix.label import Label
+                    return Label(text=f"CRITICAL SETUP ERROR ({BUILD_VERSION}):\nCannot load AI Core.\n{e}", halign="center")
+
+            # --- CRITICAL SETUP END ---
+
             if not ALLMACore:
-                from kivy.uix.label import Label
-                msg = globals().get('IMPORT_ERROR_MSG', 'Unknown Import Error')
-                return Label(text=f"ERRORE CRITICO ({BUILD_VERSION}):\n{msg}", halign="center", text_size=(None, None))
+                 from kivy.uix.label import Label
+                 return Label(text=f"CORE NOT LOADED ({BUILD_VERSION})", halign="center")
 
             # Carica i file KV con percorso assoluto sicuro
             base_path = os.path.dirname(os.path.abspath(__file__))
