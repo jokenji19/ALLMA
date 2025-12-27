@@ -388,74 +388,15 @@ class DownloadScreen(MDScreen):
 class ALLMAApp(MDApp):
     def build(self):
         try:
-            if platform == 'android':
-                from android.permissions import request_permissions, Permission
-                request_permissions([
-                    Permission.WRITE_EXTERNAL_STORAGE, 
-                    Permission.READ_EXTERNAL_STORAGE, 
-                    Permission.INTERNET
-                ])
-                
-            BUILD_VERSION = "Build 66" # Moved Extraction to Build
+            # Setup UI immediately
+            BUILD_VERSION = "Build 67" # Setup moved to on_start
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
-
-            # --- CRITICAL SETUP START ---
-            # 1. Ensure storage exists
-            storage = self.user_data_dir
-            if not os.path.exists(storage):
-                try:
-                    os.makedirs(storage)
-                    logging.info("Created user_data_dir")
-                except Exception as e:
-                    logging.error(f"Failed user_data_dir creation: {e}")
-
-            # 2. Extract/Setup Model Code if needed (Lazy Load)
-            global ALLMACore, ModelDownloader, ALLMACore_imported
             
-            if not ALLMACore_imported:
-                logging.info("ALLMACore not imported yet. Attempting setup...")
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                
-                # Logic copied from global scope
-                if not find_model_package(current_dir):
-                    bundle_dir = os.path.join(current_dir, '_python_bundle')
-                    found = False
-                    if os.path.exists(bundle_dir):
-                        if find_model_package(bundle_dir):
-                            found = True
-                    
-                    if not found:
-                        # Extract passing the SAFE storage path
-                        logging.info("Invoking extract_model_zip with safe storage...")
-                        # Pass explicit storage path to extract_model_zip if possible?
-                        # Current extract_model_zip uses app_storage_path() internally.
-                        # We must ensure app_storage_path() is working or patched.
-                        # BUT we can modify sys.path here.
-                        extract_model_zip(current_dir)
-                
-                # Retry Import
-                try:
-                    import Model.core.allma_core
-                    import Model.utils.model_downloader
-                    from Model.core.allma_core import ALLMACore as AC
-                    from Model.utils.model_downloader import ModelDownloader as MD
-                    ALLMACore = AC
-                    ModelDownloader = MD
-                    ALLMACore_imported = True
-                    logging.info("Lazy Import SUCCESS!")
-                except ImportError as e:
-                    logging.critical(f"Lazy Import FAILED: {e}")
-                    from kivy.uix.label import Label
-                    return Label(text=f"CRITICAL SETUP ERROR ({BUILD_VERSION}):\nCannot load AI Core.\n{e}", halign="center")
-
-            # --- CRITICAL SETUP END ---
-
-            if not ALLMACore:
-                 from kivy.uix.label import Label
-                 return Label(text=f"CORE NOT LOADED ({BUILD_VERSION})", halign="center")
-
+            # Pre-load screens but don't init core yet
+            self.sm = ScreenManager()
+            
             # Carica i file KV con percorso assoluto sicuro
             base_path = os.path.dirname(os.path.abspath(__file__))
             try:
@@ -465,31 +406,89 @@ class ALLMAApp(MDApp):
                 logging.error(f"KV Load Error: {kv_err}")
                 from kivy.uix.label import Label
                 return Label(text=f"KV ERROR: {kv_err}")
+
+            # Add temporary loading screen or go to chat (which shows loading)
+            self.sm.add_widget(ChatScreen(name='chat'))
+            self.sm.add_widget(DownloadScreen(name='download'))
+            self.sm.current = 'chat'
             
-            self.sm = ScreenManager()
-            
-            # Controlla se i modelli esistono
-            try:
-                self.downloader = ModelDownloader()
-                missing_models = self.downloader.check_models_missing()
-                
-                if missing_models:
-                    self.sm.add_widget(DownloadScreen(name='download'))
-                    self.sm.add_widget(ChatScreen(name='chat'))
-                    self.sm.current = 'download'
-                else:
-                    self.sm.add_widget(ChatScreen(name='chat'))
-                    self.sm.add_widget(DownloadScreen(name='download'))
-                    self.initialize_allma()
-                    self.sm.current = 'chat'
-            except Exception as downloader_err:
-                 logging.critical(f"Downloader Crash: {downloader_err}", exc_info=True)
-                 return self.show_crash_ui(f"DOWNLOADER ERROR: {downloader_err}")
-                
             return self.sm
         except Exception as e:
             logging.critical(f"BUILD CRASH: {e}", exc_info=True)
             return self.show_crash_ui(f"BUILD CRASH: {e}")
+
+    def on_start(self):
+        # Schedule startup sequence after UI is shown
+        Clock.schedule_once(self.deferred_startup, 1)
+
+    def deferred_startup(self, dt):
+        try:
+            logging.info("Starting deferred setup...")
+            
+            # 1. Request Permissions
+            if platform == 'android':
+                try:
+                    from android.permissions import request_permissions, Permission
+                    logging.info("Requesting permissions...")
+                    request_permissions([
+                        Permission.WRITE_EXTERNAL_STORAGE, 
+                        Permission.READ_EXTERNAL_STORAGE, 
+                        Permission.INTERNET
+                    ])
+                except Exception as perm_err:
+                    logging.error(f"Permission request failed: {perm_err}")
+
+            # 2. Critical Files Setup
+            storage = self.user_data_dir
+            if not os.path.exists(storage):
+                try:
+                    os.makedirs(storage)
+                except: pass
+
+            # 3. Dynamic Import/Setup of Model
+            global ALLMACore, ModelDownloader, ALLMACore_imported
+            
+            if not ALLMACore_imported:
+                logging.info("Lazy importing Core...")
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                if not find_model_package(current_dir):
+                    # Try extraction
+                     extract_model_zip(current_dir)
+                
+                try:
+                    import Model.core.allma_core
+                    import Model.utils.model_downloader
+                    from Model.core.allma_core import ALLMACore as AC
+                    from Model.utils.model_downloader import ModelDownloader as MD
+                    ALLMACore = AC
+                    ModelDownloader = MD
+                    ALLMACore_imported = True
+                except ImportError as e:
+                    logging.critical(f"Setup Failed: {e}")
+                    # Show error on screen safely?
+                    return
+
+            # 4. Check Models and Init
+            if ALLMACore:
+                try:
+                    self.downloader = ModelDownloader()
+                    missing_models = self.downloader.check_models_missing()
+                    
+                    if missing_models:
+                        self.sm.current = 'download'
+                    else:
+                        self.initialize_allma()
+                except Exception as e:
+                    logging.error(f"Init Error: {e}")
+            
+        except Exception as e:
+            logging.critical(f"DEFERRED STARTUP CRASH: {e}", exc_info=True)
+
+    def initialize_allma(self):
+        try:
+            if not hasattr(self, 'allma'):
+                # Passiamo il path dei modelli ad ALLMACore
+                models_dir = self.downloader._get_models_dir()
 
     def initialize_allma(self):
         try:
