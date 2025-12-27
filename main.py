@@ -12,26 +12,93 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivy.uix.screenmanager import ScreenManager
 from kivy.utils import platform
 
-# Configura logging
 # Configura logging con protezione per la directory mancante
-if platform == 'android':
-    try:
+try:
+    if platform == 'android':
         from android.storage import app_storage_path
+        # Usa un path temporaneo finché l'App non parte
         log_dir = app_storage_path()
         if not os.path.exists(log_dir):
-            try:
-                os.makedirs(log_dir)
-            except OSError as e:
-                print(f"Failed to create log dir: {e}")
-                
+             try:
+                 os.makedirs(log_dir)
+             except:
+                 pass
         log_file = os.path.join(log_dir, 'allma_crash.log')
         logging.basicConfig(
             filename=log_file,
             level=logging.DEBUG,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-    except Exception as e:
-        print(f"Logging setup failed: {e}")
+except Exception as e:
+    # Fallback to stdout if file logging fails
+    logging.basicConfig(level=logging.DEBUG)
+    print(f"File logging setup failed, using stdout: {e}")
+
+# ... (rest of imports)
+
+# ...
+
+    def initialize_allma(self):
+        try:
+            if not hasattr(self, 'allma'):
+                # Passiamo il path dei modelli ad ALLMACore
+                models_dir = self.downloader._get_models_dir()
+                
+                # Definisci path assoluto per il DB usando user_data_dir (più sicuro)
+                # self.user_data_dir è gestito da Kivy e garantito
+                storage = self.user_data_dir
+                
+                # Logga il path usato
+                logging.info(f"USING USER_DATA_DIR: {storage}")
+                
+                # Assicurati che storage esista (dovrebbe già esistere)
+                if not os.path.exists(storage):
+                    try:
+                        os.makedirs(storage)
+                    except Exception as create_err:
+                        logging.error(f"Failed to create user_data_dir: {create_err}")
+                            
+                db_path = os.path.join(storage, 'allma.db')
+                
+                # Manual Touch of DB File
+                if not os.path.exists(db_path):
+                    logging.info("DB file doesn't exist, creating empty file...")
+                    try:
+                        with open(db_path, 'w') as f:
+                            f.write("")
+                    except Exception as touch_err:
+                        # Se fallisce qui, proviamo un path alternativo nella cache
+                        logging.error(f"Failed to touch DB in user_data_dir: {touch_err}")
+                        if platform == 'android':
+                             from jnius import autoclass
+                             Context = autoclass('android.content.Context')
+                             PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                             context = PythonActivity.mActivity
+                             cache_dir = context.getCacheDir().getAbsolutePath()
+                             db_path = os.path.join(cache_dir, 'allma.db')
+                             logging.info(f"Retrying with Cache Dir: {db_path}")
+
+                self.allma = ALLMACore(
+                    mobile_mode=True,
+                    models_dir=models_dir,
+                    db_path=db_path
+                )
+        except Exception as e:
+             logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
+             if hasattr(self, 'sm'):
+                 from kivy.uix.label import Label
+                 # Gather debugging info
+                 try:
+                     storage_files = str(os.listdir(os.path.dirname(db_path)))
+                 except:
+                     storage_files = "Cannot list dir"
+                     
+                 self.sm.clear_widgets()
+                 self.sm.add_widget(MDScreen(name='crash'))
+                 # Mostra più contesto nell'errore
+                 error_details = f"CRASH (Build 65):\n{str(e)}\n\nDB Path: {db_path}\nFiles: {storage_files}"
+                 self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
+                 self.sm.current = 'crash'
 
 # FIX CRITICO: Aggiungi la cartella corrente e libs al path di Python
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -333,7 +400,7 @@ class ALLMAApp(MDApp):
                     Permission.INTERNET
                 ])
                 
-            BUILD_VERSION = "Build 64" # Aggiornato dopo fix logging
+            BUILD_VERSION = "Build 65" # Kivy user_data_dir strategy
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
