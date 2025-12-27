@@ -489,12 +489,6 @@ class ALLMAApp(MDApp):
             if not hasattr(self, 'allma'):
                 # Passiamo il path dei modelli ad ALLMACore
                 models_dir = self.downloader._get_models_dir()
-
-    def initialize_allma(self):
-        try:
-            if not hasattr(self, 'allma'):
-                # Passiamo il path dei modelli ad ALLMACore
-                models_dir = self.downloader._get_models_dir()
                 
                 # Definisci path assoluto per il DB per evitare errori "No such file"
                 if platform == 'android':
