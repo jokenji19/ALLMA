@@ -389,7 +389,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 69" # Skeleton Mode (Android 16 Test)
+            BUILD_VERSION = "Build 70" # Diagnostic Mode (Minimal)
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -419,85 +419,48 @@ class ALLMAApp(MDApp):
 
     def on_start(self):
         # Schedule startup sequence after UI is shown
-        # DISABLED FOR BUILD 69 (SKELETON TEST)
-        # Clock.schedule_once(self.deferred_startup, 1)
-        pass
+        Clock.schedule_once(self.deferred_startup, 1)
 
     def deferred_startup(self, dt):
         try:
-            logging.info("Starting deferred setup...")
-            
             # Helper to show status on chat screen
             def update_status(msg):
                 try:
+                    logging.info(f"STATUS UPDATE: {msg}")
                     chat_screen = self.sm.get_screen('chat')
                     if chat_screen:
                         chat_screen.add_message(f"[SYSTEM] {msg}", is_user=False)
                 except: pass
 
-            update_status("Step 1: Startup initiated...")
+            update_status("Build 70: Alive on Android 16!")
+            update_status("Step 1: Clock schedule worked.")
             
-            # 1. Request Permissions - DISABLED FOR DEBUGGING (BUILD 68)
-            # if platform == 'android':
-            #     try:
-            #         from android.permissions import request_permissions, Permission
-            #         logging.info("Requesting permissions...")
-            #         request_permissions([
-            #             Permission.WRITE_EXTERNAL_STORAGE, 
-            #             Permission.READ_EXTERNAL_STORAGE, 
-            #             Permission.INTERNET
-            #         ])
-            #     except Exception as perm_err:
-            #         logging.error(f"Permission request failed: {perm_err}")
+            # Diagnostic: Check raw paths without doing anything
+            try:
+                from android.storage import app_storage_path
+                p = app_storage_path()
+                update_status(f"Storage Path: {p}")
+            except Exception as e:
+                update_status(f"Storage Error: {e}")
 
-            update_status("Step 2: Checking storage...")
-            # 2. Critical Files Setup
-            storage = self.user_data_dir
-            if not os.path.exists(storage):
-                try:
-                    os.makedirs(storage)
-                except: pass
+            # Diagnostic: Check User Data Dir
+            try:
+                u = self.user_data_dir
+                update_status(f"User Data: {u}")
+                if os.path.exists(u):
+                     update_status("User Data Dir EXISTS")
+                     with open(os.path.join(u, 'test_70.txt'), 'w') as f:
+                         f.write("OK")
+                     update_status("Write Test OK")
+                else:
+                     update_status("User Data Dir MISSING")
+            except Exception as e:
+                update_status(f"User Data Error: {e}")
 
-            update_status("Step 3: Loading AI Core...")
-            # 3. Dynamic Import/Setup of Model
-            global ALLMACore, ModelDownloader, ALLMACore_imported
+            update_status("Step 2: Diagnostics Complete. Not loading AI.")
             
-            if not ALLMACore_imported:
-                logging.info("Lazy importing Core...")
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                if not find_model_package(current_dir):
-                    # Try extraction
-                     extract_model_zip(current_dir)
-                
-                try:
-                    import Model.core.allma_core
-                    import Model.utils.model_downloader
-                    from Model.core.allma_core import ALLMACore as AC
-                    from Model.utils.model_downloader import ModelDownloader as MD
-                    ALLMACore = AC
-                    ModelDownloader = MD
-                    ALLMACore_imported = True
-                    update_status("AI Core Loaded!")
-                except ImportError as e:
-                    logging.critical(f"Setup Failed: {e}")
-                    update_status(f"ERROR: Cannot load AI.\n{e}")
-                    return
-
-            # 4. Check Models and Init
-            if ALLMACore:
-                try:
-                    self.downloader = ModelDownloader()
-                    missing_models = self.downloader.check_models_missing()
-                    
-                    if missing_models:
-                        self.sm.current = 'download'
-                    else:
-                        update_status("Initializing...")
-                        self.initialize_allma()
-                        update_status("Ready!")
-                except Exception as e:
-                    logging.error(f"Init Error: {e}")
-                    update_status(f"Init Failed: {e}")
+        except Exception as e:
+            logging.critical(f"DEFERRED CRASH: {e}", exc_info=True)
                 except Exception as e:
                     logging.error(f"Init Error: {e}")
             
