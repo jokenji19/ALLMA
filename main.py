@@ -389,7 +389,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 67" # Setup moved to on_start
+            BUILD_VERSION = "Build 68" # Safe Mode (No Perms Request)
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -425,19 +425,30 @@ class ALLMAApp(MDApp):
         try:
             logging.info("Starting deferred setup...")
             
-            # 1. Request Permissions
-            if platform == 'android':
+            # Helper to show status on chat screen
+            def update_status(msg):
                 try:
-                    from android.permissions import request_permissions, Permission
-                    logging.info("Requesting permissions...")
-                    request_permissions([
-                        Permission.WRITE_EXTERNAL_STORAGE, 
-                        Permission.READ_EXTERNAL_STORAGE, 
-                        Permission.INTERNET
-                    ])
-                except Exception as perm_err:
-                    logging.error(f"Permission request failed: {perm_err}")
+                    chat_screen = self.sm.get_screen('chat')
+                    if chat_screen:
+                        chat_screen.add_message(f"[SYSTEM] {msg}", is_user=False)
+                except: pass
 
+            update_status("Step 1: Startup initiated...")
+            
+            # 1. Request Permissions - DISABLED FOR DEBUGGING (BUILD 68)
+            # if platform == 'android':
+            #     try:
+            #         from android.permissions import request_permissions, Permission
+            #         logging.info("Requesting permissions...")
+            #         request_permissions([
+            #             Permission.WRITE_EXTERNAL_STORAGE, 
+            #             Permission.READ_EXTERNAL_STORAGE, 
+            #             Permission.INTERNET
+            #         ])
+            #     except Exception as perm_err:
+            #         logging.error(f"Permission request failed: {perm_err}")
+
+            update_status("Step 2: Checking storage...")
             # 2. Critical Files Setup
             storage = self.user_data_dir
             if not os.path.exists(storage):
@@ -445,6 +456,7 @@ class ALLMAApp(MDApp):
                     os.makedirs(storage)
                 except: pass
 
+            update_status("Step 3: Loading AI Core...")
             # 3. Dynamic Import/Setup of Model
             global ALLMACore, ModelDownloader, ALLMACore_imported
             
@@ -463,9 +475,10 @@ class ALLMAApp(MDApp):
                     ALLMACore = AC
                     ModelDownloader = MD
                     ALLMACore_imported = True
+                    update_status("AI Core Loaded!")
                 except ImportError as e:
                     logging.critical(f"Setup Failed: {e}")
-                    # Show error on screen safely?
+                    update_status(f"ERROR: Cannot load AI.\n{e}")
                     return
 
             # 4. Check Models and Init
@@ -477,7 +490,12 @@ class ALLMAApp(MDApp):
                     if missing_models:
                         self.sm.current = 'download'
                     else:
+                        update_status("Initializing...")
                         self.initialize_allma()
+                        update_status("Ready!")
+                except Exception as e:
+                    logging.error(f"Init Error: {e}")
+                    update_status(f"Init Failed: {e}")
                 except Exception as e:
                     logging.error(f"Init Error: {e}")
             
