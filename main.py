@@ -389,7 +389,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 70" # Diagnostic Mode (Minimal)
+            BUILD_VERSION = "Build 71" # No NumPy (Android 16 Fix?)
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"

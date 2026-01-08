@@ -32,9 +32,9 @@ version = 0.1
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-# NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) are excluded
+# NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded at runtime by the app
-requirements = python3,kivy==2.3.0,kivymd==1.1.1,sqlite3,pillow,requests,plyer,numpy
+requirements = python3,kivy==2.3.0,kivymd==1.1.1,sqlite3,pillow,requests,plyer
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
@@ -76,7 +76,7 @@ android.presplash_color = #1E1E1E
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE
 
 # (int) Target Android API, should be as high as possible.
-android.api = 33
+android.api = 34
 
 # (int) Minimum API your APK will support.
 android.minapi = 24
