@@ -461,11 +461,6 @@ class ALLMAApp(MDApp):
             
         except Exception as e:
             logging.critical(f"DEFERRED CRASH: {e}", exc_info=True)
-                except Exception as e:
-                    logging.error(f"Init Error: {e}")
-            
-        except Exception as e:
-            logging.critical(f"DEFERRED STARTUP CRASH: {e}", exc_info=True)
 
     def initialize_allma(self):
         try:
