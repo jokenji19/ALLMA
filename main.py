@@ -389,7 +389,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 68" # Safe Mode (No Perms Request)
+            BUILD_VERSION = "Build 69" # Skeleton Mode (Android 16 Test)
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -419,7 +419,9 @@ class ALLMAApp(MDApp):
 
     def on_start(self):
         # Schedule startup sequence after UI is shown
-        Clock.schedule_once(self.deferred_startup, 1)
+        # DISABLED FOR BUILD 69 (SKELETON TEST)
+        # Clock.schedule_once(self.deferred_startup, 1)
+        pass
 
     def deferred_startup(self, dt):
         try:
