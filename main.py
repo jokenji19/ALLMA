@@ -13,207 +13,187 @@ from kivymd.uix.label import MDLabel
 from kivy.uix.screenmanager import ScreenManager
 from kivy.utils import platform
 
-# Configura logging con protezione per la directory mancante
-try:
-    if platform == 'android':
-        from android.storage import app_storage_path
-        # Usa un path temporaneo finché l'App non parte
-        log_dir = app_storage_path()
-        if not os.path.exists(log_dir):
-             try:
-                 os.makedirs(log_dir)
-             except:
-                 pass
-        log_file = os.path.join(log_dir, 'allma_crash.log')
-        logging.basicConfig(
-            filename=log_file,
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-except Exception as e:
-    # Fallback to stdout if file logging fails
-    logging.basicConfig(level=logging.DEBUG)
-    print(f"File logging setup failed, using stdout: {e}")
+# Mantiene logging di base su stdout per debug ADB
+logging.basicConfig(level=logging.DEBUG)
 
-# ... (rest of imports)
+# --- EMBEDDED KV STRINGS (Android 16 Fix) ---
+KV_CHAT = '''
+<ChatScreen>:
+    MDBoxLayout:
+        orientation: "vertical"
 
-# ...
+        MDTopAppBar:
+            title: "ALLMA"
+            elevation: 4
+            pos_hint: {"top": 1}
+            md_bg_color: app.theme_cls.primary_color
+            specific_text_color: app.theme_cls.accent_color
+            right_action_items: [["dots-vertical", lambda x: app.open_menu()]]
 
-    def initialize_allma(self):
-        try:
-            if not hasattr(self, 'allma'):
-                # Passiamo il path dei modelli ad ALLMACore
-                models_dir = self.downloader._get_models_dir()
-                
-                # Definisci path assoluto per il DB usando user_data_dir (più sicuro)
-                # self.user_data_dir è gestito da Kivy e garantito
-                storage = self.user_data_dir
-                
-                # Logga il path usato
-                logging.info(f"USING USER_DATA_DIR: {storage}")
-                
-                # Assicurati che storage esista (dovrebbe già esistere)
-                if not os.path.exists(storage):
-                    try:
-                        os.makedirs(storage)
-                    except Exception as create_err:
-                        logging.error(f"Failed to create user_data_dir: {create_err}")
-                            
-                db_path = os.path.join(storage, 'allma.db')
-                
-                # Manual Touch of DB File
-                if not os.path.exists(db_path):
-                    logging.info("DB file doesn't exist, creating empty file...")
-                    try:
-                        with open(db_path, 'w') as f:
-                            f.write("")
-                    except Exception as touch_err:
-                        # Se fallisce qui, proviamo un path alternativo nella cache
-                        logging.error(f"Failed to touch DB in user_data_dir: {touch_err}")
-                        if platform == 'android':
-                             from jnius import autoclass
-                             Context = autoclass('android.content.Context')
-                             PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                             context = PythonActivity.mActivity
-                             cache_dir = context.getCacheDir().getAbsolutePath()
-                             db_path = os.path.join(cache_dir, 'allma.db')
-                             logging.info(f"Retrying with Cache Dir: {db_path}")
+        MDBoxLayout:
+            orientation: "vertical"
+            padding: dp(10)
+            spacing: dp(10)
 
-                self.allma = ALLMACore(
-                    mobile_mode=True,
-                    models_dir=models_dir,
-                    db_path=db_path
-                )
-        except Exception as e:
-             logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
-             if hasattr(self, 'sm'):
-                 from kivy.uix.label import Label
-                 # Gather debugging info
-                 try:
-                     storage_files = str(os.listdir(os.path.dirname(db_path)))
-                 except:
-                     storage_files = "Cannot list dir"
-                     
-                 self.sm.clear_widgets()
-                 self.sm.add_widget(MDScreen(name='crash'))
-                 # Mostra più contesto nell'errore
-                 error_details = f"CRASH (Build 65):\n{str(e)}\n\nDB Path: {db_path}\nFiles: {storage_files}"
-                 self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
-                 self.sm.current = 'crash'
+            RecycleView:
+                id: chat_list
+                viewclass: 'ChatMessage'
+                RecycleBoxLayout:
+                    default_size: None, dp(48)
+                    default_size_hint: 1, None
+                    size_hint_y: None
+                    height: self.minimum_height
+                    orientation: 'vertical'
+                    spacing: dp(8)
 
-# FIX CRITICO: Aggiungi la cartella corrente e libs al path di Python
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
+            MDBoxLayout:
+                size_hint_y: None
+                height: dp(60)
+                spacing: dp(10)
+                padding: [dp(5), dp(5), dp(5), dp(5)]
 
-# Aggiungi la cartella libs (dove abbiamo spostato Model)
-libs_dir = os.path.join(current_dir, 'libs')
-if os.path.exists(libs_dir):
-    sys.path.append(libs_dir)
-    logging.info(f"Added to sys.path: {libs_dir}")
+                MDTextField:
+                    id: message_input
+                    hint_text: "Scrivi un messaggio..."
+                    mode: "round"
+                    fill_color_normal: app.theme_cls.bg_dark
+                    text_color_normal: 1, 1, 1, 1
+                    size_hint_x: 0.85
+                    multiline: False
+                    on_text_validate: root.send_message()
 
-# SELF-HEALING: Cerca la cartella 'Model' ovunque (backup)
-def find_model_package(start_dir):
-    logging.info(f"Searching for Model in {start_dir}...")
-    for root, dirs, files in os.walk(start_dir):
-        if 'Model' in dirs:
-            model_path = os.path.join(root, 'Model')
-            parent_dir = os.path.dirname(model_path)
-            logging.info(f"FOUND MODEL AT: {model_path}")
-            if parent_dir not in sys.path:
-                sys.path.append(parent_dir)
-                logging.info(f"Added {parent_dir} to sys.path")
-            return True
-        # Non scendere troppo in profondità per evitare loop o lentezza
-        if root.count(os.sep) - start_dir.count(os.sep) > 2:
-            del dirs[:]
-    return False
+                MDIconButton:
+                    icon: "send"
+                    theme_text_color: "Custom"
+                    text_color: app.theme_cls.primary_color
+                    user_font_size: "32sp"
+                    size_hint_x: 0.15
+                    on_release: root.send_message()
 
-# NUCLEAR OPTION: Scarica lo zip direttamente da GitHub se non c'è
-def download_model_code_from_github(target_path):
-    import requests
-    url = "https://raw.githubusercontent.com/jokenji19/ALLMA/main/assets/model_code.zip"
-    logging.info(f"Attempting NUCLEAR DOWNLOAD from {url}")
-    try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
-        with open(target_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        logging.info("NUCLEAR DOWNLOAD SUCCESSFUL")
-        return True
-    except Exception as e:
-        logging.error(f"NUCLEAR DOWNLOAD FAILED: {e}")
-        return False
-
-# ZIP STRATEGY: Se non troviamo il modello, proviamo a scompattare lo zip
-def extract_model_zip(start_dir):
-    import zipfile
-    # Cerca in assets (posizione standard)
-    zip_path = os.path.join(start_dir, 'assets', 'model_code.zip')
+<ChatMessage>:
+    size_hint_y: None
+    height: self.minimum_height
+    padding: dp(10)
     
-    # Cerca anche in _python_bundle/assets
-    if not os.path.exists(zip_path):
-        bundle_zip = os.path.join(start_dir, '_python_bundle', 'assets', 'model_code.zip')
-        if os.path.exists(bundle_zip):
-            zip_path = bundle_zip
+    MDCard:
+        size_hint: None, None
+        size: self.minimum_size
+        width: min(root.width * 0.8, self.minimum_width)
+        pos_hint: {'right': 1} if root.is_user else {'left': 1}
+        md_bg_color: app.theme_cls.primary_color if root.is_user else app.theme_cls.accent_color
+        radius: [15, 15, 0, 15] if root.is_user else [15, 15, 15, 0]
+        padding: dp(10)
+        elevation: 2
+
+        MDLabel:
+            text: root.text
+            color: 1, 1, 1, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            size_hint_x: None
+            width: self.texture_size[0]
+            text_size: root.width * 0.7, None
+'''
+
+KV_DOWNLOAD = '''
+<DownloadScreen>:
+    name: 'download'
+    
+    MDBoxLayout:
+        orientation: 'vertical'
+        padding: dp(20)
+        spacing: dp(20)
+        
+        MDLabel:
+            text: "ALLMA Setup"
+            halign: "center"
+            font_style: "H4"
+            theme_text_color: "Primary"
+            size_hint_y: None
+            height: self.texture_size[1]
             
-    # Fallback: cerca nella root (vecchia posizione)
-    if not os.path.exists(zip_path):
-        root_zip = os.path.join(start_dir, 'model_code.zip')
-        if os.path.exists(root_zip):
-            zip_path = root_zip
-
-    # NUCLEAR FALLBACK: Se non c'è, scaricalo!
-    if not os.path.exists(zip_path):
-        logging.warning("ZIP NOT FOUND LOCALLY. INITIATING NUCLEAR OPTION.")
-        # Salva nella cartella privata dell'app
-        nuclear_path = os.path.join(app_storage_path(), 'model_code.zip')
-        if download_model_code_from_github(nuclear_path):
-            zip_path = nuclear_path
-        else:
-            logging.critical("NUCLEAR OPTION FAILED.")
-
-    if os.path.exists(zip_path):
-        logging.info(f"FOUND ZIP AT: {zip_path}")
-        try:
-            extract_dir = os.path.join(app_storage_path(), 'extracted_model')
-            # Rimuovi vecchia estrazione se esiste per forzare aggiornamento
-            # if os.path.exists(extract_dir):
-            #     import shutil
-            #     shutil.rmtree(extract_dir)
+        MDLabel:
+            text: "Per attivare la mia intelligenza, devo scaricare i miei modelli neurali (circa 2.3 GB). Assicurati di essere sotto Wi-Fi."
+            halign: "center"
+            theme_text_color: "Secondary"
+            size_hint_y: None
+            height: self.texture_size[1]
             
-            if not os.path.exists(extract_dir):
-                os.makedirs(extract_dir)
-                
-            logging.info(f"Extracting to {extract_dir}...")
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
-                
-            # Aggiungi il percorso estratto a sys.path
-            sys.path.append(extract_dir)
+        MDBoxLayout:
+            orientation: 'vertical'
+            spacing: dp(10)
+            size_hint_y: None
+            height: dp(150)
             
-            # Se lo zip conteneva "libs/Model", dobbiamo aggiungere "extract_dir/libs"
-            if os.path.exists(os.path.join(extract_dir, 'libs')):
-                sys.path.append(os.path.join(extract_dir, 'libs'))
+            MDLabel:
+                text: "Gemma 2B (Cervello Linguistico)"
+                theme_text_color: "Primary"
                 
-            logging.info("Extraction successful and path added.")
-            return True
-        except Exception as e:
-            logging.error(f"Failed to extract zip: {e}")
-            return False
-    return False
+            MDProgressBar:
+                id: progress_gemma
+                value: 0
+                max: 100
+                
+            MDLabel:
+                id: label_gemma
+                text: "In attesa..."
+                theme_text_color: "Secondary"
+                font_style: "Caption"
+                
+            Widget:
+                size_hint_y: None
+                height: dp(10)
+                
+            MDLabel:
+                text: "Moondream (Visione)"
+                theme_text_color: "Primary"
+                
+            MDProgressBar:
+                id: progress_moondream
+                value: 0
+                max: 100
+                
+            MDLabel:
+                id: label_moondream
+                text: "In attesa..."
+                theme_text_color: "Secondary"
+                font_style: "Caption"
+                
+            Widget:
+                size_hint_y: None
+                height: dp(10)
 
-# Prova a trovare Model - SPOSTATO IN ALLMAApp.build
-# if not find_model_package(current_dir):
-#     # ... logic moved ...
+            MDLabel:
+                text: "DistilRoberta (Emozioni)"
+                theme_text_color: "Primary"
+                
+            MDProgressBar:
+                id: progress_emotion
+                value: 0
+                max: 100
+                
+            MDLabel:
+                id: label_emotion
+                text: "In attesa..."
+                theme_text_color: "Secondary"
+                font_style: "Caption"
+                
+        Widget:
+            # Spacer
 
-# Importa Model DOPO aver sistemato il path (Lazy import in app)
-# Importa Model DOPO aver sistemato il path (Lazy import in app)
+        MDFillRoundFlatButton:
+            id: btn_start
+            text: "AVVIA DOWNLOAD"
+            pos_hint: {"center_x": .5}
+            on_release: root.start_download()
+'''
+
+# --- END EMBEDDED KV ---
+
+# Initialization Constants
 ALLMACore = None
 ModelDownloader = None
 ALLMACore_imported = False
-# REMOVED GLOBAL IMPORT BLOCK TO PREVENT PREMATURE EXIT OR CRASH
-# logic moved to ALLMAApp.deferred_startup if needed
 
 class ChatMessage(MDBoxLayout):
     text = StringProperty()
@@ -247,6 +227,11 @@ class ChatScreen(MDScreen):
 
     def process_response(self, message):
         try:
+            # Check if Core is active
+            if not self.app.allma:
+                 Clock.schedule_once(lambda dt: self.add_message("ALLMA Initializing... please wait.", is_user=False))
+                 return
+
             # Simula un ID utente fisso per la versione locale
             user_id = "local_user"
             conversation_id = "local_chat"
@@ -266,6 +251,7 @@ class ChatScreen(MDScreen):
             
         except Exception as e:
             error_msg = f"Errore: {str(e)}"
+            logging.error(f"Chat Error: {e}", exc_info=True)
             Clock.schedule_once(lambda dt: self.add_message(error_msg, is_user=False))
 
 class DownloadScreen(MDScreen):
@@ -273,9 +259,15 @@ class DownloadScreen(MDScreen):
         self.ids.btn_start.disabled = True
         self.ids.btn_start.text = "DOWNLOAD IN CORSO..."
         
+        # Lazy load if needed
+        global ModelDownloader
         if not ModelDownloader:
-             self.ids.btn_start.text = "ERRORE: Modulo Model non trovato"
-             return
+             try:
+                 from Model.utils.model_downloader import ModelDownloader as MD
+                 ModelDownloader = MD
+             except ImportError:
+                 self.ids.btn_start.text = "ERRORE: Modulo Model non trovato"
+                 return
 
         downloader = ModelDownloader()
         missing = downloader.check_models_missing()
@@ -298,15 +290,16 @@ class DownloadScreen(MDScreen):
         downloader.start_background_download(missing, progress_callback, completion_callback)
 
     def update_progress(self, model_key, percent, current, total):
+        # Update specific progress bars based on model key
         if model_key == 'gemma':
             self.ids.progress_gemma.value = percent
-            self.ids.label_gemma.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
+            self.ids.label_gemma.text = f"{percent:.1f}%"
         elif model_key == 'moondream':
             self.ids.progress_moondream.value = percent
-            self.ids.label_moondream.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
+            self.ids.label_moondream.text = f"{percent:.1f}%"
         elif model_key == 'emotion':
             self.ids.progress_emotion.value = percent
-            self.ids.label_emotion.text = f"{percent:.1f}% ({current//1024//1024}MB / {total//1024//1024}MB)"
+            self.ids.label_emotion.text = f"{percent:.1f}%"
 
     def on_download_complete(self, success):
         if success:
@@ -326,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 79" # KV Retry + MDLabel Fix
+            BUILD_VERSION = "Build 80" # Embedded UI + Active Core
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -334,27 +327,19 @@ class ALLMAApp(MDApp):
             # Pre-load screens but don't init core yet
             self.sm = ScreenManager()
             
-            # Load KV files safely
-            base_path = os.path.dirname(os.path.abspath(__file__))
-            kv_loaded = False
+            # Load Embedded KV
             try:
-                Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
-                Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
-                kv_loaded = True
+                Builder.load_string(KV_CHAT)
+                Builder.load_string(KV_DOWNLOAD)
             except Exception as kv_err:
                 logging.error(f"KV Load Error: {kv_err}")
-                # Don't crash, fall through to fallback
+                from kivy.uix.label import Label
+                return Label(text=f"KV ERROR: {kv_err}")
 
-            if kv_loaded:
-                 self.sm.add_widget(ChatScreen(name='chat'))
-                 self.sm.add_widget(DownloadScreen(name='download'))
-                 self.sm.current = 'chat'
-            else:
-                 # Use Fallback Screen if KV extraction failed
-                 fallback = MDScreen(name='fallback')
-                 fallback.add_widget(MDLabel(text="Build 79: KV Failed but App Alive!", halign='center'))
-                 self.sm.add_widget(fallback)
-                 self.sm.current = 'fallback'
+            # Add widgets normally
+            self.sm.add_widget(ChatScreen(name='chat'))
+            self.sm.add_widget(DownloadScreen(name='download'))
+            self.sm.current = 'chat'
             
             return self.sm
         except Exception as e:
@@ -376,61 +361,98 @@ class ALLMAApp(MDApp):
                         chat_screen.add_message(f"[SYSTEM] {msg}", is_user=False)
                 except: pass
 
-            update_status("Build 70: Alive on Android 16!")
-            update_status("Step 1: Clock schedule worked.")
+            update_status(f"Build 80: UI Loaded from Embedded KV")
             
-            # Diagnostic: Check raw paths without doing anything
-            try:
-                from android.storage import app_storage_path
-                p = app_storage_path()
-                update_status(f"Storage Path: {p}")
-            except Exception as e:
-                update_status(f"Storage Error: {e}")
+            # 1. Request PERMISSIONS
+            if platform == 'android':
+                 update_status("Requesting Permissions...")
+                 from android.permissions import request_permissions, Permission
+                 request_permissions([
+                    Permission.WRITE_EXTERNAL_STORAGE, 
+                    Permission.READ_EXTERNAL_STORAGE, 
+                    Permission.INTERNET
+                 ])
 
-            # Diagnostic: Check User Data Dir
+            # 2. Imports and Core Init
+            update_status("Loading Core...")
+            global ALLMACore, ModelDownloader, ALLMACore_imported
+            
             try:
-                u = self.user_data_dir
-                update_status(f"User Data: {u}")
-                if os.path.exists(u):
-                     update_status("User Data Dir EXISTS")
-                     with open(os.path.join(u, 'test_70.txt'), 'w') as f:
-                         f.write("OK")
-                     update_status("Write Test OK")
+                # Lazy Import inside try-block
+                from Model.core.allma_core import ALLMACore as AC
+                from Model.utils.model_downloader import ModelDownloader as MD
+                ALLMACore = AC
+                ModelDownloader = MD
+                ALLMACore_imported = True
+            except ImportError as ie:
+                update_status(f"Module Import Error: {ie}")
+                return
+
+            # check logic
+            try:
+                self.downloader = ModelDownloader()
+                missing_models = self.downloader.check_models_missing()
+                
+                if missing_models:
+                    update_status("Models missing - Switching to Download")
+                    self.sm.current = 'download'
                 else:
-                     update_status("User Data Dir MISSING")
+                    update_status("Initializing AI...")
+                    self.initialize_allma()
+                    update_status("Ready!")
             except Exception as e:
-                update_status(f"User Data Error: {e}")
-
-            update_status("Step 2: Diagnostics Complete. Not loading AI.")
-            
-            # 4. Check Models and Init
-            # DISABLED FOR BUILD 76 - TESTING UI ONLY
-            logging.info("Core Logic DISABLED for Build 76")
-            if ALLMACore:
-                 update_status("Core Loaded (but disabled)")
-            #     try:
-            #         self.downloader = ModelDownloader()
-            #         missing_models = self.downloader.check_models_missing()
-            #         
-            #         if missing_models:
-            #             self.sm.current = 'download'
-            #         else:
-            #             update_status("Initializing...")
-            #             self.initialize_allma()
-            #             update_status("Ready!")
-            #     except Exception as e:
-            #         logging.error(f"Init Error: {e}")
-            #         update_status(f"Init Failed: {e}")
-            
-            update_status("Build 76: UI ONLY MODE")
+                logging.error(f"Init Error: {e}")
+                update_status(f"Init Failed: {e}")
             
         except Exception as e:
             logging.critical(f"DEFERRED CRASH: {e}", exc_info=True)
 
     def initialize_allma(self):
-        # STUBBED FOR BUILD 76
-        logging.info("initialize_allma called (STUBBED)")
-        pass
+        try:
+            if not hasattr(self, 'allma'):
+                # Passiamo il path dei modelli ad ALLMACore
+                models_dir = self.downloader._get_models_dir()
+                
+                # Definisci path assoluto per il DB per evitare errori "No such file"
+                if platform == 'android':
+                    from android.storage import app_storage_path
+                    storage = app_storage_path()
+                    # Assicurati che storage esista
+                    if not os.path.exists(storage):
+                        try:
+                            os.makedirs(storage)
+                        except: pass
+                            
+                    db_path = os.path.join(storage, 'allma.db')
+                    
+                    # Manual Touch of DB File
+                    if not os.path.exists(db_path):
+                         with open(db_path, 'w') as f: pass
+                else:
+                    db_path = 'allma.db'
+                
+                logging.info(f"Initializing ALLMA with models={models_dir}, db={db_path}")
+                
+                # RE-ENABLED CORE INIT
+                global ALLMACore
+                if ALLMACore:
+                    self.allma = ALLMACore(
+                        mobile_mode=True,
+                        models_dir=models_dir,
+                        db_path=db_path
+                    )
+                else:
+                    logging.error("ALLMACore Class is None in initialize_allma")
+
+        except Exception as e:
+             logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
+             if hasattr(self, 'sm'):
+                 from kivy.uix.label import Label
+                 self.sm.clear_widgets()
+                 self.sm.add_widget(MDScreen(name='crash'))
+                 error_details = f"CRASH (Build 80 Core):\n{str(e)}"
+                 self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
+                 self.sm.current = 'crash'
     
     def show_crash_ui(self, error_msg):
         from kivy.uix.label import Label
@@ -440,16 +462,4 @@ if __name__ == "__main__":
     try:
         ALLMAApp().run()
     except Exception as e:
-        logging.critical(f"CRITICAL CRASH: {e}", exc_info=True)
-        # Se siamo su Android, proviamo a salvare l'errore in un file visibile se possibile
-        if platform == 'android':
-            from android.storage import app_storage_path
-            try:
-                 # Usa app_storage_path() ma catcha errori se non esiste
-                path = app_storage_path()
-                if not os.path.exists(path):
-                    os.makedirs(path)
-                with open(os.path.join(path, 'crash_dump.txt'), 'w') as f:
-                    f.write(traceback.format_exc())
-            except:
-                pass
+        print(f"BOOTSTRAP CRASH: {e}")
