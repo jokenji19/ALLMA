@@ -9,6 +9,7 @@ from kivy.properties import StringProperty, BooleanProperty
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.label import MDLabel
 from kivy.uix.screenmanager import ScreenManager
 from kivy.utils import platform
 
@@ -325,7 +326,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 78" # Clean Imports (No Global Hijack)
+            BUILD_VERSION = "Build 79" # KV Retry + MDLabel Fix
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -333,29 +334,27 @@ class ALLMAApp(MDApp):
             # Pre-load screens but don't init core yet
             self.sm = ScreenManager()
             
-            # Carica i file KV con percorso assoluto sicuro
-            # DISABLED FOR BUILD 77 - TESTING FILE ACCESS
+            # Load KV files safely
             base_path = os.path.dirname(os.path.abspath(__file__))
-            logging.info(f"Base Path: {base_path}")
-            
-            # try:
-            #     Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
-            #     Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
-            # except Exception as kv_err:
-            #     logging.error(f"KV Load Error: {kv_err}")
-            #     from kivy.uix.label import Label
-            #     return Label(text=f"KV ERROR: {kv_err}")
+            kv_loaded = False
+            try:
+                Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
+                Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
+                kv_loaded = True
+            except Exception as kv_err:
+                logging.error(f"KV Load Error: {kv_err}")
+                # Don't crash, fall through to fallback
 
-            # Add temporary loading screen or go to chat (which shows loading)
-            # self.sm.add_widget(ChatScreen(name='chat'))     # Needs KV
-            # self.sm.add_widget(DownloadScreen(name='download')) # Needs KV
-            
-            # Use Fallback Screen for Build 77
-            fallback = MDScreen(name='fallback')
-            fallback.add_widget(MDLabel(text="Build 77: No KV Files Loaded\nIf you see this, KV Loading was the crash trigger.", halign='center'))
-            self.sm.add_widget(fallback)
-            
-            self.sm.current = 'fallback'
+            if kv_loaded:
+                 self.sm.add_widget(ChatScreen(name='chat'))
+                 self.sm.add_widget(DownloadScreen(name='download'))
+                 self.sm.current = 'chat'
+            else:
+                 # Use Fallback Screen if KV extraction failed
+                 fallback = MDScreen(name='fallback')
+                 fallback.add_widget(MDLabel(text="Build 79: KV Failed but App Alive!", halign='center'))
+                 self.sm.add_widget(fallback)
+                 self.sm.current = 'fallback'
             
             return self.sm
         except Exception as e:
