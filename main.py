@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 85" # Root Package Fix
+            BUILD_VERSION = "Build 86" # Kivy Resource Finder
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -438,34 +438,34 @@ class ALLMAApp(MDApp):
                     else:
                         update_status("Bundle dir missing?")
 
-                # BUILD 83: RESTORE ZIP EXTRACTION (Last Resort)
                 if not found_libs:
-                     update_status("Attempting ZIP Extraction (Evolution 1 logic)...")
-                     try:
-                         import zipfile
-                         # Look for assets/model_code.zip
-                         # In newer P4A, assets might be in a different place
-                         candidates_zip = [
-                             os.path.join(base_path, 'model_code.zip'),
-                             os.path.join(base_path, 'assets', 'model_code.zip'),
-                             os.path.join(base_path, '_python_bundle', 'assets', 'model_code.zip'),
-                         ]
-                         
-                         found_zip = None
-                         for z in candidates_zip:
-                             if os.path.exists(z):
-                                 found_zip = z
-                                 break
-                         
-                         if found_zip:
-                             update_status(f"Found ZIP at: {found_zip}")
+                    update_status("Searching for ZIP with Kivy Resource Finder...")
+                    try:
+                        import zipfile
+                        from kivy.resources import resource_find, resource_add_path
+                        
+                        # Add likely paths to resource system just in case
+                        resource_add_path(base_path)
+                        resource_add_path(os.path.join(base_path, 'assets'))
+                        resource_add_path(os.path.join(base_path, '_python_bundle', 'assets'))
+                        
+                        # Ask Kivy to find it
+                        zip_path = resource_find('model_code.zip')
+                        
+                        if zip_path:
+                             update_status(f"Kivy Found ZIP at: {zip_path}")
                              extract_dir = os.path.join(base_path, 'extracted_model')
-                             if not os.path.exists(extract_dir):
-                                 os.makedirs(extract_dir)
-                                 update_status("Extracting...")
-                                 with zipfile.ZipFile(found_zip, 'r') as zf:
-                                     zf.extractall(extract_dir)
-                                 update_status("Extraction Done.")
+                             
+                             # Always re-extract to be safe/update
+                             if os.path.exists(extract_dir):
+                                 import shutil
+                                 shutil.rmtree(extract_dir)
+                             os.makedirs(extract_dir)
+                             
+                             update_status("Extracting...")
+                             with zipfile.ZipFile(zip_path, 'r') as zf:
+                                 zf.extractall(extract_dir)
+                             update_status("Extraction Done.")
                              
                              # Add extracted path
                              sys.path.append(extract_dir)
@@ -473,10 +473,13 @@ class ALLMAApp(MDApp):
                                  sys.path.append(os.path.join(extract_dir, 'libs')) 
                                  update_status("Added extracted/libs to path")
                              found_libs = True
-                         else:
-                             update_status("No ZIP found either.")
-                     except Exception as ze:
-                         update_status(f"ZIP Error: {ze}")
+                        else:
+                             update_status("Kivy could not find model_code.zip")
+                             # Listing assets for debug
+                             update_status(f"Assets candidates: {str(os.listdir(os.path.join(base_path, 'assets'))) if os.path.exists(os.path.join(base_path, 'assets')) else 'No Assets Dir'}")
+
+                    except Exception as ze:
+                        update_status(f"ZIP Logic Error: {ze}")
 
             except Exception as pe:
                 update_status(f"Path Patch Error: {pe}")

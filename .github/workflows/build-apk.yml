@@ -18,18 +18,24 @@ jobs:
           # Fix permissions for the workspace
           chmod -R 777 .
 
-          # STRATEGY CHANGE: Move Model to root so P4A compiles it as a standard package
-          # This puts 'Model' into site-packages automatically
+          # ZIP STRATEGY RESTORED: Create a zip of the Model code
+          # We zip the contents of libs/Model into assets/model_code.zip
+          mkdir -p assets
           if [ -d "libs/Model" ]; then
-            echo "Moving libs/Model to root Model/..."
-            cp -r libs/Model Model
+            echo "Zipping libs/Model into assets..."
+            # Install zip if missing
+            sudo apt-get update && sudo apt-get install -y zip
+            zip -r assets/model_code.zip libs/Model
+          elif [ -d "Model" ]; then
+             echo "Zipping Model into assets..."
+             zip -r assets/model_code.zip Model
           else
-            echo "libs/Model not found, assuming Model is already in root or different structure"
-            ls -R
+             echo "WARNING: Model directory not found for zipping!"
+             ls -R
           fi
 
-          # Clean up any failed zip attempts to save space
-          rm -f model_code.zip assets/model_code.zip
+          # Remove move artifacts if any
+          rm -rf Model
 
           # Run buildozer inside the official Kivy Docker container
           docker run --rm \
