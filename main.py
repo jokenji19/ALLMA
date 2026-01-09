@@ -389,7 +389,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 76" # UI Only (Core Stubbed)
+            BUILD_VERSION = "Build 77" # No KV Files (Path Test)
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -398,19 +398,28 @@ class ALLMAApp(MDApp):
             self.sm = ScreenManager()
             
             # Carica i file KV con percorso assoluto sicuro
+            # DISABLED FOR BUILD 77 - TESTING FILE ACCESS
             base_path = os.path.dirname(os.path.abspath(__file__))
-            try:
-                Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
-                Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
-            except Exception as kv_err:
-                logging.error(f"KV Load Error: {kv_err}")
-                from kivy.uix.label import Label
-                return Label(text=f"KV ERROR: {kv_err}")
+            logging.info(f"Base Path: {base_path}")
+            
+            # try:
+            #     Builder.load_file(os.path.join(base_path, "UI/chat_screen.kv"))
+            #     Builder.load_file(os.path.join(base_path, "UI/download_screen.kv"))
+            # except Exception as kv_err:
+            #     logging.error(f"KV Load Error: {kv_err}")
+            #     from kivy.uix.label import Label
+            #     return Label(text=f"KV ERROR: {kv_err}")
 
             # Add temporary loading screen or go to chat (which shows loading)
-            self.sm.add_widget(ChatScreen(name='chat'))
-            self.sm.add_widget(DownloadScreen(name='download'))
-            self.sm.current = 'chat'
+            # self.sm.add_widget(ChatScreen(name='chat'))     # Needs KV
+            # self.sm.add_widget(DownloadScreen(name='download')) # Needs KV
+            
+            # Use Fallback Screen for Build 77
+            fallback = MDScreen(name='fallback')
+            fallback.add_widget(MDLabel(text="Build 77: No KV Files Loaded\nIf you see this, KV Loading was the crash trigger.", halign='center'))
+            self.sm.add_widget(fallback)
+            
+            self.sm.current = 'fallback'
             
             return self.sm
         except Exception as e:
