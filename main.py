@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 82" # Deep Search Path Fix
+            BUILD_VERSION = "Build 83" # Site-Packages + ZIP Restore
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -417,8 +417,66 @@ class ALLMAApp(MDApp):
                     bundle = os.path.join(base_path, '_python_bundle')
                     if os.path.exists(bundle):
                         update_status(f"Bundle contents: {str(os.listdir(bundle))}")
+                        
+                        # BUILD 83 ADDITION: Check site-packages
+                        sp_path = os.path.join(bundle, 'site-packages')
+                        if os.path.exists(sp_path):
+                            update_status(f"Site-Packages: {str(os.listdir(sp_path))}")
+                            # Check if libs is in site-packages (flattened?)
+                            sp_libs = os.path.join(sp_path, 'libs')
+                            if os.path.exists(sp_libs):
+                                sys.path.append(sp_libs)
+                                update_status(f"FOUND libs in site-packages")
+                                found_libs = True
+                            
+                            # Check if Model is in site-packages
+                            sp_model = os.path.join(sp_path, 'Model')
+                            if os.path.exists(sp_model):
+                                sys.path.append(sp_path)
+                                update_status(f"FOUND Model in site-packages")
+                                found_libs = True
                     else:
                         update_status("Bundle dir missing?")
+
+                # BUILD 83: RESTORE ZIP EXTRACTION (Last Resort)
+                if not found_libs:
+                     update_status("Attempting ZIP Extraction (Evolution 1 logic)...")
+                     try:
+                         import zipfile
+                         # Look for assets/model_code.zip
+                         # In newer P4A, assets might be in a different place
+                         candidates_zip = [
+                             os.path.join(base_path, 'model_code.zip'),
+                             os.path.join(base_path, 'assets', 'model_code.zip'),
+                             os.path.join(base_path, '_python_bundle', 'assets', 'model_code.zip'),
+                         ]
+                         
+                         found_zip = None
+                         for z in candidates_zip:
+                             if os.path.exists(z):
+                                 found_zip = z
+                                 break
+                         
+                         if found_zip:
+                             update_status(f"Found ZIP at: {found_zip}")
+                             extract_dir = os.path.join(base_path, 'extracted_model')
+                             if not os.path.exists(extract_dir):
+                                 os.makedirs(extract_dir)
+                                 update_status("Extracting...")
+                                 with zipfile.ZipFile(found_zip, 'r') as zf:
+                                     zf.extractall(extract_dir)
+                                 update_status("Extraction Done.")
+                             
+                             # Add extracted path
+                             sys.path.append(extract_dir)
+                             if os.path.exists(os.path.join(extract_dir, 'libs')):
+                                 sys.path.append(os.path.join(extract_dir, 'libs')) 
+                                 update_status("Added extracted/libs to path")
+                             found_libs = True
+                         else:
+                             update_status("No ZIP found either.")
+                     except Exception as ze:
+                         update_status(f"ZIP Error: {ze}")
 
             except Exception as pe:
                 update_status(f"Path Patch Error: {pe}")
