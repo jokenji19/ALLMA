@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 91" # Numpy + MockTorch
+            BUILD_VERSION = "Build 92" # Fix Sys Scope Error
             
             # Placeholder for Injection
             global INCEPTION_BLOB
@@ -482,7 +482,7 @@ class ALLMAApp(MDApp):
                         
                         # MOCK TORCH dependencies to prevent crash on import
                         # Real torch will be installed/checked later
-                        import sys
+                        # NOTE: Do NOT re-import sys here, it breaks scope!
                         from unittest.mock import MagicMock
                         
                         class MockTorch(MagicMock):
@@ -494,7 +494,7 @@ class ALLMAApp(MDApp):
                             sys.modules['torch'] = MockTorch()
                             sys.modules['torch.nn'] = MagicMock()
                             
-                        # Also mock transformers if needed?
+                        # Also mock transformers if needed
                         if 'transformers' not in sys.modules:
                              sys.modules['transformers'] = MagicMock()
                              
