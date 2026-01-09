@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 84" # CI ZIP Fix (Assets Move)
+            BUILD_VERSION = "Build 85" # Root Package Fix
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
