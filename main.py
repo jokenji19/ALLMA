@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 81" # Path Correction (Import Fix)
+            BUILD_VERSION = "Build 82" # Deep Search Path Fix
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -380,15 +380,46 @@ class ALLMAApp(MDApp):
             # FIX PATH: ensure libs/Model is findable
             try:
                 base_path = os.path.dirname(os.path.abspath(__file__))
-                libs_path = os.path.join(base_path, 'libs')
-                if os.path.exists(libs_path):
-                    if libs_path not in sys.path:
-                        sys.path.append(libs_path)
-                        update_status(f"Added libs to path: {libs_path}")
-                else:
-                    update_status(f"WARNING: libs dir not found at {libs_path}")
-                    # Debug listing
-                    update_status(f"Root contents: {str(os.listdir(base_path))}")
+                
+                # List candidates for where 'libs' might be
+                possible_roots = [
+                    base_path,
+                    os.path.join(base_path, '_python_bundle'),
+                    os.path.join(base_path, '_python_bundle', 'site-packages'),
+                ]
+                
+                found_libs = False
+                for root_search in possible_roots:
+                    if not os.path.exists(root_search):
+                         continue
+                         
+                    # Check for 'libs' folder
+                    libs_path = os.path.join(root_search, 'libs')
+                    if os.path.exists(libs_path) and os.path.isdir(libs_path):
+                         if libs_path not in sys.path:
+                             sys.path.append(libs_path)
+                             update_status(f"FOUND libs at: {libs_path}")
+                             found_libs = True
+                             break
+                    
+                    # Also check if 'Model' is directly in root_search (flattened)
+                    model_path = os.path.join(root_search, 'Model')
+                    if os.path.exists(model_path) and os.path.isdir(model_path):
+                         if root_search not in sys.path:
+                             sys.path.append(root_search)
+                             update_status(f"FOUND Model at: {model_path} (root added)")
+                             found_libs = True # effectively found
+                             break
+
+                if not found_libs:
+                    update_status(f"WARNING: Model/libs NOT FOUND in roots.")
+                    # Debug _python_bundle specifically
+                    bundle = os.path.join(base_path, '_python_bundle')
+                    if os.path.exists(bundle):
+                        update_status(f"Bundle contents: {str(os.listdir(bundle))}")
+                    else:
+                        update_status("Bundle dir missing?")
+
             except Exception as pe:
                 update_status(f"Path Patch Error: {pe}")
 
