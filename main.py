@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 86" # Kivy Resource Finder
+            BUILD_VERSION = "Build 87" # Exhaustive Search + AllmaData
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -439,47 +439,63 @@ class ALLMAApp(MDApp):
                         update_status("Bundle dir missing?")
 
                 if not found_libs:
-                    update_status("Searching for ZIP with Kivy Resource Finder...")
-                    try:
-                        import zipfile
-                        from kivy.resources import resource_find, resource_add_path
+                    update_status("Starting EXHAUSTIVE SEARCH (Recursive)...")
+                    # Walk EVERYTHING in _python_bundle
+                    search_roots = [
+                        base_path,
+                        os.path.join(base_path, '_python_bundle'),
+                    ]
+                    
+                    found_any = False
+                    for root_start in search_roots:
+                        if not os.path.exists(root_start): continue
                         
-                        # Add likely paths to resource system just in case
-                        resource_add_path(base_path)
-                        resource_add_path(os.path.join(base_path, 'assets'))
-                        resource_add_path(os.path.join(base_path, '_python_bundle', 'assets'))
+                        for root, dirs, files in os.walk(root_start):
+                            # Don't go too deep into site-packages/kivy etc to save time
+                            if 'kivy' in root.lower() or 'numpy' in root.lower():
+                                continue
+                                
+                            # Check for targets
+                            if 'Model' in dirs:
+                                found_path = os.path.join(root, 'Model')
+                                # Parent of Model should be added
+                                sys.path.append(root) 
+                                update_status(f"RESCUE: Found 'Model' in {root}")
+                                found_libs = True
+                                found_any = True
+                                break
+                            
+                            if 'allma_data' in dirs:
+                                found_path = os.path.join(root, 'allma_data')
+                                # It contains Model probably? libs->allma_data->Model?
+                                # If we copied libs->allma_data, then allma_data IS libs.
+                                # So allma_data/Model exists.
+                                sys.path.append(found_path)
+                                update_status(f"RESCUE: Found 'allma_data' in {root}")
+                                found_libs = True
+                                found_any = True
+                                break
+                                
+                            if 'libs' in dirs:
+                                # Start of original structure
+                                found_path = os.path.join(root, 'libs')
+                                sys.path.append(found_path)
+                                update_status(f"RESCUE: Found 'libs' in {root}")
+                                found_libs = True
+                                found_any = True
+                                break
                         
-                        # Ask Kivy to find it
-                        zip_path = resource_find('model_code.zip')
-                        
-                        if zip_path:
-                             update_status(f"Kivy Found ZIP at: {zip_path}")
-                             extract_dir = os.path.join(base_path, 'extracted_model')
-                             
-                             # Always re-extract to be safe/update
-                             if os.path.exists(extract_dir):
-                                 import shutil
-                                 shutil.rmtree(extract_dir)
-                             os.makedirs(extract_dir)
-                             
-                             update_status("Extracting...")
-                             with zipfile.ZipFile(zip_path, 'r') as zf:
-                                 zf.extractall(extract_dir)
-                             update_status("Extraction Done.")
-                             
-                             # Add extracted path
-                             sys.path.append(extract_dir)
-                             if os.path.exists(os.path.join(extract_dir, 'libs')):
-                                 sys.path.append(os.path.join(extract_dir, 'libs')) 
-                                 update_status("Added extracted/libs to path")
-                             found_libs = True
-                        else:
-                             update_status("Kivy could not find model_code.zip")
-                             # Listing assets for debug
-                             update_status(f"Assets candidates: {str(os.listdir(os.path.join(base_path, 'assets'))) if os.path.exists(os.path.join(base_path, 'assets')) else 'No Assets Dir'}")
-
-                    except Exception as ze:
-                        update_status(f"ZIP Logic Error: {ze}")
+                        if found_any: break
+                    
+                    if not found_libs:
+                        update_status("FATAL: Could not find Model/allma_data anywhere.")
+                        # List _python_bundle/modules just in case
+                        mod_path = os.path.join(base_path, '_python_bundle', 'modules')
+                        if os.path.exists(mod_path):
+                            update_status(f"Modules dir: {os.listdir(mod_path)}")
+            
+            except Exception as pe:
+                update_status(f"Search Error: {pe}")
 
             except Exception as pe:
                 update_status(f"Path Patch Error: {pe}")
