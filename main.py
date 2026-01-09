@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 90" # Monolith (Internal Blob)
+            BUILD_VERSION = "Build 91" # Numpy + MockTorch
             
             # Placeholder for Injection
             global INCEPTION_BLOB
@@ -480,6 +480,24 @@ class ALLMAApp(MDApp):
                         
                         found_libs = True
                         
+                        # MOCK TORCH dependencies to prevent crash on import
+                        # Real torch will be installed/checked later
+                        import sys
+                        from unittest.mock import MagicMock
+                        
+                        class MockTorch(MagicMock):
+                            __version__ = '2.0.0'
+                            pass
+                            
+                        if 'torch' not in sys.modules:
+                            update_status("Mocking Torch for Startup...")
+                            sys.modules['torch'] = MockTorch()
+                            sys.modules['torch.nn'] = MagicMock()
+                            
+                        # Also mock transformers if needed?
+                        if 'transformers' not in sys.modules:
+                             sys.modules['transformers'] = MagicMock()
+                             
                     except Exception as ie:
                          update_status(f"Monolith Error: {ie}")
 

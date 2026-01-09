@@ -34,7 +34,7 @@ version = 0.1
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded at runtime by the app
-requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer
+requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy
 
 # (str) Python for android branch to use, if not master, useful to try new features
 p4a.branch = master
