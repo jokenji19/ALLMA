@@ -389,7 +389,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 73" # Restored Logic + Master Enginec Mode (Minimal)
+            BUILD_VERSION = "Build 74" # KivyMD Dependency Restored
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
