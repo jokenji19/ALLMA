@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 87" # Exhaustive Search + AllmaData
+            BUILD_VERSION = "Build 88" # Trojan PNG Asset
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -439,8 +439,50 @@ class ALLMAApp(MDApp):
                         update_status("Bundle dir missing?")
 
                 if not found_libs:
-                    update_status("Starting EXHAUSTIVE SEARCH (Recursive)...")
-                    # Walk EVERYTHING in _python_bundle
+                    update_status("Strategy: TROJAN PNG (Build 88)...")
+                    try:
+                        import zipfile
+                        from kivy.resources import resource_find, resource_add_path
+                        
+                        # Add asset paths
+                        resource_add_path(base_path)
+                        resource_add_path(os.path.join(base_path, 'assets'))
+                        resource_add_path(os.path.join(base_path, '_python_bundle', 'assets'))
+                        
+                        # 1. Try to find the Fake PNG
+                        png_zip = resource_find('allma_brain.png')
+                        
+                        if png_zip:
+                             update_status(f"FOUND Brain Image at: {png_zip}")
+                             extract_dir = os.path.join(base_path, 'extracted_brain')
+                             
+                             if os.path.exists(extract_dir):
+                                 import shutil
+                                 shutil.rmtree(extract_dir)
+                             os.makedirs(extract_dir)
+                             
+                             update_status("Decoding Brain...")
+                             # Treat PNG as ZIP
+                             with zipfile.ZipFile(png_zip, 'r') as zf:
+                                 zf.extractall(extract_dir)
+                             update_status("Brain Decoded.")
+                             
+                             sys.path.append(extract_dir)
+                             # Check typical structure inside zip
+                             if os.path.exists(os.path.join(extract_dir, 'libs')):
+                                  sys.path.append(os.path.join(extract_dir, 'libs'))
+                             if os.path.exists(os.path.join(extract_dir, 'Model')):
+                                  sys.path.append(os.path.join(extract_dir, 'Model'))
+                                  
+                             found_libs = True
+                        else:
+                             update_status("Trojan PNG not found.")
+                    except Exception as ze:
+                        update_status(f"Trojan Error: {ze}")
+                
+                # Fallback: IMPROVED Recursive Search (No False Positives)
+                if not found_libs:
+                    update_status("Starting CLEAN SEARCH...")
                     search_roots = [
                         base_path,
                         os.path.join(base_path, '_python_bundle'),
@@ -451,51 +493,28 @@ class ALLMAApp(MDApp):
                         if not os.path.exists(root_start): continue
                         
                         for root, dirs, files in os.walk(root_start):
-                            # Don't go too deep into site-packages/kivy etc to save time
+                            # SKIP site-packages to avoid 'plyer' false positive
+                            if 'site-packages' in root:
+                                continue
                             if 'kivy' in root.lower() or 'numpy' in root.lower():
                                 continue
                                 
-                            # Check for targets
                             if 'Model' in dirs:
                                 found_path = os.path.join(root, 'Model')
-                                # Parent of Model should be added
                                 sys.path.append(root) 
                                 update_status(f"RESCUE: Found 'Model' in {root}")
                                 found_libs = True
                                 found_any = True
                                 break
-                            
-                            if 'allma_data' in dirs:
-                                found_path = os.path.join(root, 'allma_data')
-                                # It contains Model probably? libs->allma_data->Model?
-                                # If we copied libs->allma_data, then allma_data IS libs.
-                                # So allma_data/Model exists.
-                                sys.path.append(found_path)
-                                update_status(f"RESCUE: Found 'allma_data' in {root}")
-                                found_libs = True
-                                found_any = True
-                                break
-                                
-                            if 'libs' in dirs:
-                                # Start of original structure
-                                found_path = os.path.join(root, 'libs')
-                                sys.path.append(found_path)
-                                update_status(f"RESCUE: Found 'libs' in {root}")
-                                found_libs = True
-                                found_any = True
-                                break
-                        
                         if found_any: break
-                    
+                        
                     if not found_libs:
-                        update_status("FATAL: Could not find Model/allma_data anywhere.")
-                        # List _python_bundle/modules just in case
-                        mod_path = os.path.join(base_path, '_python_bundle', 'modules')
-                        if os.path.exists(mod_path):
-                            update_status(f"Modules dir: {os.listdir(mod_path)}")
-            
-            except Exception as pe:
-                update_status(f"Search Error: {pe}")
+                        # Print MODULES content as final clue
+                        m_path = os.path.join(base_path, '_python_bundle', 'modules')
+                        if os.path.exists(m_path):
+                             update_status(f"Modules: {os.listdir(m_path)}")
+                        else:
+                             update_status("Modules dir not found")
 
             except Exception as pe:
                 update_status(f"Path Patch Error: {pe}")
