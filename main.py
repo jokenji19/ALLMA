@@ -126,7 +126,7 @@ KV_DOWNLOAD = '''
             height: dp(150)
             
             MDLabel:
-                text: "Gemma 2B (Cervello Linguistico)"
+                text: "Gemma 2 (2B) - Latest"
                 theme_text_color: "Primary"
                 
             MDProgressBar:
@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 92" # Fix Sys Scope Error
+            BUILD_VERSION = "Build 93" # Gemma 3n Update
             
             # Placeholder for Injection
             global INCEPTION_BLOB

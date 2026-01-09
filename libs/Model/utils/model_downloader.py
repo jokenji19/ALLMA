@@ -13,13 +13,14 @@ class ModelDownloader:
         self.logger = logging.getLogger(__name__)
         self.models_dir = self._get_models_dir()
         
-        # URL dei modelli (Gemma 2B IT Quantizzato e Moondream2)
+        # URL dei modelli (Gemma 3n E2B IT Quantizzato e Moondream2)
         # Nota: Usiamo link diretti a HuggingFace GGUF
         self.models = {
             "gemma": {
-                "url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
-                "filename": "gemma-2b-it-q4_k_m.gguf",
-                "size_mb": 1800
+                # Update to Gemma 3n (Google's latest efficient model)
+                "url": "https://huggingface.co/bartowski/google_gemma-3n-E2B-it-GGUF/resolve/main/google_gemma-3n-E2B-it-Q4_K_M.gguf",
+                "filename": "gemma-3n-e2b-it-q4_k_m.gguf",
+                "size_mb": 1600 # Approx size for 2B Q4
             },
             "moondream": {
                 "url": "https://huggingface.co/vikhyatk/moondream2/resolve/main/moondream2-text-model.gguf", 
