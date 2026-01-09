@@ -19,15 +19,16 @@ jobs:
           chmod -R 777 .
 
           # ZIP STRATEGY: Create a zip of the Model code to bypass packaging issues
-          # We zip the contents of libs/Model into model_code.zip in the root
+          # We zip the contents of libs/Model into assets/model_code.zip
+          mkdir -p assets
           if [ -d "libs/Model" ]; then
-            echo "Zipping libs/Model..."
+            echo "Zipping libs/Model into assets..."
             # Install zip if missing (unlikely on ubuntu-latest but safe)
             sudo apt-get update && sudo apt-get install -y zip
-            zip -r model_code.zip libs/Model
+            zip -r assets/model_code.zip libs/Model
           elif [ -d "Model" ]; then
-             echo "Zipping Model..."
-             zip -r model_code.zip Model
+             echo "Zipping Model into assets..."
+             zip -r assets/model_code.zip Model
           else
              echo "WARNING: Model directory not found for zipping!"
              ls -R
