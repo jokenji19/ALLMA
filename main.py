@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 80" # Embedded UI + Active Core
+            BUILD_VERSION = "Build 81" # Path Correction (Import Fix)
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -377,6 +377,21 @@ class ALLMAApp(MDApp):
             update_status("Loading Core...")
             global ALLMACore, ModelDownloader, ALLMACore_imported
             
+            # FIX PATH: ensure libs/Model is findable
+            try:
+                base_path = os.path.dirname(os.path.abspath(__file__))
+                libs_path = os.path.join(base_path, 'libs')
+                if os.path.exists(libs_path):
+                    if libs_path not in sys.path:
+                        sys.path.append(libs_path)
+                        update_status(f"Added libs to path: {libs_path}")
+                else:
+                    update_status(f"WARNING: libs dir not found at {libs_path}")
+                    # Debug listing
+                    update_status(f"Root contents: {str(os.listdir(base_path))}")
+            except Exception as pe:
+                update_status(f"Path Patch Error: {pe}")
+
             try:
                 # Lazy Import inside try-block
                 from Model.core.allma_core import ALLMACore as AC
