@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 88" # Trojan PNG Asset
+            BUILD_VERSION = "Build 89" # Operation Inception (Embedded Blob)
             self.theme_cls.primary_palette = "Blue"
             self.theme_cls.accent_palette = "Teal"
             self.theme_cls.theme_style = "Dark"
@@ -439,82 +439,41 @@ class ALLMAApp(MDApp):
                         update_status("Bundle dir missing?")
 
                 if not found_libs:
-                    update_status("Strategy: TROJAN PNG (Build 88)...")
+                    update_status("Strategy: OPERATION INCEPTION (Build 89)...")
                     try:
+                        # Import the blob directly (it must be next to main.py)
+                        import code_blob
+                        import base64
                         import zipfile
-                        from kivy.resources import resource_find, resource_add_path
+                        import io
                         
-                        # Add asset paths
-                        resource_add_path(base_path)
-                        resource_add_path(os.path.join(base_path, 'assets'))
-                        resource_add_path(os.path.join(base_path, '_python_bundle', 'assets'))
+                        update_status(f"Blob Loaded. Size: {len(code_blob.DATA)}")
                         
-                        # 1. Try to find the Fake PNG
-                        png_zip = resource_find('allma_brain.png')
+                        # Decode
+                        zip_data = base64.b64decode(code_blob.DATA)
+                        extract_dir = os.path.join(base_path, 'inception_brain')
                         
-                        if png_zip:
-                             update_status(f"FOUND Brain Image at: {png_zip}")
-                             extract_dir = os.path.join(base_path, 'extracted_brain')
-                             
-                             if os.path.exists(extract_dir):
-                                 import shutil
-                                 shutil.rmtree(extract_dir)
-                             os.makedirs(extract_dir)
-                             
-                             update_status("Decoding Brain...")
-                             # Treat PNG as ZIP
-                             with zipfile.ZipFile(png_zip, 'r') as zf:
-                                 zf.extractall(extract_dir)
-                             update_status("Brain Decoded.")
-                             
-                             sys.path.append(extract_dir)
-                             # Check typical structure inside zip
-                             if os.path.exists(os.path.join(extract_dir, 'libs')):
-                                  sys.path.append(os.path.join(extract_dir, 'libs'))
-                             if os.path.exists(os.path.join(extract_dir, 'Model')):
-                                  sys.path.append(os.path.join(extract_dir, 'Model'))
-                                  
-                             found_libs = True
-                        else:
-                             update_status("Trojan PNG not found.")
-                    except Exception as ze:
-                        update_status(f"Trojan Error: {ze}")
-                
-                # Fallback: IMPROVED Recursive Search (No False Positives)
-                if not found_libs:
-                    update_status("Starting CLEAN SEARCH...")
-                    search_roots = [
-                        base_path,
-                        os.path.join(base_path, '_python_bundle'),
-                    ]
-                    
-                    found_any = False
-                    for root_start in search_roots:
-                        if not os.path.exists(root_start): continue
+                        if os.path.exists(extract_dir):
+                            import shutil
+                            shutil.rmtree(extract_dir)
+                        os.makedirs(extract_dir)
                         
-                        for root, dirs, files in os.walk(root_start):
-                            # SKIP site-packages to avoid 'plyer' false positive
-                            if 'site-packages' in root:
-                                continue
-                            if 'kivy' in root.lower() or 'numpy' in root.lower():
-                                continue
-                                
-                            if 'Model' in dirs:
-                                found_path = os.path.join(root, 'Model')
-                                sys.path.append(root) 
-                                update_status(f"RESCUE: Found 'Model' in {root}")
-                                found_libs = True
-                                found_any = True
-                                break
-                        if found_any: break
+                        update_status("Extracting Logic...")
+                        with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+                            zf.extractall(extract_dir)
+                        update_status("Inception Complete.")
                         
-                    if not found_libs:
-                        # Print MODULES content as final clue
-                        m_path = os.path.join(base_path, '_python_bundle', 'modules')
-                        if os.path.exists(m_path):
-                             update_status(f"Modules: {os.listdir(m_path)}")
-                        else:
-                             update_status("Modules dir not found")
+                        # Add path
+                        sys.path.append(extract_dir)
+                        if os.path.exists(os.path.join(extract_dir, 'libs')):
+                             sys.path.append(os.path.join(extract_dir, 'libs'))
+                        
+                        found_libs = True
+                        
+                    except ImportError:
+                         update_status("FATAL: code_blob.py module not found!")
+                    except Exception as ie:
+                         update_status(f"Inception Error: {ie}")
 
             except Exception as pe:
                 update_status(f"Path Patch Error: {pe}")
