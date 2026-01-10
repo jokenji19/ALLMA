@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 93" # Gemma 3n Update
+            BUILD_VERSION = "Build 94" # Inference Engines (LlamaCPP/ONNX)
             
             # Placeholder for Injection
             global INCEPTION_BLOB
