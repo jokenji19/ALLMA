@@ -22,10 +22,10 @@ source.include_patterns = assets/*,images/*,libs/*,ui/*,Model/*,allma_data/*
 source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = tests, bin, venv
+source.exclude_dirs = tests, bin, venv, libs/Model, Model
 
 # (list) List of exclusions using pattern matching
-# source.exclude_patterns = license,images/*/*.jpg
+source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.txt,*.md
 
 # (str) Application versioning (method 1)
 version = 0.1
