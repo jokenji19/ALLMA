@@ -271,43 +271,43 @@ class ALLMACore:
                      # Fallback procedurale sotto
 
 
-                    # --- SIMBIOSI EVOLUTIVA: CONFIDENCE CHECK ---
-                    # Verifica se ALLMA conosce già la risposta con alta confidenza
-                    # Usa il topic estratto per cercare nella knowledge base
-                    logging.info(f"🔍 Topic estratto: '{topic}'")
-                    internal_knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
-                    logging.info(f"🔍 Knowledge trovata per '{topic}': {len(internal_knowledge)} items")
-                    
-                    # Se non trova nulla con il topic estratto, cerca in TUTTI i topic disponibili
-                    # (fallback per topic extraction imprecisa)
-                    if not internal_knowledge:
-                        logging.info("🔍 Fallback: cerco in tutti i topic disponibili...")
-                        for available_topic in self.incremental_learner.knowledge_base.keys():
-                            # Controlla se il topic è menzionato nel messaggio
-                            if available_topic.lower() in message.lower():
-                                logging.info(f"🔍 Trovato topic alternativo: '{available_topic}'")
-                                internal_knowledge = self.incremental_learner.get_knowledge_by_topic(available_topic)
-                                if internal_knowledge:
-                                    break
-                    
-                    # 3. Recupero Contesto (Memoria)
-                    # Recupera ricordi rilevanti PRIMA per usarli nel ragionamento
-                    relevant_memories = []
-                    try:
-                        relevant_memories = self.memory_system.get_relevant_context(user_id, topic, limit=3)
-                    except Exception as e:
-                        logging.warning(f"Errore recupero memoria iniziale: {e}")
+            # --- SIMBIOSI EVOLUTIVA: CONFIDENCE CHECK ---
+            # Verifica se ALLMA conosce già la risposta con alta confidenza
+            # Usa il topic estratto per cercare nella knowledge base
+            logging.info(f"🔍 Topic estratto: '{topic}'")
+            internal_knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
+            logging.info(f"🔍 Knowledge trovata per '{topic}': {len(internal_knowledge)} items")
+            
+            # Se non trova nulla con il topic estratto, cerca in TUTTI i topic disponibili
+            # (fallback per topic extraction imprecisa)
+            if not internal_knowledge:
+                logging.info("🔍 Fallback: cerco in tutti i topic disponibili...")
+                for available_topic in self.incremental_learner.knowledge_base.keys():
+                    # Controlla se il topic è menzionato nel messaggio
+                    if available_topic.lower() in message.lower():
+                        logging.info(f"🔍 Trovato topic alternativo: '{available_topic}'")
+                        internal_knowledge = self.incremental_learner.get_knowledge_by_topic(available_topic)
+                        if internal_knowledge:
+                            break
+            
+            # 3. Recupero Contesto (Memoria)
+            # Recupera ricordi rilevanti PRIMA per usarli nel ragionamento
+            relevant_memories = []
+            try:
+                relevant_memories = self.memory_system.get_relevant_context(user_id, topic, limit=3)
+            except Exception as e:
+                logging.warning(f"Errore recupero memoria iniziale: {e}")
 
-                    # 🧠 REASONING ENGINE: Flusso di Coscienza
-                    # ALLMA "pensa" prima di agire
-                    thought_process = self.reasoning_engine.generate_thought_process(
-                        user_input=message,
-                        context={'relevant_memories': relevant_memories},
-                        emotional_state=emotional_state
-                    )
-                    logging.info(f"🧠 PENSIERO: {thought_process.raw_thought}")
+            # 🧠 REASONING ENGINE: Flusso di Coscienza
+            # ALLMA "pensa" prima di agire
+            thought_process = self.reasoning_engine.generate_thought_process(
+                user_input=message,
+                context={'relevant_memories': relevant_memories},
+                emotional_state=emotional_state
+            )
+            logging.info(f"🧠 PENSIERO: {thought_process.raw_thought}")
 
-                    # 4. Confidence Check (Evolutionary Symbiosis)
+            # 4. Confidence Check (Evolutionary Symbiosis)
                     # Verifica se abbiamo già conoscenza consolidata su questo topic
                     knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
                     
