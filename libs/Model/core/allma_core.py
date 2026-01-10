@@ -218,13 +218,19 @@ class ALLMACore:
             )
             
             # Genera la risposta
+            # Genera la risposta
             if self.mobile_mode:
                 try:
-                    from llama_cpp import Llama
-                    
+                    # TENTATIVO DI CARICAMENTO MOTORE
+                    try:
+                        from llama_cpp import Llama
+                        llama_available = True
+                    except ImportError:
+                        llama_available = False
+                        
                     # Cerca il modello nella cartella models_dir se fornita
                     # Mappiamo "gemma" come default
-                    model_filename = "gemma-2b-it-q4_k_m.gguf"
+                    model_filename = "gemma-3n-e2b-it-q4_k_m.gguf" # Aggiornato puntamento file
                     
                     if self.models_dir:
                         model_path = os.path.join(self.models_dir, model_filename)
@@ -240,7 +246,7 @@ class ALLMACore:
 
                     
                     if not hasattr(self, '_llm') or self._llm is None:
-                        if os.path.exists(model_path):
+                        if llama_available and os.path.exists(model_path):
                             logging.info(f"Caricamento modello locale da {model_path}...")
                             self._llm = Llama(
                                 model_path=model_path,
@@ -248,6 +254,21 @@ class ALLMACore:
                                 n_threads=4,  # Ottimizzato per mobile
                                 verbose=False
                             )
+                        elif not llama_available:
+                            # SAFE MODE: Motore non disponibile
+                            logging.warning("⚠️ Llama-cpp engine NOT installed. Running in SAFE MODE (Download Verify Only).")
+                            self._llm = None
+                        else:
+                            logging.warning(f"Modello non trovato in {model_path}")
+                            
+                    # ESECUZIONE INFERENZA
+                    if self._llm:
+                        # ... (codice inferenza esistente) ...
+                        pass # Placeholder per non rompere indentazione se copiato male
+                            
+                except Exception as e:
+                     logging.error(f"LLM Error: {e}")
+                     # Fallback procedurale sotto
                         else:
                             logging.warning(f"Modello locale non trovato in {model_path}. Uso risposte predefinite.")
                             self._llm = None

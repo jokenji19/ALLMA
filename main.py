@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 94" # Inference Engines (LlamaCPP/ONNX)
+            BUILD_VERSION = "Build 95" # Safe Mode (Download Only)
             
             # Placeholder for Injection
             global INCEPTION_BLOB
