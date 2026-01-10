@@ -269,9 +269,7 @@ class ALLMACore:
                 except Exception as e:
                      logging.error(f"LLM Error: {e}")
                      # Fallback procedurale sotto
-                        else:
-                            logging.warning(f"Modello locale non trovato in {model_path}. Uso risposte predefinite.")
-                            self._llm = None
+
 
                     # --- SIMBIOSI EVOLUTIVA: CONFIDENCE CHECK ---
                     # Verifica se ALLMA conosce già la risposta con alta confidenza

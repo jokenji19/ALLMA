@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 95" # Safe Mode (Download Only)
+            BUILD_VERSION = "Build 96" # Fix Core Syntax Error
             
             # Placeholder for Injection
             global INCEPTION_BLOB
