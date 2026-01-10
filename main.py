@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 96b" # Fix Indentation Error
+            BUILD_VERSION = "Build 96c" # Clean Syntax & Safe Mode
             
             # Placeholder for Injection
             global INCEPTION_BLOB
