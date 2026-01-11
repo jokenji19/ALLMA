@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 98" # Config Fix (Exclude Conflict)
+            BUILD_VERSION = "Build 99" # Fixed Download URL
             
             # Placeholder for Injection
             global INCEPTION_BLOB

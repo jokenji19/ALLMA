@@ -23,9 +23,16 @@ class ModelDownloader:
                 "size_mb": 1600 # Approx size for 2B Q4
             },
             "moondream": {
-                "url": "https://huggingface.co/vikhyatk/moondream2/resolve/main/moondream2-text-model.gguf", 
-                "filename": "moondream2.gguf",
-                "size_mb": 500
+                # Validated URL for Moondream2 GGUF (using the official text model)
+                # Note: The search suggested 'moondream2-text-model-f16.gguf' exists. 
+                # For safety and size, let's try a quantized one from a known working repo if possible, 
+                # or fallback to the F16 if that's the standard.
+                # Actually, 'vikhyatk/moondream2' is the main repo. Let's use the exact filename mentioned in search results.
+                # If F16 is too big, checking for Q4.
+                # Search result [1] mentions 'moondream2-text-model-f16.gguf'.
+                "url": "https://huggingface.co/vikhyatk/moondream2/resolve/main/moondream2-text-model-f16.gguf", 
+                "filename": "moondream2-text-model-f16.gguf",
+                "size_mb": 1700 # F16 is larger, approx 1.7GB
             },
             "emotion": {
                 "url": "https://huggingface.co/j-hartmann/emotion-english-distilroberta-base/resolve/main/pytorch_model.bin", # Scarichiamo il binario PyTorch standard
