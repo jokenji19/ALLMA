@@ -16,7 +16,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
-source.include_patterns = assets/*,images/*,libs/*,ui/*,Model/*,allma_data/*
+# Build 97 Fix: Removed libs/* and Model/* to prevent conflict with exclude_dirs
+source.include_patterns = assets/*,images/*,ui/*,allma_data/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec

@@ -319,7 +319,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 97" # Pure Monolith (Blob Only)
+            BUILD_VERSION = "Build 98" # Config Fix (Exclude Conflict)
             
             # Placeholder for Injection
             global INCEPTION_BLOB
