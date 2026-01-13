@@ -4,48 +4,9 @@ import sqlite3
 import json
 from collections import defaultdict
 import numpy as np
-# from sklearn.feature_extraction.text import TfidfVectorizer
-# from sklearn.metrics.pairwise import cosine_similarity as cs
-import math
-from collections import Counter
 import numpy as np
+from Model.utils.text_processing import SimpleTfidf, cosine_similarity
 
-class SimpleTfidf:
-    def __init__(self):
-        self.vocab = {}
-        self.doc_count = 0
-        
-    def fit_transform(self, documents):
-        self.doc_count = len(documents)
-        word_counts = []
-        all_words = set()
-        
-        for doc in documents:
-            words = doc.lower().split()
-            counts = Counter(words)
-            word_counts.append(counts)
-            all_words.update(words)
-            
-        self.vocab = sorted(list(all_words))
-        self.idf = {}
-        
-        for word in self.vocab:
-            doc_freq = sum(1 for counts in word_counts if word in counts)
-            self.idf[word] = math.log(self.doc_count / (1 + doc_freq))
-            
-        vectors = []
-        for counts in word_counts:
-            vector = [counts[word] * self.idf[word] for word in self.vocab]
-            vectors.append(vector)
-            
-        return np.array(vectors)
-
-def cosine_similarity(v1, v2):
-    norm1 = np.linalg.norm(v1)
-    norm2 = np.linalg.norm(v2)
-    if norm1 == 0 or norm2 == 0:
-        return np.array([[0.0]])
-    return np.array([[np.dot(v1, v2.T) / (norm1 * norm2)]])
 import threading
 import logging
 
@@ -393,7 +354,7 @@ class TemporalMemorySystem:
                 
                 try:
                     tfidf_matrix = self.vectorizer.fit_transform(contents)
-                    similarities = cs(tfidf_matrix[-1:], tfidf_matrix[:-1])[0]
+                    similarities = cosine_similarity(tfidf_matrix[-1:], tfidf_matrix[:-1])[0]
                 except:
                     # Fallback se la vectorization fallisce
                     similarities = [0] * len(recent_interactions)

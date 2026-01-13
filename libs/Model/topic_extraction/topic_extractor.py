@@ -2,19 +2,17 @@
 
 import logging
 from typing import Optional
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+from Model.utils.text_processing import SimpleTfidf, cosine_similarity
 
 class TopicExtractor:
     """Classe per l'estrazione di topic da testi"""
 
     def __init__(self):
         """Inizializza il TopicExtractor"""
-        self.vectorizer = TfidfVectorizer(
+        self.vectorizer = SimpleTfidf(
             max_features=1000,
-            stop_words='english',
-            ngram_range=(1, 2)
+            stop_words='english'
         )
         self.topics = []  # Lista di topic conosciuti
         self.topic_vectors = None  # Vettori dei topic

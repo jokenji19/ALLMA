@@ -5,48 +5,7 @@ import logging
 from typing import List, Dict
 
 import numpy as np
-# from sklearn.feature_extraction.text import TfidfVectorizer
-# from sklearn.metrics.pairwise import cosine_similarity as cs
-import math
-from collections import Counter
-import numpy as np
-
-class SimpleTfidf:
-    def __init__(self):
-        self.vocab = {}
-        self.doc_count = 0
-        
-    def fit_transform(self, documents):
-        self.doc_count = len(documents)
-        word_counts = []
-        all_words = set()
-        
-        for doc in documents:
-            words = doc.lower().split()
-            counts = Counter(words)
-            word_counts.append(counts)
-            all_words.update(words)
-            
-        self.vocab = sorted(list(all_words))
-        self.idf = {}
-        
-        for word in self.vocab:
-            doc_freq = sum(1 for counts in word_counts if word in counts)
-            self.idf[word] = math.log(self.doc_count / (1 + doc_freq))
-            
-        vectors = []
-        for counts in word_counts:
-            vector = [counts[word] * self.idf[word] for word in self.vocab]
-            vectors.append(vector)
-            
-        return np.array(vectors)
-
-def cosine_similarity(v1, v2):
-    norm1 = np.linalg.norm(v1)
-    norm2 = np.linalg.norm(v2)
-    if norm1 == 0 or norm2 == 0:
-        return np.array([[0.0]])
-    return np.array([[np.dot(v1, v2.T) / (norm1 * norm2)]])
+from Model.utils.text_processing import SimpleTfidf, cosine_similarity
 
 class TopicExtractor:
     """
@@ -60,7 +19,7 @@ class TopicExtractor:
             model_path: Percorso dei modelli
         """
         self.model_path = model_path
-        self.vectorizer = TfidfVectorizer()
+        self.vectorizer = SimpleTfidf()
         
     def get_embeddings(self, text: str) -> np.ndarray:
         """
@@ -86,7 +45,7 @@ class TopicExtractor:
             texts = base_vocab + [text]
             
             # Calcola gli embeddings
-            self.vectorizer = TfidfVectorizer(max_features=20)  # Limita a 20 features
+            self.vectorizer = SimpleTfidf(max_features=20)  # Limita a 20 features
             embeddings = self.vectorizer.fit_transform(texts)
             
             # Restituisci l'embedding dell'ultimo testo (quello corrente)
@@ -125,7 +84,7 @@ class TopicExtractor:
             # Calcola la similarità con ogni topic
             similarities = {}
             for topic, topic_emb in default_topics.items():
-                similarity = cs(
+                similarity = cosine_similarity(
                     embeddings.reshape(1, -1),
                     topic_emb.reshape(1, -1)
                 )[0][0]
@@ -155,7 +114,7 @@ class TopicExtractor:
             emb2 = self.get_embeddings(text2)
             
             # Calcola la similarità del coseno
-            similarity = cs(
+            similarity = cosine_similarity(
                 emb1.reshape(1, -1),
                 emb2.reshape(1, -1)
             )[0][0]
