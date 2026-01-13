@@ -48,8 +48,9 @@ class UserPreferences:
 class UserPreferenceAnalyzer:
     """Sistema di analisi preferenze utente."""
     
-    def __init__(self):
+    def __init__(self, db_path: str = "allma_preferences.db"):
         """Inizializza l'analizzatore di preferenze."""
+        self.db_path = db_path
         self.user_interactions: Dict[str, List[Tuple[str, str, datetime]]] = {}
         self.topic_preferences: Dict[str, Dict[str, float]] = {}
         self.learning_styles: Dict[str, LearningPreference] = {}
