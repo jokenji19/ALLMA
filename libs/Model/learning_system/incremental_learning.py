@@ -106,10 +106,7 @@ class IncrementalLearner:
             "recent_learning": [],
             "improvement_areas": set()
         })
-        self.vectorizer = TfidfVectorizer(
-            max_features=1000,
-            stop_words='english'
-        )
+        self.vectorizer = SimpleTfidf()
         self.topic_vectors = {}
         self.success_counters: Dict[str, int] = {}  # topic -> count of successful independent responses
         self._lock = threading.Lock()
