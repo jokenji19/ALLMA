@@ -80,23 +80,30 @@ class ModelDownloader:
         Args:
             model_key: Chiave del modello ('gemma' o 'moondream')
             progress_callback: Funzione(current_bytes, total_bytes) chiamata durante il download
+            
+        Returns:
+            (bool, str): (Successo, Messaggio Errore)
         """
         if model_key not in self.models:
-            self.logger.error(f"Modello sconosciuto: {model_key}")
-            return False
+            msg = f"Modello sconosciuto: {model_key}"
+            self.logger.error(msg)
+            return False, msg
 
         info = self.models[model_key]
         url = info['url']
         filename = info['filename']
         
         if not os.path.exists(self.models_dir):
-            os.makedirs(self.models_dir)
+            try:
+                os.makedirs(self.models_dir)
+            except OSError as e:
+                return False, f"FS Error: {e}"
             
         path = os.path.join(self.models_dir, filename)
         self.logger.info(f"Inizio download {model_key} in {path}")
 
         try:
-            response = requests.get(url, stream=True)
+            response = requests.get(url, stream=True, timeout=30) # Add timeout
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))
@@ -111,22 +118,36 @@ class ModelDownloader:
                             progress_callback(downloaded_size, total_size)
                             
             self.logger.info(f"Download completato: {model_key}")
-            return True
+            return True, None
             
-        except Exception as e:
+        except requests.exceptions.HTTPError as e:
+            error_msg = f"HTTP Error {e.response.status_code}"
             self.logger.error(f"Errore download {model_key}: {e}")
-            if os.path.exists(path):
-                os.remove(path) # Rimuovi file parziale
-            return False
+            if os.path.exists(path): os.remove(path)
+            return False, error_msg
+        except requests.exceptions.ConnectionError:
+            error_msg = "No Internet / Connection Failed"
+            if os.path.exists(path): os.remove(path)
+            return False, error_msg
+        except Exception as e:
+            error_msg = f"Error: {str(e)[:50]}" # Truncate long errors
+            self.logger.error(f"Errore download {model_key}: {e}")
+            if os.path.exists(path): os.remove(path)
+            return False, error_msg
 
     def start_background_download(self, model_keys, progress_callback, completion_callback):
-        """Avvia il download in un thread separato."""
+        """Avvia il download in un thread separato. completion_callback(success, error_msg)"""
         def _download_thread():
-            success = True
+            success_all = True
+            last_error = None
+            
             for key in model_keys:
-                if not self.download_model(key, lambda d, t: progress_callback(key, d, t)):
-                    success = False
+                success, error = self.download_model(key, lambda d, t: progress_callback(key, d, t))
+                if not success:
+                    success_all = False
+                    last_error = error
                     break
-            completion_callback(success)
+            
+            completion_callback(success_all, last_error)
 
         Thread(target=_download_thread).start()
