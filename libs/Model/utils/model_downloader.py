@@ -28,16 +28,7 @@ class ModelDownloader:
                 "size_mb": 910,
                 "description": "Moondream (Visione)"
             },
-            "emotion": {
-                "url": "https://huggingface.co/j-hartmann/emotion-english-distilroberta-base/resolve/main/pytorch_model.bin", # Scarichiamo il binario PyTorch standard
-                # Nota: Per usarlo con ONNX o GGUF servirebbe conversione, ma per ora proviamo a scaricare la cartella o il file principale.
-                # Meglio: Usiamo una versione ONNX quantizzata se esiste, o scarichiamo i file config.
-                # Per semplicità ora, scarichiamo un pacchetto zip che poi estraiamo, o simuliamo il download se usiamo API online.
-                # MA dato che siamo offline-first, scarichiamo il modello ONNX che è più portabile su Android.
-                "url": "https://huggingface.co/Xenova/emotion-english-distilroberta-base/resolve/main/onnx/model_quantized.onnx",
-                "filename": "emotion_model.onnx",
-                "size_mb": 80
-            }
+
         }
 
     def _get_models_dir(self):
