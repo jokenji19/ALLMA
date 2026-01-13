@@ -180,6 +180,10 @@ class ALLMACore:
             raise ValueError("User ID, conversation ID e messaggio sono richiesti")
             
         try:
+            # 0. Ensure LLM is loaded (Mobile Mode)
+            self._ensure_mobile_llm()
+            current_llm = getattr(self, '_llm', None)
+
             # Estrai il topic usando TopicExtractor (TF-IDF based)
             history = self.conversational_memory.get_conversation_history(conversation_id)
             topic = self.topic_extractor.extract_topic(message)
@@ -187,8 +191,8 @@ class ALLMACore:
             # Ottieni il contesto del progetto
             project_context = self._get_project_context(user_id, topic)
             
-            # Analizza emozioni
-            emotional_state = self.emotional_core.detect_emotion(message)
+            # Analizza emozioni (PASSANDO IL CLIENT LLM)
+            emotional_state = self.emotional_core.detect_emotion(message, llm_client=current_llm)
             
             # Salva l'interazione emotiva
             self.memory_system.store_interaction(
@@ -218,53 +222,11 @@ class ALLMACore:
             )
             
             # Genera la risposta
-            # Genera la risposta
             if self.mobile_mode:
                 try:
-                    # TENTATIVO DI CARICAMENTO MOTORE
-                    try:
-                        from llama_cpp import Llama
-                        llama_available = True
-                    except ImportError:
-                        llama_available = False
-                        
-                    # Cerca il modello nella cartella models_dir se fornita
-                    # Mappiamo "gemma" come default
-                    model_filename = "gemma-3n-e2b-it-q4_k_m.gguf" # Aggiornato puntamento file
-                    
-                    if self.models_dir:
-                        model_path = os.path.join(self.models_dir, model_filename)
-                    else:
-                        model_path = os.path.join("assets", "model.bin") # Fallback legacy
-                        
-                    if not os.path.exists(model_path):
-                         # Fallback locale per test
-                         if os.path.exists("model.bin"):
-                             model_path = "model.bin"
-                         elif os.path.exists(model_filename):
-                             model_path = model_filename
-
-                    
-                    if not hasattr(self, '_llm') or self._llm is None:
-                        if llama_available and os.path.exists(model_path):
-                            logging.info(f"Caricamento modello locale da {model_path}...")
-                            self._llm = Llama(
-                                model_path=model_path,
-                                n_ctx=2048,
-                                n_threads=4,  # Ottimizzato per mobile
-                                verbose=False
-                            )
-                        elif not llama_available:
-                            # SAFE MODE: Motore non disponibile
-                            logging.warning("⚠️ Llama-cpp engine NOT installed. Running in SAFE MODE (Download Verify Only).")
-                            self._llm = None
-                        else:
-                            logging.warning(f"Modello non trovato in {model_path}")
-                            
-                    # ESECUZIONE INFERENZA
-                    if self._llm:
-                        # ... (codice inferenza esistente) ...
-                        pass # Placeholder per non rompere indentazione se copiato male
+                    # ESECUZIONE INFERENZA (LLM già caricato sopra)
+                    if current_llm:
+                        pass # Placeholder per mantenere il blocco if esistente
                             
                 except Exception as e:
                      logging.error(f"LLM Error: {e}")

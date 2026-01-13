@@ -48,18 +48,12 @@ class EmotionalCore:
     
     def __init__(self):
         """Inizializza il sistema emotivo."""
-        if TRANSFORMERS_AVAILABLE:
-            try:
-                self.emotion_classifier = pipeline(
-                    "text-classification",
-                    model="j-hartmann/emotion-english-distilroberta-base",
-                    return_all_scores=True
-                )
-            except Exception as e:
-                print(f"Warning: Could not load emotion classifier: {e}")
-                self.emotion_classifier = None
-        else:
-            self.emotion_classifier = None
+    def __init__(self):
+        """Inizializza il sistema emotivo."""
+        # TRANSFORMERS REMOVED: Using LLM (Gemma) for emotion detection
+        self.emotion_classifier = None
+
+        # self.intensity_scaler = None # Removed unused scaler
 
         # self.intensity_scaler = None # Removed unused scaler
         self.emotion_history: Dict[str, List[EmotionalState]] = {}
@@ -145,113 +139,114 @@ class EmotionalCore:
         # Unisce le parole tradotte
         return ' '.join(translated_words)
         
-    def detect_emotion(
-        self,
-        text: str,
-        context: Optional[Dict] = None
-    ) -> EmotionalState:
+    def detect_emotion_via_llm(self, text: str, llm_generate_function, context: Optional[Dict] = None) -> EmotionalState:
         """
-        Rileva le emozioni dal testo e contesto.
+        Rileva le emozioni usando il modello LLM principale (Gemma).
         
         Args:
             text: Testo da analizzare
+            llm_generate_function: Funzione .generate() o simile del LLM
             context: Contesto opzionale
+        """
+        if context is None: context = {}
+        
+        try:
+            # PROMPT ENGINEERING PER ANALISI EMOTIVA (JSON OUTPUT)
+            prompt = f"""<start_of_turn>system
+Sei un analista emotivo esperto. Il tuo compito è analizzare il testo dell'utente e identificare lo stato emotivo.
+Devi rispondere ESCLUSIVAMENTE con un oggetto JSON valido. Niente altro testo.
+
+Schema JSON richiesto:
+{{
+    "primary_emotion": "uno tra [joy, sadness, anger, fear, surprise, neutral]",
+    "confidence": 0.0-1.0,
+    "intensity": 0.0-1.0,
+    "secondary_emotions": {{ "emozione": valore }}
+}}
+
+Analizza il seguente testo: "{text}"<end_of_turn>
+<start_of_turn>model
+"""
+            # Chiamata all'LLM (output breve, max 100 token)
+            # Nota: flessibile sull'interfaccia della funzione
+            try:
+                # Se è un oggetto Llama di llama-cpp
+                output = llm_generate_function(
+                    prompt,
+                    max_tokens=128,
+                    stop=["<end_of_turn>"],
+                    temperature=0.1, # Temperatura bassa per determinismo JSON
+                    echo=False
+                )
+                if isinstance(output, dict) and 'choices' in output:
+                    json_str = output['choices'][0]['text'].strip()
+                else:
+                    json_str = str(output).strip()
+            except Exception as e:
+                print(f"Errore chiamata LLM diretta: {e}")
+                raise e
+
+            # Parsing JSON (gestione errori e pulizia markdown)
+            import json
+            import re
             
-        Returns:
-            Stato emotivo rilevato
+            # Pulisci eventuali ```json ... ```
+            clean_json = re.sub(r'```json\s*', '', json_str)
+            clean_json = re.sub(r'```', '', clean_json).strip()
+            
+            data = json.loads(clean_json)
+            
+            return EmotionalState(
+                primary_emotion=data.get("primary_emotion", "neutral").lower(),
+                confidence=float(data.get("confidence", 0.5)),
+                secondary_emotions=data.get("secondary_emotions", {}),
+                intensity=float(data.get("intensity", 0.1)),
+                context=context
+            )
+
+        except Exception as e:
+            print(f"Errore detect_emotion_via_llm: {e} - Input era: {text}")
+            # Fallback sicuro
+            return EmotionalState(
+                primary_emotion="neutral",
+                confidence=0.5,
+                secondary_emotions={},
+                intensity=0.1,
+                context=context
+            )
+
+    def detect_emotion(
+        self,
+        text: str,
+        context: Optional[Dict] = None,
+        llm_client = None # New optional Argument
+    ) -> EmotionalState:
+        """
+        Rileva le emozioni dal testo. Usa LLM se fornito, altrimenti fallback.
         """
         if context is None:
             context = {}
             
-        try:
-            # Traduci il testo in inglese
-            translated_text = self._translate_to_english(text)
-            print(f"DEBUG - Translated text: {translated_text}")
-            
-            # Analizza emozioni dal testo tradotto
-            if self.emotion_classifier:
-                result = self.emotion_classifier(translated_text)
-                print(f"DEBUG - Raw result: {result}")
-            else:
-                # Fallback se il classificatore non è disponibile
-                print("DEBUG - Emotion classifier not available, using fallback")
-                return EmotionalState(
-                    primary_emotion="neutral",
-                    confidence=0.5,
-                    secondary_emotions={},
-                    intensity=0.1,
-                    context=context
-                )
-            
-            if not result or not isinstance(result, list):
-                raise ValueError("Invalid classifier output")
+        # 1. TENTATIVO CON LLM (PRIORITARIO)
+        if llm_client:
+            # Se llm_client è l'istanza Llama, passiamo il suo metodo __call__ o create_completion
+            if hasattr(llm_client, '__call__'):
+                return self.detect_emotion_via_llm(text, llm_client, context)
+            elif hasattr(llm_client, 'create_completion'):
+                return self.detect_emotion_via_llm(text, llm_client.create_completion, context)
                 
-            # Il risultato è una lista di liste, prendiamo la prima
-            emotions = result[0]
-            print(f"DEBUG - First list: {emotions}")
-            
-            if not emotions or not isinstance(emotions, list):
-                raise ValueError("Invalid emotions format")
-                
-            # Applica pesi per favorire emozioni positive
-            weights = {
-                'joy': 1.5,
-                'surprise': 1.2,
-                'neutral': 0.8,
-                'anger': 1.0,
-                'disgust': 1.0,
-                'fear': 1.0,
-                'sadness': 1.0
-            }
-            
-            # Applica i pesi
-            for emotion in emotions:
-                emotion['score'] *= weights.get(emotion['label'], 1.0)
-                
-            # Ordina per score
-            emotions.sort(key=lambda x: x['score'], reverse=True)
-            print(f"DEBUG - Sorted emotions: {emotions}")
-            
-            # Estrai emozione primaria
-            primary = emotions[0]['label']
-            confidence = emotions[0]['score']
-            print(f"DEBUG - Primary emotion: {primary} ({confidence})")
-            
-            # Estrai emozioni secondarie
-            secondary = {
-                e['label']: e['score']
-                for e in emotions[1:]
-            }
-            print(f"DEBUG - Secondary emotions: {secondary}")
-            
-            # Calcola intensità
-            intensity = self._calculate_emotional_intensity(
-                confidence,
-                secondary,
-                context
-            )
-            
-            # Aggiorna lo stato emotivo
-            self.current_emotion = primary
-            self.emotion_intensity = intensity
-            
-            return EmotionalState(
-                primary_emotion=primary,
-                confidence=confidence,
-                secondary_emotions=secondary,
-                intensity=intensity,
-                context=context
-            )
-            
-        except Exception as e:
-            print(f"Errore nell'analisi delle emozioni: {e}")
-            return EmotionalState(
-                primary_emotion="neutral",
-                confidence=0.0,
-                secondary_emotions={},
-                intensity=0.0,
-                context=context
-            )
+        # 2. LOGICA ORIGINALE (TRANSFORMERS) RIMOSSA
+        # Manteniamo solo il fallback basato su regole o dummy se LLM manca
+        
+        # Fallback semplice se non abbiamo LLM
+        print("DEBUG - No LLM client provided for emotion detection, using fallback.")
+        return EmotionalState(
+            primary_emotion="neutral",
+            confidence=0.5,
+            secondary_emotions={},
+            intensity=0.1,
+            context=context
+        )
             
     def generate_emotional_response(
         self,
