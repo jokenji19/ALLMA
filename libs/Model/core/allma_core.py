@@ -78,6 +78,11 @@ class ALLMACore:
         self.knowledge_memory = knowledge_memory or KnowledgeMemory(db_path)
         self.project_tracker = project_tracker or ProjectTracker(db_path)
         self.emotional_core = emotional_core or EmotionalCore()
+        self.incremental_learner = incremental_learner or IncrementalLearner()
+        self.preference_analyzer = preference_analyzer or UserPreferenceAnalyzer(db_path)
+        self.response_generator = response_generator or ContextualResponseGenerator()
+        self.personality = personality or Personality()
+        self.topic_extractor = topic_extractor or TopicExtractor()
         
         # Ensure db_path is used consistently
         self.db_path = db_path
