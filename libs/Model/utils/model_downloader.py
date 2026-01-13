@@ -23,11 +23,10 @@ class ModelDownloader:
                 "size_mb": 1600 # Approx size for 2B Q4
             },
             "moondream": {
-                # Switch to second-state/Moondream2-GGUF as the previous URL returned 404.
-                # Using Q4_0 quantization which is standard and compact for mobile.
-                "url": "https://huggingface.co/second-state/Moondream2-GGUF/resolve/main/moondream2-q4_0.gguf", 
-                "filename": "moondream2-q4_0.gguf",
-                "size_mb": 1700 # Approx size for Q4
+                "url": "https://huggingface.co/ggml-org/moondream2-20250414-GGUF/resolve/main/moondream2-mmproj-f16-20250414.gguf",
+                "filename": "moondream2-mmproj-f16-20250414.gguf",
+                "size_mb": 910,
+                "description": "Moondream (Visione)"
             },
             "emotion": {
                 "url": "https://huggingface.co/j-hartmann/emotion-english-distilroberta-base/resolve/main/pytorch_model.bin", # Scarichiamo il binario PyTorch standard
