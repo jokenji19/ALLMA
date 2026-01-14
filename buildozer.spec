@@ -35,8 +35,8 @@ version = 0.1
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded at runtime by the app
-# Build 119: Plan E - Custom Recipe for Manual Compilation of llama-cli
-requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy,cmake,llama_cli
+# Build 120: Plan D-2 - Binary Embedding (Corrected URL)
+requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy
 
 # (str) Python for android branch to use, if not master, useful to try new features
 p4a.branch = develop

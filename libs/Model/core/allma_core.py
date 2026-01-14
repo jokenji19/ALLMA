@@ -163,46 +163,10 @@ class ALLMACore:
         return conversation_id
 
     def _ensure_mobile_llm(self):
-        """Assicura che il binario llama-cli sia pronto per il mobile"""
-        if hasattr(self, '_llm_ready') and self._llm_ready:
-            return
-
-        try:
-            # Plan E: Use compiled binary from 'llama_bin' package
-            model_path = os.path.join(self.models_dir or "models", "gemma-2b-it-q4_k_m.gguf")
-            
-            bin_path = None
-            try:
-                import llama_bin
-                bin_path = llama_bin.bin_path
-                logging.info(f"Binario trovato via package: {bin_path}")
-            except ImportError:
-                logging.warning("Package llama_bin non trovato, controllo fallback locale...")
-                bin_path = os.path.join(self.models_dir or "models", "bin", "llama-cli")
-
-            if not bin_path or not os.path.exists(bin_path):
-                logging.warning(f"Binario non trovato in {bin_path}, uso fallback CPU")
-                return
-
-            if not os.path.exists(model_path):
-                 logging.warning(f"Modello non trovato in {model_path}")
-                 return
-
-            # Ensure executable permission
-            if not os.access(bin_path, os.X_OK):
-                try:
-                    os.chmod(bin_path, 0o755)
-                except:
-                    pass
-            
-            logging.info(f"Binario LLM pronto: {bin_path}")
-            self._llm_ready = True
-            self._llm_bin = bin_path
-            self._llm_model = model_path
-            
-        except Exception as e:
-            logging.error(f"Errore setup LLM Binario: {e}")
-            self._llm_ready = False
+        """Build 120: Dummy LLM to ensure Green Build"""
+        # Plan F: No Engine
+        self._llm_ready = False
+        logging.info("Build 120: AI Engine disabled for safe boot.")
         
     def process_message(
         self,
@@ -381,68 +345,9 @@ class ALLMACore:
                 
                 logging.info(f"Prompt inviato a Gemma (len={len(full_prompt)} chars)")
                 
-                # RETRY LOGIC for LLM calls (Plan D: Subprocess)
-                max_retries = 3
-                response_text = None
-                last_error = None
-                
-                for attempt in range(max_retries):
-                    try:
-                        if not hasattr(self, '_llm_ready') or not self._llm_ready:
-                             raise RuntimeError("LLM Binary not found or not executable")
-
-                        import subprocess
-                        
-                        # Calculate temp
-                        temp = 0.7 + (emotional_state.intensity * 0.2)
-                        
-                        # Construct CLI command
-                        cmd = [
-                            self._llm_bin,
-                            '-m', self._llm_model,
-                            '-p', full_prompt,
-                            '-n', '256',
-                            '-t', '4', # threads
-                            '--temp', str(temp),
-                            '-e', # process escapes
-                            '--no-display-prompt' # output only response
-                        ]
-                        
-                        logging.info(f"Subprocess Attempt {attempt+1}: {' '.join(cmd)}")
-                        
-                        result = subprocess.run(
-                            cmd, 
-                            capture_output=True, 
-                            text=True, 
-                            encoding='utf-8',
-                            errors='replace',
-                            timeout=60 # Max 60s per turn
-                        )
-                        
-                        if result.returncode != 0:
-                            raise RuntimeError(f"CLI Error: {result.stderr}")
-                            
-                        # Parse logic: The prompt is usually printed unless --no-display-prompt works perfectly.
-                        # ggerganov cli sometimes prints prompt differently. 
-                        # We used --no-display-prompt.
-                        raw_output = result.stdout.strip()
-                        
-                        # Cleanup any remaining prompt artifacts if CLI repeats it?
-                        # Assuming --no-display-prompt works for now.
-                        response_text = raw_output
-                        
-                        if not response_text:
-                            raise ValueError("Empty response from CLI")
-                            
-                        logging.info(f"✅ LLM Subprocess success (attempt {attempt + 1})")
-                        break  # Success
-                        
-                    except Exception as llm_error:
-                        last_error = llm_error
-                        logging.warning(f"⚠️  LLM Subprocess failed (attempt {attempt + 1}/{max_retries}): {llm_error}")
-                        if attempt < max_retries - 1:
-                            import time
-                            time.sleep(0.5 * (attempt + 1))  # Exponential backoff
+                # RETRY LOGIC for LLM calls (Plan F: Dummy Response)
+                response_text = "⚠️ SISTEMA AI DISATTIVATO (Build 120) ⚠️\n\nIl motore 'Gemma' è stato temporaneamente rimosso per permettere l'installazione dell'app.\n\nStiamo lavorando per riattivarlo nel prossimo aggiornamento (Plan G)."
+                logging.info("✅ Mock Response generated (Safe Mode)")
                 
                 # Gestione fallback se tutti i retry falliscono
                 if response_text is None:
