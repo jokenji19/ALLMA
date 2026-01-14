@@ -161,6 +161,31 @@ class ALLMACore:
         if initial_context:
             self.conversational_memory.update_context(conversation_id, initial_context)
         return conversation_id
+
+    def _ensure_mobile_llm(self):
+        """Assicura che il modello LLM sia caricato per il mobile"""
+        if hasattr(self, '_llm') and self._llm is not None:
+            return
+
+        try:
+            from llama_cpp import Llama
+            model_path = os.path.join(self.models_dir or "models", "gemma-2b-it-q4_k_m.gguf")
+            if not os.path.exists(model_path):
+                logging.warning(f"Modello non trovato in {model_path}, uso fallback CPU")
+                return
+
+            logging.info(f"Caricamento LLM da {model_path}...")
+            self._llm = Llama(
+                model_path=model_path,
+                n_ctx=2048,
+                n_threads=4,
+                n_gpu_layers=0,  # 0 = CPU Only (Safe for Android)
+                verbose=False
+            )
+            logging.info("LLM Caricato con successo.")
+        except Exception as e:
+            logging.error(f"Errore caricamento LLM Mobile: {e}")
+            self._llm = None
         
     def process_message(
         self,
