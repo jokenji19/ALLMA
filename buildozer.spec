@@ -39,7 +39,7 @@ version = 0.1
 requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy
 
 # (str) Python for android branch to use, if not master, useful to try new features
-p4a.branch = develop
+# p4a.branch = develop
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
