@@ -4,7 +4,7 @@
 title = ALLMA AI
 
 # (str) Package name
-package.name = allma
+package.name = allma_prime
 
 # (str) Package domain (needed for android/ios packaging)
 package.domain = org.allma
@@ -35,8 +35,8 @@ version = 0.1
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded at runtime by the app
-# Build 126: Plan L - Dependency Isolation (No KivyMD/Pillow/Numpy)
-requirements = python3,kivy,sqlite3,requests,plyer
+# Build 127: Plan M - Rebirth (New Package Name + Restore Golden)
+requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
