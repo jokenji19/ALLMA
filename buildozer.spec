@@ -35,8 +35,8 @@ version = 0.1
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded at runtime by the app
-# Build 116: Plan C - Use develop branch + modern build tools
-requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy,cmake,ninja,scikit-build,llama-cpp-python
+# Build 117: Plan C-2 - develop branch + cmake + pure ARM64, no heavy build tools
+requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy,cmake,llama-cpp-python
 
 # (str) Python for android branch to use, if not master, useful to try new features
 p4a.branch = develop
