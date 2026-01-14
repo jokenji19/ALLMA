@@ -183,6 +183,7 @@ KV_DOWNLOAD = '''
 ALLMACore = None
 ModelDownloader = None
 ALLMACore_imported = False
+BUILD_VERSION = "Build 110-Hotfix"
 
 class ChatMessage(MDBoxLayout):
     text = StringProperty()
@@ -306,7 +307,6 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 109-UIFix" # Startup Crash Fix
             
             # Placeholder for Injection
             global INCEPTION_BLOB
@@ -343,6 +343,7 @@ class ALLMAApp(MDApp):
 
     def deferred_startup(self, dt):
         try:
+            global BUILD_VERSION
             # Helper to show status on chat screen
             def update_status(msg):
                 try:
