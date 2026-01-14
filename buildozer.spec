@@ -35,8 +35,8 @@ version = 0.1
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded at runtime by the app
-# Build 124: Plan J - Remove Pillow (Agile)
-requirements = python3,kivy,kivymd,sqlite3,requests,plyer
+# Build 125: Plan K - Golden Revert (Restore Build 113 Config)
+requirements = python3,kivy,kivymd,sqlite3,pillow,requests,plyer,numpy
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
@@ -103,7 +103,7 @@ android.build_tools_version = 34.0.0
 #android.skip_update_options = path/to/exclude/*
 
 # (list) The Android archs to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-android.archs = arm64-v8a
+# android.archs = arm64-v8a
 
 # (bool) enables Android auto backup feature (Android API >= 23)
 android.allow_backup = True

@@ -183,7 +183,7 @@ KV_DOWNLOAD = '''
 ALLMACore = None
 ModelDownloader = None
 ALLMACore_imported = False
-BUILD_VERSION = "Build 124-Agile"
+BUILD_VERSION = "Build 125-Golden"
 
 class ChatMessage(MDBoxLayout):
     text = StringProperty()
