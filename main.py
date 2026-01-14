@@ -306,7 +306,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 109" # Startup Crash Fix
+            BUILD_VERSION = "Build 109-UIFix" # Startup Crash Fix
             
             # Placeholder for Injection
             global INCEPTION_BLOB
@@ -526,13 +526,50 @@ class ALLMAApp(MDApp):
     def safe_trigger_crash(self, error_msg):
         """Thread-safe method to switch to crash screen"""
         try:
-            if hasattr(self, 'sm'):
-                from kivy.uix.label import Label
-                self.sm.clear_widgets()
-                self.sm.add_widget(MDScreen(name='crash'))
-                error_details = f"CRASH STARTUP ({BUILD_VERSION}):\n{str(error_msg)}"
-                self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
+            logging.critical(f"CRASH TRIGGERED: {error_msg}")
+            if not hasattr(self, 'sm'):
+                return
+
+            # Check if crash screen already exists
+            if not self.sm.has_screen('crash'):
+                from kivymd.uix.screen import MDScreen
+                from kivymd.uix.label import MDLabel
+                from kivymd.uix.boxlayout import MDBoxLayout
+                
+                crash_screen = MDScreen(name='crash')
+                
+                # Layout for centering
+                layout = MDBoxLayout(orientation='vertical', padding="20dp")
+                
+                # Title
+                lbl_title = MDLabel(
+                    text="CRASH REPORT", 
+                    halign="center", 
+                    theme_text_color="Error",
+                    font_style="H4",
+                    size_hint_y=None, 
+                    height="100dp"
+                )
+                
+                # Details (White text for visibility)
+                lbl_msg = MDLabel(
+                    text=f"Error Info:\n{str(error_msg)}", 
+                    halign="center", 
+                    theme_text_color="Custom",
+                    text_color=(1, 1, 1, 1), 
+                    size_hint_y=0.8
+                )
+                
+                layout.add_widget(lbl_title)
+                layout.add_widget(lbl_msg)
+                crash_screen.add_widget(layout)
+                
+                self.sm.add_widget(crash_screen)
+            
+            # Switch without creating a new transition loop if already there
+            if self.sm.current != 'crash':
                 self.sm.current = 'crash'
+            
         except Exception as ui_e:
             print(f"CRITICAL: Failed to show crash UI: {ui_e}")
 
@@ -575,13 +612,7 @@ class ALLMAApp(MDApp):
 
         except Exception as e:
              logging.critical(f"ALLMA INIT CRASH: {e}", exc_info=True)
-             if hasattr(self, 'sm'):
-                 from kivy.uix.label import Label
-                 self.sm.clear_widgets()
-                 self.sm.add_widget(MDScreen(name='crash'))
-                 error_details = f"CRASH ({BUILD_VERSION} Core):\n{str(e)}"
-                 self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
-                 self.sm.current = 'crash'
+             self.safe_trigger_crash(f"Core Init Failed: {e}")
     
     def show_crash_ui(self, error_msg):
         from kivy.uix.label import Label
