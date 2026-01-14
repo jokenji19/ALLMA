@@ -4,7 +4,7 @@ import logging
 import traceback
 import threading
 from kivy.lang import Builder
-from kivy.clock import Clock
+from kivy.clock import Clock, mainthread
 from kivy.properties import StringProperty, BooleanProperty
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
@@ -306,7 +306,7 @@ class ALLMAApp(MDApp):
     def build(self):
         try:
             # Setup UI immediately
-            BUILD_VERSION = "Build 108" # DistilRoberta Removed (Fix 401)
+            BUILD_VERSION = "Build 109" # Startup Crash Fix
             
             # Placeholder for Injection
             global INCEPTION_BLOB
@@ -499,7 +499,7 @@ class ALLMAApp(MDApp):
                 ModelDownloader = MD
                 ALLMACore_imported = True
             except ImportError as ie:
-                update_status(f"Module Import Error: {ie}")
+                self.safe_trigger_crash(f"Module Import Error: {ie}")
                 return
 
             # check logic
@@ -516,10 +516,25 @@ class ALLMAApp(MDApp):
                     update_status("Ready!")
             except Exception as e:
                 logging.error(f"Init Error: {e}")
-                update_status(f"Init Failed: {e}")
+                self.safe_trigger_crash(f"Init Failed: {e}")
             
         except Exception as e:
             logging.critical(f"DEFERRED CRASH: {e}", exc_info=True)
+            self.safe_trigger_crash(f"Async Init Crash: {e}")
+
+    @mainthread
+    def safe_trigger_crash(self, error_msg):
+        """Thread-safe method to switch to crash screen"""
+        try:
+            if hasattr(self, 'sm'):
+                from kivy.uix.label import Label
+                self.sm.clear_widgets()
+                self.sm.add_widget(MDScreen(name='crash'))
+                error_details = f"CRASH STARTUP ({BUILD_VERSION}):\n{str(error_msg)}"
+                self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
+                self.sm.current = 'crash'
+        except Exception as ui_e:
+            print(f"CRITICAL: Failed to show crash UI: {ui_e}")
 
     def initialize_allma(self):
         try:
