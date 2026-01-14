@@ -230,9 +230,9 @@ class ChatScreen(MDScreen):
                 self.app.allma.start_conversation(user_id)
 
             response = self.app.allma.process_message(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                message=message
+                user_id,
+                conversation_id,
+                message
             )
             
             # Aggiorna la UI nel thread principale
@@ -352,7 +352,7 @@ class ALLMAApp(MDApp):
                         chat_screen.add_message(f"[SYSTEM] {msg}", is_user=False)
                 except: pass
 
-            update_status(f"Build 80: UI Loaded from Embedded KV")
+            update_status(f"{BUILD_VERSION}: UI Loaded from Embedded KV")
             
             # 1. Request PERMISSIONS
             if platform == 'android':
@@ -564,7 +564,7 @@ class ALLMAApp(MDApp):
                  from kivy.uix.label import Label
                  self.sm.clear_widgets()
                  self.sm.add_widget(MDScreen(name='crash'))
-                 error_details = f"CRASH (Build 80 Core):\n{str(e)}"
+                 error_details = f"CRASH ({BUILD_VERSION} Core):\n{str(e)}"
                  self.sm.get_screen('crash').add_widget(Label(text=error_details, halign='center'))
                  self.sm.current = 'crash'
     
