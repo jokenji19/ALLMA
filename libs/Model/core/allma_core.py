@@ -167,7 +167,8 @@ class ALLMACore:
         user_id: str,
         conversation_id: str,
         message: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        **kwargs
     ) -> ProcessedResponse:
         """
         Processa un messaggio dell'utente.
