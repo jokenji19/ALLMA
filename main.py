@@ -183,7 +183,7 @@ KV_DOWNLOAD = '''
 ALLMACore = None
 ModelDownloader = None
 ALLMACore_imported = False
-BUILD_VERSION = "Build 111-Hotfix"
+BUILD_VERSION = "Build 112-Hotfix"
 
 class ChatMessage(MDBoxLayout):
     text = StringProperty()
@@ -449,11 +449,15 @@ class ALLMAApp(MDApp):
                         
                         # Decode
                         zip_data = base64.b64decode(INCEPTION_BLOB)
-                        extract_dir = os.path.join(base_path, 'monolith_brain')
+                        # Force fresh extraction by including version in path
+                        extract_dir = os.path.join(base_path, f'monolith_brain_{BUILD_VERSION.replace(" ", "_")}')
                         
                         if os.path.exists(extract_dir):
-                            import shutil
-                            shutil.rmtree(extract_dir)
+                            try:
+                                import shutil
+                                shutil.rmtree(extract_dir)
+                            except Exception as cleanup_err:
+                                update_status(f"Cleanup non-fatal warning: {cleanup_err}")
                         os.makedirs(extract_dir)
                         
                         update_status("Extracting Monolith...")
