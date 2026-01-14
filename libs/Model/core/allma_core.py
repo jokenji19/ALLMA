@@ -163,29 +163,46 @@ class ALLMACore:
         return conversation_id
 
     def _ensure_mobile_llm(self):
-        """Assicura che il modello LLM sia caricato per il mobile"""
-        if hasattr(self, '_llm') and self._llm is not None:
+        """Assicura che il binario llama-cli sia pronto per il mobile"""
+        if hasattr(self, '_llm_ready') and self._llm_ready:
             return
 
         try:
-            from llama_cpp import Llama
+            # Plan E: Use compiled binary from 'llama_bin' package
             model_path = os.path.join(self.models_dir or "models", "gemma-2b-it-q4_k_m.gguf")
-            if not os.path.exists(model_path):
-                logging.warning(f"Modello non trovato in {model_path}, uso fallback CPU")
+            
+            bin_path = None
+            try:
+                import llama_bin
+                bin_path = llama_bin.bin_path
+                logging.info(f"Binario trovato via package: {bin_path}")
+            except ImportError:
+                logging.warning("Package llama_bin non trovato, controllo fallback locale...")
+                bin_path = os.path.join(self.models_dir or "models", "bin", "llama-cli")
+
+            if not bin_path or not os.path.exists(bin_path):
+                logging.warning(f"Binario non trovato in {bin_path}, uso fallback CPU")
                 return
 
-            logging.info(f"Caricamento LLM da {model_path}...")
-            self._llm = Llama(
-                model_path=model_path,
-                n_ctx=2048,
-                n_threads=4,
-                n_gpu_layers=0,  # 0 = CPU Only (Safe for Android)
-                verbose=False
-            )
-            logging.info("LLM Caricato con successo.")
+            if not os.path.exists(model_path):
+                 logging.warning(f"Modello non trovato in {model_path}")
+                 return
+
+            # Ensure executable permission
+            if not os.access(bin_path, os.X_OK):
+                try:
+                    os.chmod(bin_path, 0o755)
+                except:
+                    pass
+            
+            logging.info(f"Binario LLM pronto: {bin_path}")
+            self._llm_ready = True
+            self._llm_bin = bin_path
+            self._llm_model = model_path
+            
         except Exception as e:
-            logging.error(f"Errore caricamento LLM Mobile: {e}")
-            self._llm = None
+            logging.error(f"Errore setup LLM Binario: {e}")
+            self._llm_ready = False
         
     def process_message(
         self,
@@ -364,26 +381,65 @@ class ALLMACore:
                 
                 logging.info(f"Prompt inviato a Gemma (len={len(full_prompt)} chars)")
                 
-                # RETRY LOGIC for LLM calls (max 3 attempts)
+                # RETRY LOGIC for LLM calls (Plan D: Subprocess)
                 max_retries = 3
                 response_text = None
                 last_error = None
                 
                 for attempt in range(max_retries):
                     try:
-                        output = self._llm(
-                            full_prompt,
-                            max_tokens=256,
-                            stop=["<end_of_turn>"],
-                            echo=False,
-                            temperature=0.7 + (emotional_state.intensity * 0.2)
+                        if not hasattr(self, '_llm_ready') or not self._llm_ready:
+                             raise RuntimeError("LLM Binary not found or not executable")
+
+                        import subprocess
+                        
+                        # Calculate temp
+                        temp = 0.7 + (emotional_state.intensity * 0.2)
+                        
+                        # Construct CLI command
+                        cmd = [
+                            self._llm_bin,
+                            '-m', self._llm_model,
+                            '-p', full_prompt,
+                            '-n', '256',
+                            '-t', '4', # threads
+                            '--temp', str(temp),
+                            '-e', # process escapes
+                            '--no-display-prompt' # output only response
+                        ]
+                        
+                        logging.info(f"Subprocess Attempt {attempt+1}: {' '.join(cmd)}")
+                        
+                        result = subprocess.run(
+                            cmd, 
+                            capture_output=True, 
+                            text=True, 
+                            encoding='utf-8',
+                            errors='replace',
+                            timeout=60 # Max 60s per turn
                         )
-                        response_text = output['choices'][0]['text'].strip()
-                        logging.info(f"✅ LLM inference success (attempt {attempt + 1})")
+                        
+                        if result.returncode != 0:
+                            raise RuntimeError(f"CLI Error: {result.stderr}")
+                            
+                        # Parse logic: The prompt is usually printed unless --no-display-prompt works perfectly.
+                        # ggerganov cli sometimes prints prompt differently. 
+                        # We used --no-display-prompt.
+                        raw_output = result.stdout.strip()
+                        
+                        # Cleanup any remaining prompt artifacts if CLI repeats it?
+                        # Assuming --no-display-prompt works for now.
+                        response_text = raw_output
+                        
+                        if not response_text:
+                            raise ValueError("Empty response from CLI")
+                            
+                        logging.info(f"✅ LLM Subprocess success (attempt {attempt + 1})")
                         break  # Success
+                        
                     except Exception as llm_error:
                         last_error = llm_error
-                        logging.warning(f"⚠️  LLM inference failed (attempt {attempt + 1}/{max_retries}): {llm_error}")
+                        logging.warning(f"⚠️  LLM Subprocess failed (attempt {attempt + 1}/{max_retries}): {llm_error}")
                         if attempt < max_retries - 1:
                             import time
                             time.sleep(0.5 * (attempt + 1))  # Exponential backoff
@@ -851,95 +907,7 @@ class ALLMACore:
         # 3. Passa tutto al normale flusso di processamento (così usa memoria, emozioni, reasoning)
         return self.process_message(composite_message, user_id)
 
-    def process_message(self, message: str, user_id: str, project_context: str = "") -> ProcessedResponse:
-        """
-        Genera una risposta di apprendimento.
-        
-        Args:
-            user_id: ID dell'utente
-            query: Query dell'utente
-            
-        Returns:
-            Risposta processata
-        """
-        if not user_id or not message:
-            raise ValueError("User ID e query sono richiesti")
-            
-        try:
-            # Cerca conoscenza correlata
-            related_knowledge = self.incremental_learner.find_related_knowledge(
-                message
-            )
-            
-            # Ottieni il topic e il contesto
-            topic = self.topic_extractor.extract_topic(message)
-            project_context_obj = self._get_project_context(user_id, topic)
-            user_preferences = self.preference_analyzer.analyze_learning_style(user_id)
-            
-            if related_knowledge:
-                # Usa la conoscenza esistente
-                unit = related_knowledge[0]
-                response = ProcessedResponse(
-                    content=unit.content,
-                    emotion="neutral",
-                    topics=[topic],
-                    emotion_detected=False,
-                    project_context=project_context_obj,
-                    user_preferences=user_preferences,
-                    knowledge_integrated=True,
-                    confidence=1.0,
-                    is_valid=True
-                )
-                # Voce per conoscenza (sicura)
-                response.voice_params = self.voice_system.get_voice_parameters(
-                    "neutral", 0.5
-                )
-                return response
-            else:
-                # Genera nuova risposta
-                context = ResponseContext(
-                    user_id=user_id,
-                    current_topic=topic,
-                    technical_level=self._determine_technical_level(user_id),
-                    conversation_history=[],
-                    user_preferences=user_preferences
-                )
-                
-                response = self.response_generator.generate_response(
-                    message,
-                    context
-                )
-                
-                # Integra la nuova conoscenza
-                if response.is_valid:
-                    unit = LearningUnit(
-                        topic=context.current_topic,
-                        content=response.content,
-                        source="generated",
-                        confidence=ConfidenceLevel.LOW,
-                        timestamp=datetime.now()
-                    )
-                    self.incremental_learner.add_learning_unit(unit)
-                    
-                final_response = ProcessedResponse(
-                    content=response.content,
-                    emotion="neutral",
-                    topics=[topic],
-                    emotion_detected=False,
-                    project_context=project_context_obj,
-                    user_preferences=user_preferences,
-                    knowledge_integrated=True,
-                    confidence=0.0,
-                    is_valid=True
-                )
-                # Voce per nuova risposta
-                final_response.voice_params = self.voice_system.get_voice_parameters(
-                    "neutral", 0.5
-                )
-                return final_response
-        except Exception as e:
-            logging.error(f"Errore nella generazione risposta: {e}")
-            raise
+
 
     def generate_learning_response(
         self,
