@@ -17,8 +17,8 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
 # (list) List of inclusions using pattern matching
-# Build 135: Root Model Structure
-source.include_patterns = assets/*,images/*,ui/*,allma_data/*,Model/*,main.py
+# Build 139: Recursive Model Include
+source.include_patterns = assets/*,images/*,ui/*,allma_data/*,Model,Model/*,Model/**/*,main.py,icon.png
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec

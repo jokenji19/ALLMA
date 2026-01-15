@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 138-PathLogo"
+BUILD_VERSION = "Build 139-Recursive"
 
 # Build 138: Path Patch & Logo
 import_error_message = ""
@@ -26,14 +26,21 @@ try:
     from Model.core.allma_core import AllmaCore
 except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
-    import_error_message = str(e)
+    # DEBUG: List contents of root to see if Model exists
+    try:
+        files = os.listdir(root_dir)
+        files_str = ", ".join(files)
+    except Exception as list_err:
+        files_str = f"Cannot list dir: {list_err}"
+        
+    import_error_message = f"{str(e)}\nContents: {files_str}"
     AllmaCore = None
 except Exception as e:
     print(f"CRITICAL GENERIC ERROR: {e}")
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 138-PathLogo"
+BUILD_VERSION = "Build 139-Recursive"
 
 class AllmaRootApp(App):
     def build(self):
