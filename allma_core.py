@@ -1,19 +1,18 @@
 
 class AllmaCore:
     def __init__(self, **kwargs):
-        print("Build 132: Dummy AllmaCore Initialized")
+        print("Build 134: Flat Core Initialized")
         
     def process_message(self, *args, **kwargs):
         print("Dummy process_message called")
-        # Return a mock object if needed, or just let it crash safely at runtime.
-        # Main.py expects an object with .content
         class MockResponse:
-            content = "Build 132: I am a ghost."
+            content = "Build 134: Flat Earth successful."
             voice_params = None
             emotion = "neutral"
             topics = []
             emotion_detected = False
             knowledge_integrated = False
             confidence = 1.0
+            is_valid = True
             
         return MockResponse()

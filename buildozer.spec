@@ -17,8 +17,8 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
 # (list) List of inclusions using pattern matching
-# Build 133: Rename Libs -> Codebase
-source.include_patterns = assets/*,images/*,ui/*,allma_data/*,codebase/*
+# Build 134: Flat Earth (Root files only)
+source.include_patterns = main.py,allma_core.py,ui/*,images/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec
