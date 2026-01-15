@@ -1,21 +1,32 @@
 
 import os
+import sys
 import kivy
 from kivy.app import App
 from kivy.uix.label import Label
-import allma_core
 
-BUILD_VERSION = "Build 134-Flat"
+# Build 135: Standard Import from Root Model Package
+try:
+    from Model.core.allma_core import AllmaCore
+except ImportError as e:
+    print(f"CRITICAL IMPORT ERROR: {e}")
+    AllmaCore = None
 
-class AllmaFlatApp(App):
+BUILD_VERSION = "Build 135-RootModel"
+
+class AllmaRootApp(App):
     def build(self):
         print(f"Starting {BUILD_VERSION}")
-        try:
-            self.core = allma_core.AllmaCore()
-            msg = self.core.process_message("test").content
-            return Label(text=f"ALLMA {BUILD_VERSION}\n{msg}", halign="center")
-        except Exception as e:
-            return Label(text=f"Error: {e}", halign="center")
+        if AllmaCore:
+            try:
+                # Initialize Core (might fail if missing dependencies)
+                self.core = AllmaCore()
+                # Dummy process call if possible, or just show success
+                return Label(text=f"ALLMA {BUILD_VERSION}\nCore Imported Successfully!", halign="center")
+            except Exception as e:
+                return Label(text=f"ALLMA {BUILD_VERSION}\nCore Init Error: {e}", halign="center")
+        else:
+            return Label(text=f"ALLMA {BUILD_VERSION}\nImport Failed (See Log)", halign="center")
 
 if __name__ == "__main__":
-    AllmaFlatApp().run()
+    AllmaRootApp().run()

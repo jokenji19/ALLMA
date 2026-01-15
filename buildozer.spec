@@ -17,8 +17,8 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
 # (list) List of inclusions using pattern matching
-# Build 134: Flat Earth (Root files only)
-source.include_patterns = main.py,allma_core.py,ui/*,images/*
+# Build 135: Root Model Structure
+source.include_patterns = assets/*,images/*,ui/*,allma_data/*,Model/*,main.py
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec
