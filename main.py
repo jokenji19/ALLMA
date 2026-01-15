@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 147-Debug"
+BUILD_VERSION = "Build 148-ExplicitBlob"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -115,7 +115,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 147-Debug"
+BUILD_VERSION = "Build 148-ExplicitBlob"
 
 class AllmaRootApp(App):
     def build(self):
