@@ -47,7 +47,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 150"
+BUILD_VERSION = "Build 151 (Plan G)"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -146,7 +146,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 150"
+BUILD_VERSION = "Build 151 (Plan G)"
 
 class SetupScreen(Screen):
     def __init__(self, **kwargs):

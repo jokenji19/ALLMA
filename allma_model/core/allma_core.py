@@ -163,10 +163,33 @@ class ALLMACore:
         return conversation_id
 
     def _ensure_mobile_llm(self):
-        """Build 120: Dummy LLM to ensure Green Build"""
-        # Plan F: No Engine
-        self._llm_ready = False
-        logging.info("Build 120: AI Engine disabled for safe boot.")
+        """Build 151: Activation of MobileGemmaWrapper"""
+        if getattr(self, '_llm_ready', False):
+            return
+
+        try:
+            from allma_model.llm.mobile_gemma_wrapper import MobileGemmaWrapper, LLAMA_CPP_AVAILABLE
+            
+            if not LLAMA_CPP_AVAILABLE:
+                logging.warning("llama-cpp-python not found. Falling back to safe mode.")
+                return
+
+            if not self.models_dir:
+                logging.warning("Models directory not provided. LLM disabled.")
+                return
+
+            logging.info(f"Initializing Mobile LLM from: {self.models_dir}")
+            self._llm = MobileGemmaWrapper(models_dir=self.models_dir)
+            
+            if self._llm.llm:
+                self._llm_ready = True
+                logging.info("✅ Mobile Engine (Gemma) Activated successfully.")
+            else:
+                logging.error("❌ Failed to load Mobile Engine.")
+                
+        except Exception as e:
+            logging.error(f"Critical error initializing Mobile LLM: {e}")
+            self._llm_ready = False
         
     def process_message(
         self,
@@ -237,8 +260,27 @@ class ALLMACore:
             if self.mobile_mode:
                 try:
                     # ESECUZIONE INFERENZA (LLM già caricato sopra)
-                    if current_llm:
-                        pass # Placeholder per mantenere il blocco if esistente
+                    if hasattr(self, '_llm') and self._llm:
+                        logging.info("🧠 Generating response with Mobile Engine...")
+                        
+                        # Assemblaggio Prompt ChatML-like per Gemma
+                        prompt = f"<start_of_turn>user\n{message}<end_of_turn>\n<start_of_turn>model\n"
+                        
+                        generated_text = self._llm.generate(
+                            prompt=prompt,
+                            max_tokens=256,
+                            stop=["<end_of_turn>"]
+                        )
+                        
+                        if generated_text and not generated_text.startswith("Error"):
+                            logging.info(f"✅ Generated: {generated_text[:50]}...")
+                            return ProcessedResponse(
+                                content=generated_text,
+                                emotion=emotional_state.primary_emotion,
+                                topics=[topic],
+                                emotion_detected=True,
+                                confidence=0.9
+                            )
                             
                 except Exception as e:
                      logging.error(f"LLM Error: {e}")
