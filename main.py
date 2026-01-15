@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 135-RootModel"
+BUILD_VERSION = "Build 136-Full"
 
 class AllmaRootApp(App):
     def build(self):
