@@ -13,18 +13,17 @@ package.domain = org.allma
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
-# Build 97 Fix: Removed libs/* and Model/* to prevent conflict with exclude_dirs
-# Build 129: Minimal Source
-source.include_patterns = main.py
+# Build 130: Clean Re-integration (libs restored, junk removed)
+source.include_patterns = assets/*,images/*,ui/*,allma_data/*,libs/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
-source.exclude_exts = specsts, bin, venv, libs/Model, Model
+source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = libs, assets, test_data, test_documents, tests, tools, .github, .git, bin, .buildozer
+source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer
 
 # (list) List of exclusions using pattern matching
 source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.txt,*.md
@@ -36,8 +35,8 @@ version = 0.1
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded at runtime by the app
-# Build 129: Plan P - Diagnostic Hello World (Sanitized)
-requirements = python3,kivy,plyer
+# Build 130: Clean Re-integration (Minimal Req)
+requirements = python3,kivy,sqlite3,requests,plyer
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
