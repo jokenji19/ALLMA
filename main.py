@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 144-Explicit"
+BUILD_VERSION = "Build 145-Assets"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -23,12 +23,21 @@ try:
         print(f"🔍 ROOT DIR CONTENTS: {os.listdir(root_dir)}")
     except: pass
     
-    # Build 143: Stealth Asset Strategy
-    # We masked the zip as a PNG to ensure P4A includes it.
+    # Build 145: Assets Folder Strategy
+    # Standard location for bundled data: ./assets/resource_pack.png
     fake_asset_name = "resource_pack.png"
-    fake_asset_path = os.path.join(root_dir, fake_asset_name)
+    fake_asset_path = os.path.join(root_dir, "assets", fake_asset_name)
     zip_target_path = os.path.join(root_dir, "allma_model.zip")
     extract_path = os.path.join(root_dir, "unpacked_brain")
+    
+    # Debug: Check "assets" folder
+    try:
+        assets_dir = os.path.join(root_dir, "assets")
+        if os.path.exists(assets_dir):
+             print(f"🔍 ASSETS DIR CONTENTS: {os.listdir(assets_dir)}")
+        else:
+             print("⚠️ ASSETS DIR NOT FOUND")
+    except: pass
     
     # 1. Check if the "Fake PNG" exists and recover it
     if os.path.exists(fake_asset_path):
@@ -95,7 +104,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 144-Explicit"
+BUILD_VERSION = "Build 145-Assets"
 
 class AllmaRootApp(App):
     def build(self):
