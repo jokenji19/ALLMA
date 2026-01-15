@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 142-DataZip"
+BUILD_VERSION = "Build 143-Stealth"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -20,37 +20,50 @@ try:
     import os, sys, shutil, zipfile
     root_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Define Extraction Path (Internal Storage)
-    # On Android, use private storage. On Desktop, use ./unpacked_brain
+    # Build 143: Stealth Asset Strategy
+    # We masked the zip as a PNG to ensure P4A includes it.
+    fake_asset_name = "resource_pack.png"
+    fake_asset_path = os.path.join(root_dir, fake_asset_name)
+    zip_target_path = os.path.join(root_dir, "allma_model.zip")
     extract_path = os.path.join(root_dir, "unpacked_brain")
-    # Build 142: Look in allma_data folder
-    zip_path = os.path.join(root_dir, "allma_data", "allma_model.zip")
     
+    # 1. Check if the "Fake PNG" exists and recover it
+    if os.path.exists(fake_asset_path):
+        try:
+            print(f"🕵️ Found Stealth Asset: {fake_asset_name}. Restoring...")
+            if os.path.exists(zip_target_path):
+                os.remove(zip_target_path)
+            os.rename(fake_asset_path, zip_target_path)
+            print("✅ Restored to allma_model.zip")
+        except Exception as e:
+            print(f"❌ Error restoring stealth asset: {e}")
+
+    # 2. Proceed with Zip Extraction (Standard Logic)
     # Logic: Prefer Folder > Zip
-    # But if folder is missing (Android P4A issue), use Zip.
-    
-    # 1. Attempt direct import (in case Folder works)
     if os.path.exists(os.path.join(root_dir, "allma_model")):
          if root_dir not in sys.path: sys.path.append(root_dir)
          print("Found allma_model folder directly.")
          
-    # 2. Attempt Zip Extraction
-    elif os.path.exists(zip_path):
-        print(f"Found Zip: {zip_path}. Extracting to {extract_path}...")
+    elif os.path.exists(zip_target_path):
+        print(f"Found Zip: {zip_target_path}. Extracting to {extract_path}...")
         if not os.path.exists(extract_path):
             os.makedirs(extract_path)
             
         # Unzip
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_path)
+        try:
+            with zipfile.ZipFile(zip_target_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_path)
             
-        # Add to Path
-        if extract_path not in sys.path:
-            sys.path.append(extract_path)
-        print("Extraction complete and path added.")
-        
+            # Add to Path
+            if extract_path not in sys.path:
+                sys.path.append(extract_path)
+            print("Explanation complete and path added.")
+        except Exception as e:
+            print(f"Zip Error: {e}")
     else:
-        print("CRITICAL: Neither Folder nor Zip found.")
+        print("CRITICAL: No Code Found (Neither Folder, Zip, nor Stealth PNG).")
+        
+    # Logic corrected above.
         
     # 3. Import
     from allma_model.core.allma_core import AllmaCore
@@ -79,7 +92,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 142-DataZip"
+BUILD_VERSION = "Build 143-Stealth"
 
 class AllmaRootApp(App):
     def build(self):
