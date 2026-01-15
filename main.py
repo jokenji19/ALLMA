@@ -12,13 +12,16 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 143-Stealth"
+BUILD_VERSION = "Build 144-Explicit"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
 try:
     import os, sys, shutil, zipfile
     root_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        print(f"🔍 ROOT DIR CONTENTS: {os.listdir(root_dir)}")
+    except: pass
     
     # Build 143: Stealth Asset Strategy
     # We masked the zip as a PNG to ensure P4A includes it.
@@ -92,7 +95,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 143-Stealth"
+BUILD_VERSION = "Build 144-Explicit"
 
 class AllmaRootApp(App):
     def build(self):

@@ -16,8 +16,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
-# Build 143: Stealth Asset (Standard Defaults)
-# source.include_patterns = assets/*,images/*,ui/*,allma_data/*,allma_data/**/*,main.py,icon.png
+# Build 144: Explicit Stealth Include
+source.include_patterns = assets/*,images/*,ui/*,resource_pack.png,main.py,icon.png
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec
