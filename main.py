@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 139-Recursive"
+BUILD_VERSION = "Build 140-DefaultSpec"
 
 # Build 138: Path Patch & Logo
 import_error_message = ""
@@ -23,10 +23,10 @@ try:
     if root_dir not in sys.path:
         sys.path.append(root_dir)
         
-    from Model.core.allma_core import AllmaCore
+    from allma_model.core.allma_core import AllmaCore
 except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
-    # DEBUG: List contents of root to see if Model exists
+    # DEBUG: List contents of root to see if allma_model exists
     try:
         files = os.listdir(root_dir)
         files_str = ", ".join(files)
@@ -40,7 +40,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 139-Recursive"
+BUILD_VERSION = "Build 140-DefaultSpec"
 
 class AllmaRootApp(App):
     def build(self):

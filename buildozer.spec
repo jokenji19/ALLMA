@@ -16,9 +16,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
-# (list) List of inclusions using pattern matching
-# Build 139: Recursive Model Include
-source.include_patterns = assets/*,images/*,ui/*,allma_data/*,Model,Model/*,Model/**/*,main.py,icon.png
+# Build 140: Default Recursive Inclusion (Extensions Only)
+# source.include_patterns = assets/*,images/*,ui/*,allma_data/*,Model,Model/*,Model/**/*,main.py,icon.png
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec
@@ -27,7 +26,8 @@ source.exclude_exts = spec
 source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer
 
 # (list) List of exclusions using pattern matching
-source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.txt,*.md
+# Removed *.txt exclusion to allow requirements.txt
+source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md
 
 # (str) Application versioning (method 1)
 version = 0.1
