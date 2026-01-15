@@ -16,8 +16,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
-# Build 140: Default Recursive Inclusion (Extensions Only)
-# source.include_patterns = assets/*,images/*,ui/*,allma_data/*,Model,Model/*,Model/**/*,main.py,icon.png
+# Build 142: Explicit Data Zip Include
+source.include_patterns = assets/*,images/*,ui/*,allma_data/*,allma_data/**/*,main.py,icon.png
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec

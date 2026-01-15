@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 141-ZipLoader"
+BUILD_VERSION = "Build 142-DataZip"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -23,7 +23,8 @@ try:
     # Define Extraction Path (Internal Storage)
     # On Android, use private storage. On Desktop, use ./unpacked_brain
     extract_path = os.path.join(root_dir, "unpacked_brain")
-    zip_path = os.path.join(root_dir, "allma_model.zip")
+    # Build 142: Look in allma_data folder
+    zip_path = os.path.join(root_dir, "allma_data", "allma_model.zip")
     
     # Logic: Prefer Folder > Zip
     # But if folder is missing (Android P4A issue), use Zip.
@@ -56,20 +57,29 @@ try:
 
 except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
-    # DEBUG: List contents to see if Zip exists
+    # DEBUG: List contents to see if Zip exists in data folder
     try:
         files = os.listdir(root_dir)
-        files_str = ", ".join(files)
+        files_str = f"ROOT: {', '.join(files)}"
+        
+        data_dir = os.path.join(root_dir, "allma_data")
+        if os.path.exists(data_dir):
+            data_files = os.listdir(data_dir)
+            files_str += f"\nDATA: {', '.join(data_files)}"
+        else:
+            files_str += "\nDATA: Folder Missing"
+            
     except:
         files_str = "Error listing dir"
-    import_error_message = f"{str(e)}\nDir: {files_str}"
+        
+    import_error_message = f"{str(e)}\n{files_str}"
     AllmaCore = None
 except Exception as e:
     print(f"CRITICAL GENERIC ERROR: {e}")
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 141-ZipLoader"
+BUILD_VERSION = "Build 142-DataZip"
 
 class AllmaRootApp(App):
     def build(self):
