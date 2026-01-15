@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 146-Blob"
+BUILD_VERSION = "Build 147-Debug"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -30,38 +30,65 @@ try:
     zip_target_path = os.path.join(root_dir, "allma_model.zip")
     extract_path = os.path.join(root_dir, "unpacked_brain")
     
-    # 1. Check if we need to extract (skip if already done/exists)
-    if not os.path.exists(os.path.join(extract_path, "allma_model")):
-        try:
-            print("🧬 Importing Code Blob...")
-            import code_blob
-            
-            print("💾 Writing Blob to Zip...")
-            zip_bytes = code_blob.get_zip_bytes()
-            with open(zip_target_path, "wb") as f:
-                f.write(zip_bytes)
-            print(f"✅ Zip created: {len(zip_bytes)} bytes.")
-            
-            # Extract
-            print(f"📦 Extracting to {extract_path}...")
-            with zipfile.ZipFile(zip_target_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_path)
-            print("✅ Extraction Complete.")
-            
-        except ImportError:
-            print("❌ CRITICAL: code_blob.py missing!")
-        except Exception as e:
-            print(f"❌ Blob Error: {e}")
-
-    # 2. Add to Path
-    if os.path.exists(extract_path):
-        if extract_path not in sys.path:
-            sys.path.append(extract_path)
-        print(f"📚 Added {extract_path} to sys.path")
-    else:
-        print("⚠️ Extraction path missing after attempts.")
+    # Build 147: Sherlock Holmes Debug
+    zip_target_path = os.path.join(root_dir, "allma_model.zip")
+    extract_path = os.path.join(root_dir, "unpacked_brain")
+    
+    print("🕵️ STARTING BLOB EXTRACTION SEQUENCE")
+    
+    # Step 1: Import Blob
+    try:
+        print("Step 1: Importing code_blob...")
+        import code_blob
+        print("✅ code_blob imported.")
+    except ImportError as e:
+        print(f"❌ Step 1 FAILED: Could not import code_blob! {e}")
+        print(f"Directory Contents: {os.listdir(root_dir)}")
         
+    # Step 2: Write Zip
+    try:
+        print("Step 2: Getting bytes...")
+        zip_bytes = code_blob.get_zip_bytes()
+        print(f"Got {len(zip_bytes)} bytes.")
+        
+        print(f"Writing to {zip_target_path}...")
+        with open(zip_target_path, "wb") as f:
+            f.write(zip_bytes)
+        print("✅ Zip written to disk.")
+    except Exception as e:
+        print(f"❌ Step 2 FAILED: {e}")
+
+    # Step 3: Extract
+    try:
+        print(f"Step 3: Extracting to {extract_path}...")
+        if not os.path.exists(extract_path):
+            os.makedirs(extract_path)
+            
+        with zipfile.ZipFile(zip_target_path, 'r') as zip_ref:
+            # Debug: List zip contents first
+            print(f"Zip File Names (First 5): {zip_ref.namelist()[:5]}")
+            zip_ref.extractall(extract_path)
+        print("✅ Extraction Complete.")
+        
+        # Verify
+        extracted_model_path = os.path.join(extract_path, "allma_model")
+        if os.path.exists(extracted_model_path):
+            print(f"✅ Verified: {extracted_model_path} exists.")
+            print(f"Contents: {os.listdir(extracted_model_path)}")
+        else:
+            print(f"⚠️ Warning: {extracted_model_path} does NOT exist after extraction.")
+            print(f"Unpacked root contents: {os.listdir(extract_path)}")
+
+    except Exception as e:
+        print(f"❌ Step 3 FAILED: {e}")
+
+    # Step 4: Add to Path
+    if extract_path not in sys.path:
+        sys.path.append(extract_path)
+    print(f"📚 sys.path updated. Current path: {sys.path}")
+    
     # 3. Import
+
     from allma_model.core.allma_core import AllmaCore
 
 except ImportError as e:
@@ -88,7 +115,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 146-Blob"
+BUILD_VERSION = "Build 147-Debug"
 
 class AllmaRootApp(App):
     def build(self):
