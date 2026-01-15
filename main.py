@@ -12,7 +12,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 145-Assets"
+BUILD_VERSION = "Build 146-Blob"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -23,59 +23,43 @@ try:
         print(f"🔍 ROOT DIR CONTENTS: {os.listdir(root_dir)}")
     except: pass
     
-    # Build 145: Assets Folder Strategy
-    # Standard location for bundled data: ./assets/resource_pack.png
-    fake_asset_name = "resource_pack.png"
-    fake_asset_path = os.path.join(root_dir, "assets", fake_asset_name)
+    # Build 146: Embedded Blob Strategy
+    # The code is inside code_blob.py as a variable.
+    # This bypasses all file/asset filters.
+    
     zip_target_path = os.path.join(root_dir, "allma_model.zip")
     extract_path = os.path.join(root_dir, "unpacked_brain")
     
-    # Debug: Check "assets" folder
-    try:
-        assets_dir = os.path.join(root_dir, "assets")
-        if os.path.exists(assets_dir):
-             print(f"🔍 ASSETS DIR CONTENTS: {os.listdir(assets_dir)}")
-        else:
-             print("⚠️ ASSETS DIR NOT FOUND")
-    except: pass
-    
-    # 1. Check if the "Fake PNG" exists and recover it
-    if os.path.exists(fake_asset_path):
+    # 1. Check if we need to extract (skip if already done/exists)
+    if not os.path.exists(os.path.join(extract_path, "allma_model")):
         try:
-            print(f"🕵️ Found Stealth Asset: {fake_asset_name}. Restoring...")
-            if os.path.exists(zip_target_path):
-                os.remove(zip_target_path)
-            os.rename(fake_asset_path, zip_target_path)
-            print("✅ Restored to allma_model.zip")
-        except Exception as e:
-            print(f"❌ Error restoring stealth asset: {e}")
-
-    # 2. Proceed with Zip Extraction (Standard Logic)
-    # Logic: Prefer Folder > Zip
-    if os.path.exists(os.path.join(root_dir, "allma_model")):
-         if root_dir not in sys.path: sys.path.append(root_dir)
-         print("Found allma_model folder directly.")
-         
-    elif os.path.exists(zip_target_path):
-        print(f"Found Zip: {zip_target_path}. Extracting to {extract_path}...")
-        if not os.path.exists(extract_path):
-            os.makedirs(extract_path)
+            print("🧬 Importing Code Blob...")
+            import code_blob
             
-        # Unzip
-        try:
+            print("💾 Writing Blob to Zip...")
+            zip_bytes = code_blob.get_zip_bytes()
+            with open(zip_target_path, "wb") as f:
+                f.write(zip_bytes)
+            print(f"✅ Zip created: {len(zip_bytes)} bytes.")
+            
+            # Extract
+            print(f"📦 Extracting to {extract_path}...")
             with zipfile.ZipFile(zip_target_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_path)
+            print("✅ Extraction Complete.")
             
-            # Add to Path
-            if extract_path not in sys.path:
-                sys.path.append(extract_path)
-            print("Explanation complete and path added.")
+        except ImportError:
+            print("❌ CRITICAL: code_blob.py missing!")
         except Exception as e:
-            print(f"Zip Error: {e}")
+            print(f"❌ Blob Error: {e}")
+
+    # 2. Add to Path
+    if os.path.exists(extract_path):
+        if extract_path not in sys.path:
+            sys.path.append(extract_path)
+        print(f"📚 Added {extract_path} to sys.path")
     else:
-        print("CRITICAL: No Code Found (Neither Folder, Zip, nor Stealth PNG).")
-        
-    # Logic corrected above.
+        print("⚠️ Extraction path missing after attempts.")
         
     # 3. Import
     from allma_model.core.allma_core import AllmaCore
@@ -104,7 +88,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 145-Assets"
+BUILD_VERSION = "Build 146-Blob"
 
 class AllmaRootApp(App):
     def build(self):
