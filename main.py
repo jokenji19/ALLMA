@@ -12,11 +12,17 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 137-Debug"
+BUILD_VERSION = "Build 138-PathLogo"
 
-# Build 137: Debugging Runtime Import
+# Build 138: Path Patch & Logo
 import_error_message = ""
 try:
+    # CRITICAL FIX: Ensure root directory is in sys.path
+    import os, sys
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    if root_dir not in sys.path:
+        sys.path.append(root_dir)
+        
     from Model.core.allma_core import AllmaCore
 except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
@@ -27,7 +33,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 137-Debug"
+BUILD_VERSION = "Build 138-PathLogo"
 
 class AllmaRootApp(App):
     def build(self):
