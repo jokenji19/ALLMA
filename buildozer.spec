@@ -16,8 +16,9 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
-# Build 130: Clean Re-integration (libs restored, junk removed)
-source.include_patterns = assets/*,images/*,ui/*,allma_data/*,libs/*
+# (list) List of inclusions using pattern matching
+# Build 133: Rename Libs -> Codebase
+source.include_patterns = assets/*,images/*,ui/*,allma_data/*,codebase/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec
