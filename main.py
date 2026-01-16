@@ -47,7 +47,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 151 (Plan G)"
+BUILD_VERSION = "Build 152"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -237,25 +237,167 @@ class SetupScreen(Screen):
         if self.manager.has_screen('chat'):
             self.manager.current = 'chat'
 
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.textinput import TextInput
+from kivy.graphics import Color, RoundedRectangle
+from kivy.utils import get_color_from_hex
+
+class MessageBubble(BoxLayout):
+    def __init__(self, text, is_user=True, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint_y = None
+        self.size_hint_x = 0.8
+        self.padding = [10, 10]
+        self.spacing = 5
+        
+        # User messages right-aligned, System left-aligned
+        if is_user:
+            self.pos_hint = {'right': 0.98}
+            bg_color = (0.2, 0.6, 1, 1)  # Blue-ish for user
+        else:
+            self.pos_hint = {'x': 0.02}
+            bg_color = (0.2, 0.2, 0.2, 1)  # Dark gray for AI
+            
+        with self.canvas.before:
+            Color(*bg_color)
+            self.rect = RoundedRectangle(radius=[15])
+        
+        self.bind(pos=self.update_rect, size=self.update_rect)
+        
+        label = Label(
+            text=text,
+            size_hint=(1, None),
+            text_size=(None, None), # Allow binding to texture_size later if needed, but for wrapping we need width
+            valign='middle',
+            halign='left'
+        )
+        label.bind(texture_size=lambda instance, value: setattr(label, 'height', value[1]))
+        label.bind(width=lambda instance, value: setattr(label, 'text_size', (value, None)))
+        
+        self.add_widget(label)
+        
+        # Force height calculation
+        self.bind(minimum_height=self.setter('height'))
+
+    def update_rect(self, *args):
+        self.rect.pos = self.pos
+        self.rect.size = self.size
+
 class ChatScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        layout = BoxLayout(orientation='vertical')
+        layout = BoxLayout(orientation='vertical', spacing=10)
         
         # Header
-        header = Label(
+        header = BoxLayout(size_hint_y=None, height=60, padding=[10, 5], spacing=10)
+        with header.canvas.before:
+            Color(0.1, 0.1, 0.1, 1) # Header background
+            from kivy.graphics import Rectangle
+            Rectangle(pos=header.pos, size=header.size)
+            header.bind(pos=lambda obj, val: setattr(obj.canvas.before.children[-1], 'pos', val))
+            header.bind(size=lambda obj, val: setattr(obj.canvas.before.children[-1], 'size', val))
+
+        try:
+            logo = Image(source='logo.png', size_hint=(None, 1), width=50)
+            header.add_widget(logo)
+        except:
+            pass # Fallback if logo missing
+            
+        title = Label(
             text=f"ALLMA {BUILD_VERSION}", 
-            size_hint=(1, 0.1), 
-            color=(0, 1, 1, 1), 
-            bold=True
+            bold=True, 
+            halign='left',
+            valign='middle',
+            size_hint_x=1
         )
-        
-        # Main Chat Area (Placeholder)
-        chat_area = Label(text="Chat Interface Initialized.\nAI Core Ready.", font_size='18sp')
+        title.bind(size=title.setter('text_size'))
+        header.add_widget(title)
         
         layout.add_widget(header)
-        layout.add_widget(chat_area)
+        
+        # Chat History
+        scroll_view = ScrollView(size_hint=(1, 1))
+        self.chat_list = BoxLayout(
+            orientation='vertical', 
+            size_hint_y=None, 
+            padding=[10, 10], 
+            spacing=10
+        )
+        self.chat_list.bind(minimum_height=self.chat_list.setter('height'))
+        
+        scroll_view.add_widget(self.chat_list)
+        layout.add_widget(scroll_view)
+        self.scroll_view = scroll_view
+        
+        # Input Area
+        input_box = BoxLayout(size_hint_y=None, height=60, padding=[10, 10], spacing=10)
+        
+        self.text_input = TextInput(
+            multiline=False, 
+            hint_text="Scrivi qui...",
+            size_hint_x=0.8
+        )
+        self.text_input.bind(on_text_validate=self.send_message)
+        
+        send_btn = Button(
+            text="Invia", 
+            size_hint_x=0.2,
+            background_color=(0, 0.8, 1, 1)
+        )
+        send_btn.bind(on_press=self.send_message)
+        
+        input_box.add_widget(self.text_input)
+        input_box.add_widget(send_btn)
+        
+        layout.add_widget(input_box)
         self.add_widget(layout)
+        
+        # Welcome message
+        Clock.schedule_once(lambda dt: self.add_message("Sistema ALLMA operativo. In attesa di input.", is_user=False), 0.5)
+
+    def add_message(self, text, is_user=True):
+        bubble = MessageBubble(text=text, is_user=is_user)
+        # Trick to resize bubble height based on text
+        # Since label text wrapping is complex in Kivy without kv, we approximating
+        # Better: let the label texture binding handle it (implemented in MessageBubble)
+        self.chat_list.add_widget(bubble)
+        
+        # Auto-scroll
+        Clock.schedule_once(lambda dt: self.scroll_view.scroll_to(bubble), 0.1)
+
+    def send_message(self, instance):
+        message = self.text_input.text.strip()
+        if not message:
+            return
+            
+        self.add_message(message, is_user=True)
+        self.text_input.text = ""
+        
+        # Process in background
+        threading.Thread(target=self._generate_response, args=(message,)).start()
+        
+    def _generate_response(self, message):
+        app = App.get_running_app()
+        if app and app.core:
+            try:
+                # Add "typing" indicator or just wait
+                # Clock.schedule_once(lambda dt: self.add_message("ALLMA sta pensando...", is_user=False), 0)
+                
+                # Mock context for now, or use real one
+                response = app.core.process_message(
+                    user_id="user_mobile", # Default user
+                    conversation_id="conv_mobile_1",
+                    message=message
+                )
+                
+                response_text = response.content
+                
+            except Exception as e:
+                response_text = f"Errore: {str(e)}"
+        else:
+            response_text = "Errore: Core non inizializzato."
+            
+        Clock.schedule_once(lambda dt: self.add_message(response_text, is_user=False), 0)
 
 class AllmaRootApp(App):
     def build(self):
