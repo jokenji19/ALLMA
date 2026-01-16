@@ -54,6 +54,16 @@ import_error_message = ""
 try:
     import os, sys, shutil, zipfile
     root_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # FORCE CLEANUP of stale code
+    unpacked_brain_path = os.path.join(root_dir, "unpacked_brain")
+    if os.path.exists(unpacked_brain_path):
+        try:
+            print("Force Cleaning stale unpacked_brain...")
+            shutil.rmtree(unpacked_brain_path)
+        except Exception as e:
+            print(f"Warning: could not delete unpacked_brain: {e}")
+
     try:
         print(f"🔍 ROOT DIR CONTENTS: {os.listdir(root_dir)}")
     except: pass
