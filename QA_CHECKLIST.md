@@ -1,0 +1,23 @@
+# ALLMA QA & DEPLOYMENT PROTOCOL
+> **CRITICAL:** Do NOT deploy or push a build without completing this checklist.
+
+## 1. Integrity Checks
+- [ ] **Main Entry Point**: Verify `main.py` is NOT truncated and contains the full execution footer (lines > 150).
+- [ ] **Blob Content**: Verify `allma_model` inside `ZIP_DATA` contains all required sub-packages (`ui`, `core`, `utils`).
+- [ ] **Critical Files**: Ensure `app_entry.py`, `chat_view.py`, and `setup_view.py` exist in the source map.
+
+## 2. Functional Verification
+- [ ] **Extraction Simulation**: Run `main.py` locally. Does it extract to `unpacked_brain`?
+- [ ] **Dependecy Check**: Are all imports (Kivy, requests, internal libs) resolvable?
+- [ ] **Flow Test**:
+    1. **Installer**: Does the loading bar appear?
+    2. **Setup**: Does it prompt for model download (or skip if present)?
+    3. **Chat**: Does the TextInput appear and accept input?
+
+## 3. Deployment Safety
+- [ ] **Clean Build**: Did you remove temporary files (`tools/inject_blob.py`, `debug_*.py`)?
+- [ ] **Version Bump**: Is the version number in `buildozer.spec` updated?
+- [ ] **Git Status**: Are there uncommitted changes?
+
+---
+*Created on 2026-01-16 to preventing missing components in release builds.*

@@ -14,7 +14,7 @@ except ImportError:
     logging.warning("llama-cpp-python not found. This is expected during desktop dev if not installed.")
 
 # Default model path (relative to creating this class, but should be passed in)
-_DEFAULT_MODEL_NAME = "gemma-2-2b-it-Q4_K_M.gguf"
+_DEFAULT_MODEL_NAME = "gemma-3n-e2b-it-q4_k_m.gguf"
 
 class MobileGemmaWrapper:
     """
