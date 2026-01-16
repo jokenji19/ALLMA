@@ -17,7 +17,7 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
 # Build 148: Explicit Code Blob Include
-source.include_patterns = assets/*,main.py,icon.png,code_blob.py
+source.include_patterns = assets/*,main.py,icon.png,code_blob.py,logo.png
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec

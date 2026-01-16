@@ -396,15 +396,35 @@ class ChatScreen(Screen):
                 response_text = f"Errore: {str(e)}"
         else:
             response_text = "Errore: Core non inizializzato."
+            if app and hasattr(app, 'import_error') and app.import_error:
+                response_text += f"\nImport Error: {app.import_error}"
             
         Clock.schedule_once(lambda dt: self.add_message(response_text, is_user=False), 0)
 
 class AllmaRootApp(App):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.core = None
+        self.import_error = None
+
     def build(self):
         # Set window size for desktop debug
         if os.name != 'posix': # Rough check for not-mobile-ish
              Window.size = (400, 700)
-             
+        
+        # Try to initialize Core if import succeeded
+        if AllmaCore:
+            try:
+                print("Initializing ALLMACore...")
+                self.core = ALLMACore(mobile_mode=True)
+                print("ALLMACore Initialized.")
+            except Exception as e:
+                print(f"CORE INIT ERROR: {e}")
+                self.import_error = str(e)
+        else:
+            print("AllmaCore class is None - Import likely failed previously.")
+            self.import_error = "Module Import Failed"
+
         sm = ScreenManager(transition=FadeTransition())
         sm.add_widget(SetupScreen(name='setup'))
         sm.add_widget(ChatScreen(name='chat'))
