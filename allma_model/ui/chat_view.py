@@ -101,6 +101,9 @@ class ChatView(Screen):
             # For now synchronous as it's the first chat load
             try:
                 self.core = ALLMACore()
+                self.user_id = "user_mobile"
+                self.conversation_id = self.core.start_conversation(self.user_id)
+                
                 # Init welcome message
                 self.add_message("Sistema ALLMA online. Come posso aiutarti?", False)
             except Exception as e:
@@ -123,7 +126,12 @@ class ChatView(Screen):
     def _process_message(self, text):
         try:
             if self.core:
-                response = self.core.process_message(text, {'user_id': 'local_user'})
+                result = self.core.process_message(
+                    user_id=self.user_id,
+                    conversation_id=self.conversation_id,
+                    message=text
+                )
+                response = result.content if hasattr(result, 'content') else str(result)
             else:
                 response = "Core non inizializzato."
         except Exception as e:

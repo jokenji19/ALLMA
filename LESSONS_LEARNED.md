@@ -11,6 +11,12 @@
 *   **Lesson:** Never assume a file is correct just because it exists.
 *   **Prevention:** `QA_CHECKLIST.md` -> Check 1: Verify `main.py` has the footer code (> 150 lines).
 
+### 5. API Signature Mismatch
+*   **Error:** The Chat UI called `core.process_message(text, context)` but the Core expected `(user_id, conv_id, text)`. Result: `TypeError`.
+*   **Root Cause:** The UI code was written based on an outdated or assumed API signature of `AllmaCore`.
+*   **Lesson:** When reconnecting detached components (UI + Core), verify method signatures match exactly.
+*   **Prevention:** `QA_CHECKLIST.md` -> Check 5: Verify critical method calls (process_message) match definition.
+
 ### 2. Missing "Internal" Components
 *   **Error:** Build 153.1 would have failed because it tried to import `SetupView` and `ChatView` which did not exist in the `allma_model` directory being zipped.
 *   **Root Cause:** Focused entirely on fixing the "Container" (`main.py`) without verifying the "Content" (`allma_model` source code).
