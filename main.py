@@ -47,7 +47,7 @@ except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
     AllmaCore = None
 
-BUILD_VERSION = "Build 152"
+BUILD_VERSION = "Build 152.2"
 
 # Build 141: ZipLoader Strategy
 import_error_message = ""
@@ -416,7 +416,7 @@ class AllmaRootApp(App):
         if AllmaCore:
             try:
                 print("Initializing ALLMACore...")
-                self.core = ALLMACore(mobile_mode=True)
+                self.core = AllmaCore(mobile_mode=True)
                 print("ALLMACore Initialized.")
             except Exception as e:
                 print(f"CORE INIT ERROR: {e}")
