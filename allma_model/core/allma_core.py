@@ -352,7 +352,7 @@ class ALLMACore:
                 # Registra il successo per aumentare automaticamente la confidenza
                 self.incremental_learner.record_success(topic)
                 
-            elif self._llm:
+            elif getattr(self, '_llm', None):
                 # ALLMA non sa, chiede a Gemma (SIMBIOSI)
                 # COSTRUZIONE DEL PROMPT "SIMBIOTICO"
                 # 1. Personalità e Identità
@@ -387,12 +387,16 @@ class ALLMACore:
                 
                 logging.info(f"Prompt inviato a Gemma (len={len(full_prompt)} chars)")
                 
-                # RETRY LOGIC for LLM calls (Plan F: Dummy Response)
-                response_text = "⚠️ SISTEMA AI DISATTIVATO (Build 120) ⚠️\n\nIl motore 'Gemma' è stato temporaneamente rimosso per permettere l'installazione dell'app.\n\nStiamo lavorando per riattivarlo nel prossimo aggiornamento (Plan G)."
-                logging.info("✅ Mock Response generated (Safe Mode)")
+                # Genera risposta con Gemma
+                response_text = self._llm.generate(
+                    prompt=full_prompt,
+                    max_tokens=600,
+                    stop=["<end_of_turn>"]
+                )
+                logging.info(f"✅ Generated (Symbiosis): {response_text[:50]}...")
                 
                 # Gestione fallback se tutti i retry falliscono
-                if response_text is None:
+                if response_text is None or response_text.startswith("Error"):
                     logging.error(f"❌ LLM inference failed dopo {max_retries} tentativi. Fallback a response_generator")
                     logging.error(f"Last error: {last_error}")
                     response = self.response_generator.generate_response(message, response_context)

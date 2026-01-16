@@ -416,8 +416,16 @@ class AllmaRootApp(App):
         if AllmaCore:
             try:
                 print("Initializing ALLMACore...")
-                self.core = AllmaCore(mobile_mode=True)
-                print("ALLMACore Initialized.")
+                # Determine models_dir
+                models_dir = None
+                try:
+                    from allma_model.utils.model_downloader import ModelDownloader
+                    models_dir = ModelDownloader().models_dir
+                except Exception as e:
+                    print(f"Could not determine models_dir: {e}")
+
+                self.core = AllmaCore(mobile_mode=True, models_dir=models_dir)
+                print(f"ALLMACore Initialized with models_dir: {models_dir}")
             except Exception as e:
                 print(f"CORE INIT ERROR: {e}")
                 self.import_error = str(e)
