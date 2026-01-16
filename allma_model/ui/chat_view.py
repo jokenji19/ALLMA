@@ -14,7 +14,7 @@ from kivy.lang import Builder
 from threading import Thread
 
 # Import Core (Adjust import as needed based on structure)
-from allma_model.core.allma_core import AllmaCore
+from allma_model.core.allma_core import ALLMACore
 
 Builder.load_string('''
 <MessageBubble>:
@@ -100,7 +100,7 @@ class ChatView(Screen):
             # Initialize core in background or here if fast enough
             # For now synchronous as it's the first chat load
             try:
-                self.core = AllmaCore()
+                self.core = ALLMACore()
                 # Init welcome message
                 self.add_message("Sistema ALLMA online. Come posso aiutarti?", False)
             except Exception as e:
