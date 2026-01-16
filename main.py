@@ -109,7 +109,8 @@ try:
         # Step 2: Write Zip
         try:
             print("Step 2: Getting bytes...")
-            zip_bytes = ZIP_DATA # Use the local ZIP_DATA variable directly
+            import base64
+            zip_bytes = base64.b64decode(ZIP_DATA) # Decode Base64 to binary
             print(f"Got {len(zip_bytes)} bytes.")
             
             print(f"Writing to {zip_target_path}...")
