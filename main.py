@@ -146,7 +146,7 @@ except Exception as e:
     import_error_message = str(e)
     AllmaCore = None
 
-BUILD_VERSION = "Build 151 (Plan G)"
+
 
 class SetupScreen(Screen):
     def __init__(self, **kwargs):
