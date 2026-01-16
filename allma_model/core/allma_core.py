@@ -397,8 +397,8 @@ class ALLMACore:
                 
                 # Gestione fallback se tutti i retry falliscono
                 if response_text is None or response_text.startswith("Error"):
-                    logging.error(f"❌ LLM inference failed dopo {max_retries} tentativi. Fallback a response_generator")
-                    logging.error(f"Last error: {last_error}")
+                    logging.error(f"❌ LLM inference failed. Fallback a response_generator")
+                    logging.error(f"Error details: {response_text}")
                     response = self.response_generator.generate_response(message, response_context)
                     # Voce per fallback
                     response.voice_params = self.voice_system.get_voice_parameters(
