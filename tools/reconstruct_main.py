@@ -84,13 +84,14 @@ class SetupScreen(Screen):
                  raise ImportError(f"allma_model not found in {extract_path}")
 
             # Import the actual app module
-            # We assume there is a 'ui' package based on file listing
-            import allma_model.ui.main_window as app_ui 
-            # Or try importing the core first to ensure paths are set
-            import allma_model
-            
-            self.update_status("Ready.", 100)
-            Clock.schedule_once(lambda dt: self.launch_next_stage(extract_path))
+            try:
+                from allma_model.ui.app_entry import AllmaInternalApp
+                self.update_status("Launching Core System...", 100)
+                
+                # Switch to the internal app
+                Clock.schedule_once(lambda dt: self.switch_to_internal_app(AllmaInternalApp))
+            except ImportError as e:
+                self.show_error(f"Internal App Not Found: {e}")
             
         except Exception as e:
             err = traceback.format_exc()
@@ -109,19 +110,19 @@ class SetupScreen(Screen):
         self.label.text = f"CRITICAL ERROR:\n{err}"
         self.label.color = (1, 0.3, 0.3, 1)
 
-    def launch_next_stage(self, extract_path):
-        # Here we would switch the root widget to the real app
-        # For now, we display a success message and directory info to help debug the next step
-        self.label.text = f"Build 153 Online.\nCore extracted to:\n{extract_path}\n\nWaiting for UI integration..."
-        self.label.color = (0.5, 1, 0.5, 1)
+    def switch_to_internal_app(self, InternalAppClass):
+        # Instantiate the internal app to get its build result
+        app_instance = InternalAppClass()
+        new_root = app_instance.build()
         
-        # PROACTIVE: Try to load the real UI if we can guess the class
-        try:
-            # Hypothical import based on structure
-            from allma_model.ui.app_entry import WebApp
-            # If successful, maybe we can swap?
-        except ImportError:
-            pass
+        # Get the current running app (The Installer)
+        current_app = App.get_running_app()
+        
+        # Clear current screen and set new root
+        from kivy.core.window import Window
+        Window.remove_widget(current_app.root)
+        Window.add_widget(new_root)
+        current_app.root = new_root
 
 class AllmaApp(App):
     def build(self):
