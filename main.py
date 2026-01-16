@@ -62,56 +62,76 @@ try:
     # The code is inside code_blob.py as a variable.
     # This bypasses all file/asset filters.
     
-    zip_target_path = os.path.join(root_dir, "allma_model.zip")
-    extract_path = os.path.join(root_dir, "unpacked_brain")
+    # Build 152.3: Prioritize Local Source (Development Mode)
+    # Check if 'allma_model' source exists locally (e.g. in development/buildozer source)
+    local_model_path = os.path.join(root_dir, "allma_model")
+    unpacked_brain_path = os.path.join(root_dir, "unpacked_brain")
     
-    # Build 147: Sherlock Holmes Debug
-    zip_target_path = os.path.join(root_dir, "allma_model.zip")
-    extract_path = os.path.join(root_dir, "unpacked_brain")
-    
-    print("🕵️ STARTING BLOB EXTRACTION SEQUENCE")
-    
-    # Step 1: Import Blob (Local)
-    print("Step 1: Using local Blob data...")
-    # import code_blob  <-- REMOVED, Data is local now
-    print("✅ Local Blob data ready.")
-
-    # Step 2: Write Zip
-    try:
-        print("Step 2: Getting bytes...")
-        zip_bytes = get_zip_bytes() # Calling local function
-        print(f"Got {len(zip_bytes)} bytes.")
+    if os.path.exists(local_model_path):
+        print(f"✅ Found local allma_model source at: {local_model_path}")
+        print("🚀 Skipping Blob Extraction. Using local source.")
         
-        print(f"Writing to {zip_target_path}...")
-        with open(zip_target_path, "wb") as f:
-            f.write(zip_bytes)
-        print("✅ Zip written to disk.")
-    except Exception as e:
-        print(f"❌ Step 2 FAILED: {e}")
-
-    # Step 3: Extract
-    try:
-        print(f"Step 3: Extracting to {extract_path}...")
-        if not os.path.exists(extract_path):
-            os.makedirs(extract_path)
+        # Cleanup stale unpacked brain if it exists, to prevent confusion
+        if os.path.exists(unpacked_brain_path):
+            try:
+                print("🧹 Cleaning up stale unpacked_brain...")
+                shutil.rmtree(unpacked_brain_path)
+            except Exception as e:
+                print(f"⚠️ Could not cleanup unpacked_brain: {e}")
+                
+        extract_path = root_dir # root_dir contains allma_model package
+        
+    else:
+        # Deployment Mode: Extract Blob
+        print("📦 Local source not found. Proceeding with Blob Extraction strategy.")
+        
+        zip_target_path = os.path.join(root_dir, "allma_model.zip")
+        extract_path = unpacked_brain_path
+        
+        # Build 147: Sherlock Holmes Debug
+        print("🕵️ STARTING BLOB EXTRACTION SEQUENCE")
+        
+        # Step 1: Import Blob (Local)
+        print("Step 1: Using local Blob data...")
+        # import code_blob  <-- REMOVED, Data is local now
+        print("✅ Local Blob data ready.")
+    
+        # Step 2: Write Zip
+        try:
+            print("Step 2: Getting bytes...")
+            zip_bytes = ZIP_DATA # Use the local ZIP_DATA variable directly
+            print(f"Got {len(zip_bytes)} bytes.")
             
-        with zipfile.ZipFile(zip_target_path, 'r') as zip_ref:
-            # Debug: List zip contents first
-            print(f"Zip File Names (First 5): {zip_ref.namelist()[:5]}")
-            zip_ref.extractall(extract_path)
-        print("✅ Extraction Complete.")
-        
-        # Verify
-        extracted_model_path = os.path.join(extract_path, "allma_model")
-        if os.path.exists(extracted_model_path):
-            print(f"✅ Verified: {extracted_model_path} exists.")
-            print(f"Contents: {os.listdir(extracted_model_path)}")
-        else:
-            print(f"⚠️ Warning: {extracted_model_path} does NOT exist after extraction.")
-            print(f"Unpacked root contents: {os.listdir(extract_path)}")
-
-    except Exception as e:
-        print(f"❌ Step 3 FAILED: {e}")
+            print(f"Writing to {zip_target_path}...")
+            with open(zip_target_path, "wb") as f:
+                f.write(zip_bytes)
+            print("✅ Zip written to disk.")
+        except Exception as e:
+            print(f"❌ Step 2 FAILED: {e}")
+    
+        # Step 3: Extract
+        try:
+            print(f"Step 3: Extracting to {extract_path}...")
+            if not os.path.exists(extract_path):
+                os.makedirs(extract_path)
+                
+            with zipfile.ZipFile(zip_target_path, 'r') as zip_ref:
+                # Debug: List zip contents first
+                print(f"Zip File Names (First 5): {zip_ref.namelist()[:5]}")
+                zip_ref.extractall(extract_path)
+            print("✅ Extraction Complete.")
+            
+            # Verify
+            extracted_model_path = os.path.join(extract_path, "allma_model")
+            if os.path.exists(extracted_model_path):
+                print(f"✅ Verified: {extracted_model_path} exists.")
+                print(f"Contents: {os.listdir(extracted_model_path)}")
+            else:
+                print(f"⚠️ Warning: {extracted_model_path} does NOT exist after extraction.")
+                print(f"Unpacked root contents: {os.listdir(extract_path)}")
+    
+        except Exception as e:
+            print(f"❌ Step 3 FAILED: {e}")
 
     # Step 4: Add to Path
     if extract_path not in sys.path:
