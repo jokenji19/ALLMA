@@ -2,6 +2,7 @@ from pythonforandroid.recipe import CompiledComponentsPythonRecipe
 from pythonforandroid.toolchain import current_directory, shprint
 import sh
 import os
+import logging
 
 class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
     version = '0.2.26'
@@ -39,8 +40,34 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         env['LLAMA_NATIVE'] = 'OFF'
         env['LLAMA_OPENBLAS'] = 'OFF'
         
+        # Copilot Solution: set GGML flags to override default
+        env['GGML_CMAKE_CFLAGS'] = ""
+        env['GGML_CMAKE_CXXFLAGS'] = ""
+        
         # Forza l'uso di CMAKE
         env['LLAMA_CPP_LIB_PRELOAD'] = '1'
         return env
+
+    def prebuild_arch(self, arch):
+        super().prebuild_arch(arch)
+        # Nuclear Option: Find and destroy -march=native in CMakeLists.txt
+        # We need to find where the source is currently unpacked
+        build_dir = self.get_build_dir(arch.arch)
+        
+        # Walk through files to find CMakeLists.txt containing march=native
+        # and remove it. This is safer than assuming a fixed path.
+        logging.info("NUCLEAR OPTION: Searching and destroying -march=native...")
+        
+        # Note: sh.find might be tricky, let's use os.walk
+        for root, dirs, files in os.walk(build_dir):
+            for file in files:
+                if file == "CMakeLists.txt":
+                    filepath = os.path.join(root, file)
+                    # Use sed to remove lines with -march=native
+                    try:
+                        sh.sed("-i", "/-march=native/d", filepath)
+                        logging.info(f"Patched {filepath}")
+                    except Exception as e:
+                        logging.warning(f"Failed to patch {filepath}: {e}")
 
 recipe = LlamaCppPythonRecipe()
