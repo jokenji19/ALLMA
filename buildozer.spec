@@ -37,7 +37,7 @@ version = 0.1
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded# (list) Application requirements
 # Build 136: Full Restoration (Standard + Graphics + Math)
-requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llama-cpp-python
+requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
