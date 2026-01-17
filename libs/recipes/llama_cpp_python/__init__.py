@@ -26,7 +26,18 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             "-DLLAMA_OPENBLAS=OFF " # OpenBLAS può essere problematico, meglio default
             "-DLLAMA_BUILD_SERVER=OFF " # Non serve il server web
             "-DLLAMA_NATIVE=OFF " # Evita ottimizzazioni CPU specifiche dell'host che rompono cross-compile
+            "-DCMAKE_C_FLAGS='-Wno-unused-command-line-argument' "
+            "-DCMAKE_CXX_FLAGS='-Wno-unused-command-line-argument' "
         )
+        
+        # Override flags per sicurezza
+        env['CFLAGS'] = f"-target {arch.target} -fPIC"
+        env['CXXFLAGS'] = f"-target {arch.target} -fPIC"
+        env['LDFLAGS'] = f"-target {arch.target}"
+        
+        # Variabili ambiente specifiche per llama.cpp build system
+        env['LLAMA_NATIVE'] = 'OFF'
+        env['LLAMA_OPENBLAS'] = 'OFF'
         
         # Forza l'uso di CMAKE
         env['LLAMA_CPP_LIB_PRELOAD'] = '1'
