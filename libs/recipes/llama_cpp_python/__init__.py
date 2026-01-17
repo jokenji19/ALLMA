@@ -6,7 +6,10 @@ import logging
 
 class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
     version = '0.2.26'
-    url = 'https://github.com/abetlen/llama-cpp-python/archive/refs/tags/v{version}.tar.gz'
+    version = '0.2.26'
+    # Use PyPI source because GitHub tarballs often lack submodules (vendor/llama.cpp)
+    # causing the patch to miss the files, or the build to fetch fresh (unpatched) code.
+    url = 'https://files.pythonhosted.org/packages/source/l/llama_cpp_python/llama_cpp_python-{version}.tar.gz'
     
     depends = ['setuptools', 'numpy']
     
