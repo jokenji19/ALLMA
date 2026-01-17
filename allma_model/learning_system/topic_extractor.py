@@ -49,7 +49,11 @@ class TopicExtractor:
             embeddings = self.vectorizer.fit_transform(texts)
             
             # Restituisci l'embedding dell'ultimo testo (quello corrente)
-            return embeddings[-1].toarray()[0]
+            vec = embeddings[-1]
+            if hasattr(vec, 'toarray'):
+                return vec.toarray()[0]
+            else:
+                return vec
             
         except Exception as e:
             logging.error(f"Errore nel calcolo embeddings: {e}")

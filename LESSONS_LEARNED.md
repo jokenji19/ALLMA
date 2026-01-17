@@ -15,7 +15,11 @@
 *   **Error:** The Chat UI called `core.process_message(text, context)` but the Core expected `(user_id, conv_id, text)`. Result: `TypeError`.
 *   **Root Cause:** The UI code was written based on an outdated or assumed API signature of `AllmaCore`.
 *   **Lesson:** When reconnecting detached components (UI + Core), verify method signatures match exactly.
-*   **Prevention:** `QA_CHECKLIST.md` -> Check 5: Verify critical method calls (process_message) match definition.
+### 6. Fallback Logic Robustness
+*   **Error:** The App echoed inputs because the fallback mechanism (TopicExtractor) crashed on a type error (`numpy` vs `scipy` sparse), causing a "double failure".
+*   **Root Cause:** Assuming a library (`SimpleTfidf`) returns a specific type (sparse matrix) without checking, in an environment (Android) where implementations might differ or fail.
+*   **Lesson:** Fallback logic must be bulletproof. If the fallback crashes, the app looks broken.
+*   **Prevention:** `QA_CHECKLIST.md` -> Check 6: Wrap fallback logic in broad try-except blocks that return safe defaults.
 
 ### 2. Missing "Internal" Components
 *   **Error:** Build 153.1 would have failed because it tried to import `SetupView` and `ChatView` which did not exist in the `allma_model` directory being zipped.

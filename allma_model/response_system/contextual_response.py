@@ -172,13 +172,23 @@ def esempio_funzione(param1: str, param2: int = 0):
         """Genera una risposta che inizia con la teoria"""
         return "La teoria dietro questo concetto è..."
         
-    def _generate_balanced_response(
-        self,
-        query: str,
-        context: ResponseContext
-    ) -> str:
         """Genera una risposta bilanciata tra teoria e pratica"""
-        return f"Risposta alla query: {query}"
+        q_lower = query.lower()
+        
+        # Basic Conversation Fallbacks (Safe Mode)
+        if any(w in q_lower for w in ["ciao", "salve", "buongiorno", "buonasera"]):
+            return "Ciao! Sono ALLMA. La mia rete neurale è attualmente offline (Safe Mode), ma sono qui."
+            
+        if any(w in q_lower for w in ["come stai", "tutto bene"]):
+            return "Funziono in modalità di emergenza. I miei sistemi logici sono attivi, ma la creatività è limitata senza il Brain."
+            
+        if any(w in q_lower for w in ["chi sei", "cosa sei"]):
+            return "Sono ALLMA (Advanced Learning and Emotional Memory Architecture). Al momento opero in modalità ridotta."
+
+        # Generic Fallback
+        return (f"Ho ricevuto il tuo messaggio: '{query}'.\n"
+                "Tuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\n"
+                "Non posso generare una risposta complessa ora.")
         
     def _check_advanced_concepts(
         self,
