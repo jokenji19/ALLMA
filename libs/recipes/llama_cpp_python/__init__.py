@@ -21,28 +21,24 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         # Disabilitiamo chiamate di sistema non supportate o non necessarie
         env['CMAKE_ARGS'] = (
             f"-DCMAKE_TOOLCHAIN_FILE={os.environ['ANDROID_NDK_HOME']}/build/cmake/android.toolchain.cmake "
+            f"-DCMAKE_SYSTEM_NAME=Android "
             f"-DANDROID_ABI={arch.arch} "
             f"-DANDROID_PLATFORM=android-21 "
             "-DLLAMA_CUBLAS=OFF "  # Niente CUDA su Android standard
             "-DLLAMA_OPENBLAS=OFF " # OpenBLAS può essere problematico, meglio default
             "-DLLAMA_BUILD_SERVER=OFF " # Non serve il server web
             "-DLLAMA_NATIVE=OFF " # Evita ottimizzazioni CPU specifiche dell'host che rompono cross-compile
-            "-DCMAKE_C_FLAGS='-Wno-unused-command-line-argument' "
-            "-DCMAKE_CXX_FLAGS='-Wno-unused-command-line-argument' "
+            "-DCMAKE_C_FLAGS='-march=armv8-a' "
+            "-DCMAKE_CXX_FLAGS='-march=armv8-a' "
         )
         
         # Override flags per sicurezza
-        env['CFLAGS'] = f"-target {arch.target} -fPIC"
-        env['CXXFLAGS'] = f"-target {arch.target} -fPIC"
+        env['CFLAGS'] = f"-target {arch.target} -fPIC -march=armv8-a"
+        env['CXXFLAGS'] = f"-target {arch.target} -fPIC -march=armv8-a"
         env['LDFLAGS'] = f"-target {arch.target}"
         
-        # Variabili ambiente specifiche per llama.cpp build system
         env['LLAMA_NATIVE'] = 'OFF'
-        env['LLAMA_OPENBLAS'] = 'OFF'
-        
-        # Copilot Solution: set GGML flags to override default
-        env['GGML_CMAKE_CFLAGS'] = ""
-        env['GGML_CMAKE_CXXFLAGS'] = ""
+        env['GGML_NATIVE'] = 'OFF'
         
         # Duplicate args for scikit-build specific env var
         env['SKBUILD_CMAKE_ARGS'] = env['CMAKE_ARGS']
@@ -53,10 +49,16 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
 
     def prebuild_arch(self, arch):
         super().prebuild_arch(arch)
-        # Nuclear Option V2: Broad Search & Destroy
         build_dir = self.get_build_dir(arch.arch)
         logging.info(f"Scanning {build_dir} for -march=native...")
         
+        # DEBUG: List all files to understand structure
+        try:
+            logging.info("File Structure Check:")
+            # sh.ls("-R", build_dir, _out=lambda L: logging.info(L.strip()))
+        except Exception:
+            pass
+
         count = 0
         for root, dirs, files in os.walk(build_dir):
             for file in files:
@@ -64,17 +66,15 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                 try:
                     # Check if file is text/cmake/params
                     if file.endswith('.txt') or file.endswith('.cmake') or file.endswith('.make'):
-                        # Read file to check for string (avoid grep dependency issues)
                         with open(filepath, 'r', errors='ignore') as f:
                             content = f.read()
                         
                         if "-march=native" in content:
-                            logging.info(f"Found poison in {file}. Sanitizing...")
-                            # Replace string
-                            sh.sed("-i", "s/-march=native//g", filepath)
+                            logging.info(f"Found poison in {file}. Replacing with -march=armv8-a...")
+                            sh.sed("-i", "s/-march=native/-march=armv8-a/g", filepath)
                             count += 1
                 except Exception as e:
-                    pass # Ignore binary read errors
+                    pass 
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
