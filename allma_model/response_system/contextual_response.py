@@ -172,6 +172,11 @@ def esempio_funzione(param1: str, param2: int = 0):
         """Genera una risposta che inizia con la teoria"""
         return "La teoria dietro questo concetto è..."
         
+    def _generate_balanced_response(
+        self,
+        query: str,
+        context: ResponseContext
+    ) -> str:
         """Genera una risposta bilanciata tra teoria e pratica"""
         q_lower = query.lower()
         
