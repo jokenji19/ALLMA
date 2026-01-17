@@ -37,7 +37,7 @@ version = 0.1
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded# (list) Application requirements
 # Build 136: Full Restoration (Standard + Graphics + Math)
-requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy
+requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llama-cpp-python
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
@@ -117,9 +117,8 @@ android.allow_backup = True
 # (bool) Copy library instead of making a libpymodules.so
 #android.copy_libs = 1
 
-# (str) The Android resource to load
-#android.ouya.category = GAME
-#android.ouya.icon.filename = %(source.dir)s/data/ouya_icon.png
+# (str) The directory in which python-for-android should look for your own build recipes (if any)
+p4a.local_recipes = ./libs/recipes
 
 # (str) Filename to the hook for p4a
 #p4a.hook =
