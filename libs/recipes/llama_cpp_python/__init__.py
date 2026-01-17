@@ -44,30 +44,38 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         env['GGML_CMAKE_CFLAGS'] = ""
         env['GGML_CMAKE_CXXFLAGS'] = ""
         
+        # Duplicate args for scikit-build specific env var
+        env['SKBUILD_CMAKE_ARGS'] = env['CMAKE_ARGS']
+        
         # Forza l'uso di CMAKE
         env['LLAMA_CPP_LIB_PRELOAD'] = '1'
         return env
 
     def prebuild_arch(self, arch):
         super().prebuild_arch(arch)
-        # Nuclear Option: Find and destroy -march=native in CMakeLists.txt
-        # We need to find where the source is currently unpacked
+        # Nuclear Option V2: Broad Search & Destroy
         build_dir = self.get_build_dir(arch.arch)
+        logging.info(f"Scanning {build_dir} for -march=native...")
         
-        # Walk through files to find CMakeLists.txt containing march=native
-        # and remove it. This is safer than assuming a fixed path.
-        logging.info("NUCLEAR OPTION: Searching and destroying -march=native...")
-        
-        # Note: sh.find might be tricky, let's use os.walk
+        count = 0
         for root, dirs, files in os.walk(build_dir):
             for file in files:
-                if file == "CMakeLists.txt":
-                    filepath = os.path.join(root, file)
-                    # Use sed to remove lines with -march=native
-                    try:
-                        sh.sed("-i", "/-march=native/d", filepath)
-                        logging.info(f"Patched {filepath}")
-                    except Exception as e:
-                        logging.warning(f"Failed to patch {filepath}: {e}")
+                filepath = os.path.join(root, file)
+                try:
+                    # Check if file is text/cmake/params
+                    if file.endswith('.txt') or file.endswith('.cmake') or file.endswith('.make'):
+                        # Read file to check for string (avoid grep dependency issues)
+                        with open(filepath, 'r', errors='ignore') as f:
+                            content = f.read()
+                        
+                        if "-march=native" in content:
+                            logging.info(f"Found poison in {file}. Sanitizing...")
+                            # Replace string
+                            sh.sed("-i", "s/-march=native//g", filepath)
+                            count += 1
+                except Exception as e:
+                    pass # Ignore binary read errors
+                    
+        logging.info(f"Sanitization complete. Patched {count} files.")
 
 recipe = LlamaCppPythonRecipe()
