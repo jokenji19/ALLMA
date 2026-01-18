@@ -92,6 +92,19 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                     logging.warning(f"Could not process {filepath}: {e}")
                     
         logging.info(f"OPERATION CLEAN SLATE: Removed '-march=native' from {count} files.") 
+        
+        # VERIFICATION: Did we miss anything?
+        logging.info("VERIFICATION SCAN:")
+        try:
+            # Check if ANY file still contains the poison
+            grep_res = sh.grep("-r", "-march=native", build_dir, _ok_code=[0,1])
+            if grep_res.exit_code == 0:
+                logging.error("CRITICAL: POISON STILL PRESENT!")
+                logging.error(grep_res.stdout.decode('utf-8')[:500]) # Print first 500 chars
+            else:
+                logging.info("VERIFICATION PASSED: No -march=native found in build_dir.")
+        except Exception as e:
+            logging.error(f"Verification failed: {e}") 
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
