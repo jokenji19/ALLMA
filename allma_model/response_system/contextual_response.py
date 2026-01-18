@@ -23,6 +23,7 @@ class ResponseContext:
     technical_level: TechnicalLevel
     conversation_history: List[str] = field(default_factory=list)
     user_preferences: Optional[LearningPreference] = None
+    llm_init_error: Optional[str] = None
 
 @dataclass
 class ProcessedResponse:
@@ -191,9 +192,15 @@ def esempio_funzione(param1: str, param2: int = 0):
             return "Sono ALLMA (Advanced Learning and Emotional Memory Architecture). Al momento opero in modalità ridotta."
 
         # Generic Fallback
-        return (f"Ho ricevuto il tuo messaggio: '{query}'.\n"
-                "Tuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\n"
-                "Non posso generare una risposta complessa ora.")
+        response = (f"Ho ricevuto il tuo messaggio: '{query}'.\n"
+                    "Tuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\n"
+                    "Non posso generare una risposta complessa ora.")
+        
+        if context.llm_init_error:
+            # Add debug info for the user
+            response += f"\n\n[DEBUG ERROR]: {context.llm_init_error}"
+            
+        return response
         
     def _check_advanced_concepts(
         self,

@@ -188,8 +188,18 @@ class ALLMACore:
                 logging.error("❌ Failed to load Mobile Engine.")
                 
         except Exception as e:
-            logging.error(f"Critical error initializing Mobile LLM: {e}")
+            error_msg = f"Critical error initializing Mobile LLM: {str(e)}"
+            logging.error(error_msg)
             self._llm_ready = False
+            self._mobile_llm_error = error_msg
+
+        # Also capture missing dependency error if not raised as exception above
+        try:
+            from allma_model.llm.mobile_gemma_wrapper import LLAMA_CPP_AVAILABLE
+            if not LLAMA_CPP_AVAILABLE:
+                self._mobile_llm_error = "llama-cpp-python import failed (LLAMA_CPP_AVAILABLE=False). Check logcat for dlopen errors."
+        except ImportError:
+             self._mobile_llm_error = "Could not import mobile_gemma_wrapper."
         
     def process_message(
         self,
@@ -253,7 +263,8 @@ class ALLMACore:
                 current_topic=topic,
                 technical_level=self._determine_technical_level(user_id),
                 conversation_history=[msg.content for msg in history],
-                user_preferences=user_preferences
+                user_preferences=user_preferences,
+                llm_init_error=getattr(self, '_mobile_llm_error', None)
             )
             
             # Genera la risposta
