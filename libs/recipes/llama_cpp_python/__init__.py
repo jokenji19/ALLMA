@@ -67,17 +67,27 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             for file in files:
                 filepath = os.path.join(root, file)
                 try:
-                    # Check if file is text/cmake/params
-                    if file.endswith('.txt') or file.endswith('.cmake') or file.endswith('.make'):
+                    # Check if file is CMakeLists.txt
+                    if file == "CMakeLists.txt":
+                        # VERIFY: Read before
                         with open(filepath, 'r', errors='ignore') as f:
                             content = f.read()
                         
                         if "-march=native" in content:
-                            logging.info(f"Found poison in {file}. Replacing with -march=armv8-a...")
-                            sh.sed("-i", "s/-march=native/-march=armv8-a/g", filepath)
+                            logging.info(f"Found poison in {file}. Appending Antidote...")
+                            
+                            # METHOD: Append a forced removal at the end of the file.
+                            # This overrides any previous setting in the file.
+                            antidote = '\n\n# ALLMA PATCH: Force remove native flag\nstring(REPLACE "-march=native" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")\nstring(REPLACE "-march=native" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")\nadd_compile_options(-march=armv8-a)\n'
+                            
+                            with open(filepath, 'a') as f:
+                                f.write(antidote)
+                                
                             count += 1
                 except Exception as e:
                     pass 
+                    
+        logging.info(f"Sanitization complete. Injected antidote into {count} CMakeLists.") 
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
