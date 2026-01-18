@@ -67,27 +67,25 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             for file in files:
                 filepath = os.path.join(root, file)
                 try:
-                    # Check if file is CMakeLists.txt
-                    if file == "CMakeLists.txt":
-                        # VERIFY: Read before
-                        with open(filepath, 'r', errors='ignore') as f:
+                    # Skip binary files/images to avoid encoding errors
+                    if file.endswith(('.c', '.h', '.cpp', '.hpp', '.txt', '.cmake', '.make', '.sh')):
+                        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                             content = f.read()
                         
                         if "-march=native" in content:
-                            logging.info(f"Found poison in {file}. Appending Antidote...")
+                            logging.info(f"FOUND POISON in {filepath}. REMOVING...")
                             
-                            # METHOD: Append a forced removal at the end of the file.
-                            # This overrides any previous setting in the file.
-                            antidote = '\n\n# ALLMA PATCH: Force remove native flag\nstring(REPLACE "-march=native" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")\nstring(REPLACE "-march=native" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")\nadd_compile_options(-march=armv8-a)\n'
+                            # Pure Python replacement - Robust and Dumb
+                            new_content = content.replace("-march=native", "")
                             
-                            with open(filepath, 'a') as f:
-                                f.write(antidote)
+                            with open(filepath, 'w', encoding='utf-8') as f:
+                                f.write(new_content)
                                 
                             count += 1
                 except Exception as e:
-                    pass 
+                    logging.warning(f"Could not process {filepath}: {e}")
                     
-        logging.info(f"Sanitization complete. Injected antidote into {count} CMakeLists.") 
+        logging.info(f"OPERATION CLEAN SLATE: Removed '-march=native' from {count} files.") 
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
