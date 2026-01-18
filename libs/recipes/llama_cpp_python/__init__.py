@@ -239,25 +239,69 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             
         logging.info(f"MANUAL BUILD SUCCESS. Lib at: {lib_path}")
         
-        # 5. Connect Python to Prebuilt Lib
-        # For scikit-build-core, we tell it where the prebuilt lib is? 
-        # Or better: We install normally but with CMAKE_ARGS pointing to it?
-        # Actually, simpler: We set environment variable for the install step
-        # that forces the flags, HOPING that since we pre-built, maybe we don't need to rebuild?
-        # No, pip will still rebuild the bindings.
+        logging.info(f"MANUAL BUILD SUCCESS. Lib at: {lib_path}")
         
-        # RETREAT: Manual linking is complex with scikit-build-core.
-        # BETTER STRATEGY 173:
-        # We manually build, but then we use the SAME flags for pip.
-        # Wait, if we manually build, we PROVE that the flags work.
-        # If pip fails, it proves pip is the problem.
+        # 5. BUILD 174: THE SURGEON (CMake Injection)
+        # We patch the root CMakeLists.txt to recognize our prebuilt library
+        # instead of trying to build vendor/llama.cpp again.
         
-        # Let's use the standard build_arch but with FORCE_CMAKE_ARGS env var
-        # AND we use the 'Env Wall' strategy again but inside this function scope.
+        cmake_root = os.path.join(build_dir, "CMakeLists.txt")
+        logging.info(f"Applying PREBUILT PATCH to {cmake_root}")
         
-        self.install_python_package(arch)
+        with open(cmake_root, 'r') as f:
+            content = f.read()
+            
+        # We look for "add_subdirectory(vendor/llama.cpp)" and wrap it
+        if "add_subdirectory(vendor/llama.cpp)" in content:
+            patch = """
+if(DEFINED ENV{LLAMA_CPP_PREBUILT_DIR})
+  message(STATUS "ALLMA: Using prebuilt llama from $ENV{LLAMA_CPP_PREBUILT_DIR}")
+  add_library(llama SHARED IMPORTED)
+  set_target_properties(llama PROPERTIES
+    IMPORTED_LOCATION "$ENV{LLAMA_CPP_PREBUILT_DIR}/lib/libllama.so"
+    INTERFACE_INCLUDE_DIRECTORIES "$ENV{LLAMA_CPP_PREBUILT_DIR}/include"
+  )
+else()
+  add_subdirectory(vendor/llama.cpp)
+endif()
+"""
+            new_content = content.replace("add_subdirectory(vendor/llama.cpp)", patch)
+            
+            with open(cmake_root, 'w') as f:
+                f.write(new_content)
+        else:
+            logging.error("Could not find add_subdirectory in CMakeLists.txt! Patch failed.")
 
-    # Need subprocess
+        # 6. Organize Prebuilt Dir structure
+        prebuilt_dir = os.path.join(build_dir, "prebuilt_llama")
+        os.makedirs(os.path.join(prebuilt_dir, "lib"), exist_ok=True)
+        os.makedirs(os.path.join(prebuilt_dir, "include"), exist_ok=True)
+        
+        import shutil
+        # Copy lib
+        shutil.copy(lib_path, os.path.join(prebuilt_dir, "lib", "libllama.so"))
+        # Copy headers (llama.h, ggml.h) - They are in vendor/llama.cpp and vendor/llama.cpp/common
+        # Actually header location depends on manual install? No, we didn't run install.
+        # We just grab them from source.
+        shutil.copy(os.path.join(llama_cpp_dir, "llama.h"), os.path.join(prebuilt_dir, "include", "llama.h"))
+        # ggml.h might be in ggml/include or root depending on version
+        if os.path.exists(os.path.join(llama_cpp_dir, "ggml.h")):
+             shutil.copy(os.path.join(llama_cpp_dir, "ggml.h"), os.path.join(prebuilt_dir, "include", "ggml.h"))
+        
+        # 7. Set Environment Variable
+        env['LLAMA_CPP_PREBUILT_DIR'] = prebuilt_dir
+        
+        # 8. Install Python Package (now using prebuilt)
+        # We use check_call directly on pip to ensure env vars are passed
+        logging.info("Installing Python package via pip with PREBUILT linkage...")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", ".", "--no-build-isolation"],
+            cwd=build_dir,
+            env=env
+        )
+
+    # Need subprocess & sys
     import subprocess
+    import sys
 
 recipe = LlamaCppPythonRecipe()
