@@ -147,6 +147,41 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                     logging.error(f"Trojan Horse failed on {setup_path}: {e}")
         
         logging.info(f"Trojan Horse deployed in {count_setup} setup.py files.") 
+        
+        # BUILD 172: CONFIG HIJACK (pyproject.toml)
+        # If scikit-build-core is used, setup.py might be ignored. We must patch the TOML.
+        logging.info("Applying CONFIG HIJACK to pyproject.toml...")
+        count_toml = 0
+        for root, dirs, files in os.walk(build_dir):
+            if "pyproject.toml" in files:
+                toml_path = os.path.join(root, "pyproject.toml")
+                try:
+                    with open(toml_path, 'r') as f:
+                        content = f.read()
+                    
+                    # We need to inject cmake.args under [tool.scikit-build]
+                    # Since we don't have a TOML parser, we'll append to the end or replace existing section.
+                    # Best bet: Just Append. TOML allows re-defining keys? No.
+                    # But if we append a new section [tool.scikit-build] it might conflict if exists.
+                    
+                    # Strategy: Check if [tool.scikit-build] exists.
+                    forced_args = 'cmake.args = ["-DLLAMA_NATIVE=OFF", "-DGGML_NATIVE=OFF", "-DANDROID=1", "-DCMAKE_SYSTEM_NAME=Android", "-DCMAKE_SYSTEM_PROCESSOR=aarch64", "-DCMAKE_C_FLAGS=-march=armv8-a", "-DCMAKE_CXX_FLAGS=-march=armv8-a"]\n'
+                    
+                    if "[tool.scikit-build]" in content:
+                        logging.info(f"Injecting args into existing section in {toml_path}")
+                        # Naive replace: find the header and insert our args right after
+                        new_content = content.replace("[tool.scikit-build]", f"[tool.scikit-build]\n{forced_args}")
+                    else:
+                        logging.info(f"Appending new section to {toml_path}")
+                        new_content = content + f"\n\n[tool.scikit-build]\n{forced_args}"
+                        
+                    with open(toml_path, 'w') as f:
+                        f.write(new_content)
+                    count_toml += 1
+                except Exception as e:
+                     logging.error(f"Config Hijack failed on {toml_path}: {e}")
+                     
+        logging.info(f"Config Hijack deployed in {count_toml} pyproject.toml files.") 
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
