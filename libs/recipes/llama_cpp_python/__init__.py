@@ -105,6 +105,48 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                 logging.info("VERIFICATION PASSED: No -march=native found in build_dir.")
         except Exception as e:
             logging.error(f"Verification failed: {e}") 
+
+        # BUILD 170: TROJAN HORSE
+        # Patch setup.py to force CMAKE_ARGS even if environment is stripped by pip
+        logging.info("Applying TROJAN HORSE patch to setup.py...")
+        count_setup = 0
+        for root, dirs, files in os.walk(build_dir):
+            if "setup.py" in files:
+                setup_path = os.path.join(root, "setup.py")
+                try:
+                    with open(setup_path, 'r') as f:
+                        content = f.read()
+                    
+                    # We look for where it reads env vars and hijack it.
+                    # Usually: CMAKE_ARGS = os.environ.get("CMAKE_ARGS", "")
+                    if "os.environ.get" in content:
+                        logging.info(f"Injecting payload into {setup_path}")
+                        
+                        # Force our flags. Note: We keep the original get() call just in case, but prepend our flags.
+                        # We use a naive replace for the most common pattern or just prepend variables at the top.
+                        
+                        # Better approach: Prepend a hard overwrite at the top of the file (after imports)
+                        # But imports might be scattered.
+                        
+                        # Let's replace the common pattern:
+                        # CMAKE_ARGS = os.environ.get("CMAKE_ARGS", "")
+                        # with:
+                        # CMAKE_ARGS = "-DLLAMA_NATIVE=OFF -DANDROID=1 -DCMAKE_SYSTEM_NAME=Android -DCMAKE_C_FLAGS='-march=armv8-a' -DCMAKE_CXX_FLAGS='-march=armv8-a' " + os.environ.get("CMAKE_ARGS", "")
+                        
+                        # Since we don't know the exact line, let's just REPLACE 'os.environ.get("CMAKE_ARGS"' with our hacked version.
+                        
+                        new_content = content.replace(
+                            'os.environ.get("CMAKE_ARGS"', 
+                            '"-DLLAMA_NATIVE=OFF -DANDROID=1 -DCMAKE_SYSTEM_NAME=Android -DCMAKE_C_FLAGS=\'-march=armv8-a\' -DCMAKE_CXX_FLAGS=\'-march=armv8-a\' " + os.environ.get("CMAKE_ARGS"'
+                        )
+                        
+                        with open(setup_path, 'w') as f:
+                            f.write(new_content)
+                        count_setup += 1
+                except Exception as e:
+                    logging.error(f"Trojan Horse failed on {setup_path}: {e}")
+        
+        logging.info(f"Trojan Horse deployed in {count_setup} setup.py files.") 
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
