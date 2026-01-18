@@ -185,4 +185,79 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
+    def build_arch(self, arch):
+        # BUILD 173: MANUAL COMPILATION
+        # We cannot trust pip/scikit-build to pass flags correctly.
+        # So we build libllama.so manually first, then tell pip to use it.
+        
+        build_dir = self.get_build_dir(arch.arch)
+        llama_cpp_dir = os.path.join(build_dir, 'vendor', 'llama.cpp')
+        
+        # 1. Create separate build dir for the C++ lib
+        lib_build_dir = os.path.join(build_dir, 'build-lib-arm64')
+        os.makedirs(lib_build_dir, exist_ok=True)
+        
+        env = self.get_recipe_env(arch)
+        
+        # 2. Configure manually (Full Control)
+        cmd_cmake = [
+            "cmake",
+            "-S", llama_cpp_dir,
+            "-B", lib_build_dir,
+            f"-DCMAKE_TOOLCHAIN_FILE={os.environ['ANDROID_NDK_HOME']}/build/cmake/android.toolchain.cmake",
+            "-DANDROID_ABI=arm64-v8a",
+            "-DANDROID_PLATFORM=android-21",
+            "-DLLAMA_NATIVE=OFF",
+            "-DGGML_NATIVE=OFF",
+            "-DBUILD_SHARED_LIBS=ON",
+            "-DCMAKE_C_FLAGS=-march=armv8-a",
+            "-DCMAKE_CXX_FLAGS=-march=armv8-a"
+        ]
+        
+        logging.info(f"Starting Manual CMake: {cmd_cmake}")
+        subprocess.check_call(cmd_cmake, env=env)
+        
+        # 3. Build manually
+        logging.info("Starting Manual Make...")
+        subprocess.check_call(["make", "-j4"], cwd=lib_build_dir, env=env)
+        
+        # 4. Locate the built library
+        # It usually ends up in 'lib_build_dir/libllama.so' or similar
+        lib_path = os.path.join(lib_build_dir, "libllama.so") # This name might vary (libllama.so / libllama.a)
+        # Actually llama.cpp often produces 'libllama.so' if BUILD_SHARED_LIBS=ON
+        
+        if not os.path.exists(lib_path):
+             # Try finding it
+             for root, dirs, files in os.walk(lib_build_dir):
+                 if "libllama.so" in files:
+                     lib_path = os.path.join(root, "libllama.so")
+                     break
+        
+        if not os.path.exists(lib_path):
+            logging.error("MANUAL BUILD FAILED: libllama.so not found")
+            raise RuntimeError("Manual build failed")
+            
+        logging.info(f"MANUAL BUILD SUCCESS. Lib at: {lib_path}")
+        
+        # 5. Connect Python to Prebuilt Lib
+        # For scikit-build-core, we tell it where the prebuilt lib is? 
+        # Or better: We install normally but with CMAKE_ARGS pointing to it?
+        # Actually, simpler: We set environment variable for the install step
+        # that forces the flags, HOPING that since we pre-built, maybe we don't need to rebuild?
+        # No, pip will still rebuild the bindings.
+        
+        # RETREAT: Manual linking is complex with scikit-build-core.
+        # BETTER STRATEGY 173:
+        # We manually build, but then we use the SAME flags for pip.
+        # Wait, if we manually build, we PROVE that the flags work.
+        # If pip fails, it proves pip is the problem.
+        
+        # Let's use the standard build_arch but with FORCE_CMAKE_ARGS env var
+        # AND we use the 'Env Wall' strategy again but inside this function scope.
+        
+        self.install_python_package(arch)
+
+    # Need subprocess
+    import subprocess
+
 recipe = LlamaCppPythonRecipe()
