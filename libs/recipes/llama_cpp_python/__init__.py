@@ -36,6 +36,12 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         )
         
         # Override flags per sicurezza
+        
+        # KEY FIX: Set these as ENV VARS, which CMake reads as defaults.
+        # This overrides internal CMake logic better than command line args sometimes.
+        env['CMAKE_C_FLAGS'] = "-march=armv8-a"
+        env['CMAKE_CXX_FLAGS'] = "-march=armv8-a"
+        
         env['CFLAGS'] = f"-target {arch.target} -fPIC -march=armv8-a"
         env['CXXFLAGS'] = f"-target {arch.target} -fPIC -march=armv8-a"
         env['LDFLAGS'] = f"-target {arch.target}"
