@@ -103,7 +103,7 @@ android.build_tools_version = 34.0.0
 #android.skip_update_options = path/to/exclude/*
 
 # (list) The Android archs to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-# android.archs = arm64-v8a
+android.archs = arm64-v8a
 
 # (bool) enables Android auto backup feature (Android API >= 23)
 android.allow_backup = True

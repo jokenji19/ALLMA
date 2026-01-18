@@ -3,9 +3,11 @@ from pythonforandroid.toolchain import current_directory, shprint
 import sh
 import os
 import logging
+import subprocess
+import sys
 
 class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
-    version = '0.2.26'
+    name = 'llama-cpp-python'
     version = '0.2.26'
     # Use PyPI source because GitHub tarballs often lack submodules (vendor/llama.cpp)
     # causing the patch to miss the files, or the build to fetch fresh (unpatched) code.
@@ -23,13 +25,14 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         # -DANDROID_ABI è gestito automaticamente da p4a solitamente, ma forziamo
         # Disabilitiamo chiamate di sistema non supportate o non necessarie
         env['CMAKE_ARGS'] = (
-            f"-DCMAKE_TOOLCHAIN_FILE={os.environ['ANDROID_NDK_HOME']}/build/cmake/android.toolchain.cmake "
+            f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake "
             f"-DCMAKE_SYSTEM_NAME=Android "
             f"-DANDROID_ABI={arch.arch} "
             f"-DANDROID_PLATFORM=android-21 "
             "-DLLAMA_CUBLAS=OFF "  # Niente CUDA su Android standard
             "-DLLAMA_OPENBLAS=OFF " # OpenBLAS può essere problematico, meglio default
             "-DLLAMA_BUILD_SERVER=OFF " # Non serve il server web
+            "-DLLAVA_BUILD=OFF " # Disable Llava
             "-DLLAMA_NATIVE=OFF " # Evita ottimizzazioni CPU specifiche dell'host che rompono cross-compile
             "-DCMAKE_C_FLAGS='-march=armv8-a' "
             "-DCMAKE_CXX_FLAGS='-march=armv8-a' "
@@ -148,40 +151,11 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         
         logging.info(f"Trojan Horse deployed in {count_setup} setup.py files.") 
         
-        # BUILD 172: CONFIG HIJACK (pyproject.toml)
-        # If scikit-build-core is used, setup.py might be ignored. We must patch the TOML.
-        logging.info("Applying CONFIG HIJACK to pyproject.toml...")
-        count_toml = 0
-        for root, dirs, files in os.walk(build_dir):
-            if "pyproject.toml" in files:
-                toml_path = os.path.join(root, "pyproject.toml")
-                try:
-                    with open(toml_path, 'r') as f:
-                        content = f.read()
-                    
-                    # We need to inject cmake.args under [tool.scikit-build]
-                    # Since we don't have a TOML parser, we'll append to the end or replace existing section.
-                    # Best bet: Just Append. TOML allows re-defining keys? No.
-                    # But if we append a new section [tool.scikit-build] it might conflict if exists.
-                    
-                    # Strategy: Check if [tool.scikit-build] exists.
-                    forced_args = 'cmake.args = ["-DLLAMA_NATIVE=OFF", "-DGGML_NATIVE=OFF", "-DANDROID=1", "-DCMAKE_SYSTEM_NAME=Android", "-DCMAKE_SYSTEM_PROCESSOR=aarch64", "-DCMAKE_C_FLAGS=-march=armv8-a", "-DCMAKE_CXX_FLAGS=-march=armv8-a"]\n'
-                    
-                    if "[tool.scikit-build]" in content:
-                        logging.info(f"Injecting args into existing section in {toml_path}")
-                        # Naive replace: find the header and insert our args right after
-                        new_content = content.replace("[tool.scikit-build]", f"[tool.scikit-build]\n{forced_args}")
-                    else:
-                        logging.info(f"Appending new section to {toml_path}")
-                        new_content = content + f"\n\n[tool.scikit-build]\n{forced_args}"
-                        
-                    with open(toml_path, 'w') as f:
-                        f.write(new_content)
-                    count_toml += 1
-                except Exception as e:
-                     logging.error(f"Config Hijack failed on {toml_path}: {e}")
-                     
-        logging.info(f"Config Hijack deployed in {count_toml} pyproject.toml files.") 
+        # [DISABLED] BUILD 172: CONFIG HIJACK (pyproject.toml)
+        # This causes TOML errors and is likely redundant with SKBUILD_CMAKE_ARGS
+        # logging.info("Applying CONFIG HIJACK to pyproject.toml...")
+        # ...
+        
                     
         logging.info(f"Sanitization complete. Patched {count} files.")
 
@@ -204,11 +178,12 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             "cmake",
             "-S", llama_cpp_dir,
             "-B", lib_build_dir,
-            f"-DCMAKE_TOOLCHAIN_FILE={os.environ['ANDROID_NDK_HOME']}/build/cmake/android.toolchain.cmake",
+            f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake",
             "-DANDROID_ABI=arm64-v8a",
             "-DANDROID_PLATFORM=android-21",
             "-DLLAMA_NATIVE=OFF",
             "-DGGML_NATIVE=OFF",
+            "-DLLAVA_BUILD=OFF",  # Disable Llava to avoid install errors with prebuilt llama
             "-DBUILD_SHARED_LIBS=ON",
             "-DCMAKE_C_FLAGS=-march=armv8-a",
             "-DCMAKE_CXX_FLAGS=-march=armv8-a"
@@ -217,17 +192,58 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         logging.info(f"Starting Manual CMake: {cmd_cmake}")
         subprocess.check_call(cmd_cmake, env=env)
         
+        # 2b. Patch llama.cpp for Android POSIX constants
+        llama_cpp_file = os.path.join(llama_cpp_dir, 'llama.cpp')
+        with open(llama_cpp_file, 'r') as f:
+            content = f.read()
+            
+        if '#define posix_madvise' not in content:
+            logging.info("Patching llama.cpp for POSIX_MADV definitions...")
+            patch_code = """
+#if defined(__ANDROID__) || defined(ANDROID)
+    #include <sys/mman.h>
+    #ifndef POSIX_MADV_WILLNEED
+        #ifdef MADV_WILLNEED
+            #define POSIX_MADV_WILLNEED MADV_WILLNEED
+        #else
+            #define POSIX_MADV_WILLNEED 3
+        #endif
+    #endif
+    #ifndef POSIX_MADV_RANDOM
+        #ifdef MADV_RANDOM
+            #define POSIX_MADV_RANDOM MADV_RANDOM
+        #else
+            #define POSIX_MADV_RANDOM 1
+        #endif
+    #endif
+    #define posix_madvise madvise
+#endif
+"""
+            # Insert after includes (approx line 43)
+            # define LLAMA_API_INTERNAL is at top. We inserts after #include "llama.h"
+            content = content.replace('#include "llama.h"', '#include "llama.h"\n' + patch_code)
+            with open(llama_cpp_file, 'w') as f:
+                f.write(content)
+
         # 3. Build manually
         logging.info("Starting Manual Make...")
-        subprocess.check_call(["make", "-j4"], cwd=lib_build_dir, env=env)
+        try:
+             # Capture output so we can see why it fails
+             subprocess.run(["make", "-j4"], cwd=lib_build_dir, env=env, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+             logging.error("MANUAL MAKE FAILED!")
+             logging.error(f"STDOUT:\n{e.stdout}")
+             logging.error(f"STDERR:\n{e.stderr}")
+             # Write to file for easier retrieval
+             err_log = os.path.join(build_dir, "make_failure.log")
+             with open(err_log, "w") as f:
+                 f.write(f"STDOUT:\n{e.stdout}\n\nSTDERR:\n{e.stderr}")
+             raise e
         
         # 4. Locate the built library
-        # It usually ends up in 'lib_build_dir/libllama.so' or similar
-        lib_path = os.path.join(lib_build_dir, "libllama.so") # This name might vary (libllama.so / libllama.a)
-        # Actually llama.cpp often produces 'libllama.so' if BUILD_SHARED_LIBS=ON
+        lib_path = os.path.join(lib_build_dir, "libllama.so")
         
         if not os.path.exists(lib_path):
-             # Try finding it
              for root, dirs, files in os.walk(lib_build_dir):
                  if "libllama.so" in files:
                      lib_path = os.path.join(root, "libllama.so")
@@ -239,19 +255,14 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             
         logging.info(f"MANUAL BUILD SUCCESS. Lib at: {lib_path}")
         
-        logging.info(f"MANUAL BUILD SUCCESS. Lib at: {lib_path}")
-        
         # 5. BUILD 174: THE SURGEON (CMake Injection)
         # We patch the root CMakeLists.txt to recognize our prebuilt library
-        # instead of trying to build vendor/llama.cpp again.
-        
         cmake_root = os.path.join(build_dir, "CMakeLists.txt")
         logging.info(f"Applying PREBUILT PATCH to {cmake_root}")
         
         with open(cmake_root, 'r') as f:
             content = f.read()
             
-        # We look for "add_subdirectory(vendor/llama.cpp)" and wrap it
         if "add_subdirectory(vendor/llama.cpp)" in content:
             patch = """
 if(DEFINED ENV{LLAMA_CPP_PREBUILT_DIR})
@@ -269,6 +280,66 @@ endif()
             
             with open(cmake_root, 'w') as f:
                 f.write(new_content)
+                
+            # PATCH 1: Main Install Block
+            install_block_search = """    install(
+        TARGETS llama 
+        LIBRARY DESTINATION ${SKBUILD_PLATLIB_DIR}/llama_cpp
+        RUNTIME DESTINATION ${SKBUILD_PLATLIB_DIR}/llama_cpp
+        ARCHIVE DESTINATION ${SKBUILD_PLATLIB_DIR}/llama_cpp
+        FRAMEWORK DESTINATION ${SKBUILD_PLATLIB_DIR}/llama_cpp
+        RESOURCE DESTINATION ${SKBUILD_PLATLIB_DIR}/llama_cpp
+    )"""
+            if install_block_search in new_content:
+                logging.info("PATCH APPLIED: install(TARGETS llama) [SKBUILD]")
+                patch_replace = """    if(DEFINED ENV{LLAMA_CPP_PREBUILT_DIR})
+        install(FILES "$ENV{LLAMA_CPP_PREBUILT_DIR}/lib/libllama.so" DESTINATION ${SKBUILD_PLATLIB_DIR}/llama_cpp)
+    else()
+""" + install_block_search + "\n    endif()"
+                new_content = new_content.replace(install_block_search, patch_replace)
+            else:
+                logging.error("PATCH FAILED: Could not find install(TARGETS llama) [SKBUILD]")
+
+            # PATCH 2: Source Dir Install Block
+            install_block_2 = """    install(
+        TARGETS llama 
+        LIBRARY DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
+        RUNTIME DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
+        ARCHIVE DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
+        FRAMEWORK DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
+        RESOURCE DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
+    )"""
+            if install_block_2 in new_content:
+                logging.info("PATCH APPLIED: install(TARGETS llama) [SOURCE]")
+                new_content = new_content.replace(install_block_2, f"if(NOT DEFINED ENV{{LLAMA_CPP_PREBUILT_DIR}})\n{install_block_2}\nendif()")
+            else:
+                logging.error("PATCH FAILED: Could not find install(TARGETS llama) [SOURCE]")
+
+            # PATCH 3: DLLs Skbuild
+            install_block_3 = """    install(
+        FILES $<TARGET_RUNTIME_DLLS:llama>
+        DESTINATION ${SKBUILD_PLATLIB_DIR}/llama_cpp
+    )"""
+            if install_block_3 in new_content:
+                logging.info("PATCH APPLIED: install(DLLS) [SKBUILD]")
+                new_content = new_content.replace(install_block_3, f"if(NOT DEFINED ENV{{LLAMA_CPP_PREBUILT_DIR}})\n{install_block_3}\nendif()")
+            else:
+                logging.warning("PATCH WARNING: Could not find install(DLLS) [SKBUILD]")
+
+            # PATCH 4: DLLs Source
+            install_block_4 = """    install(
+        FILES $<TARGET_RUNTIME_DLLS:llama>
+        DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/llama_cpp
+    )"""
+            if install_block_4 in new_content:
+                logging.info("PATCH APPLIED: install(DLLS) [SOURCE]")
+                new_content = new_content.replace(install_block_4, f"if(NOT DEFINED ENV{{LLAMA_CPP_PREBUILT_DIR}})\n{install_block_4}\nendif()")
+            else:
+                logging.warning("PATCH WARNING: Could not find install(DLLS) [SOURCE]")
+
+            with open(cmake_root, 'w') as f:
+                f.write(new_content)
+                
         else:
             logging.error("Could not find add_subdirectory in CMakeLists.txt! Patch failed.")
 
@@ -280,28 +351,85 @@ endif()
         import shutil
         # Copy lib
         shutil.copy(lib_path, os.path.join(prebuilt_dir, "lib", "libllama.so"))
-        # Copy headers (llama.h, ggml.h) - They are in vendor/llama.cpp and vendor/llama.cpp/common
-        # Actually header location depends on manual install? No, we didn't run install.
-        # We just grab them from source.
+        # Copy headers
         shutil.copy(os.path.join(llama_cpp_dir, "llama.h"), os.path.join(prebuilt_dir, "include", "llama.h"))
-        # ggml.h might be in ggml/include or root depending on version
         if os.path.exists(os.path.join(llama_cpp_dir, "ggml.h")):
              shutil.copy(os.path.join(llama_cpp_dir, "ggml.h"), os.path.join(prebuilt_dir, "include", "ggml.h"))
         
         # 7. Set Environment Variable
         env['LLAMA_CPP_PREBUILT_DIR'] = prebuilt_dir
         
-        # 8. Install Python Package (now using prebuilt)
-        # We use check_call directly on pip to ensure env vars are passed
-        logging.info("Installing Python package via pip with PREBUILT linkage...")
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", ".", "--no-build-isolation"],
-            cwd=build_dir,
-            env=env
-        )
+        # 8. Install Python Package via Pip with Verified Target
+        logging.info("Installing build dependencies (scikit-build-core)...")
+        try:
+             subprocess.run(
+                [sys.executable, "-m", "pip", "install", "scikit-build-core", "cmake"],
+                cwd=build_dir,
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True
+             )
+        except subprocess.CalledProcessError as e:
+             logging.error("FAILED TO INSTALL BUILD DEPS")
+             logging.error(e.stderr)
+             raise e
 
-    # Need subprocess & sys
-    import subprocess
-    import sys
+        # FIXED INSTALL LOGIC WITH TARGET AND MANUAL FALLBACK
+        logging.info("Installing Python package via pip with PREBUILT linkage...")
+        install_target = self.ctx.get_python_install_dir(arch.arch)
+        logging.info(f"Target Install Dir: {install_target}")
+        
+        if not os.path.exists(install_target):
+            os.makedirs(install_target)
+
+        try:
+            # Run pip with target
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", ".", 
+                 "--no-build-isolation", 
+                 "--target", install_target, 
+                 "--ignore-installed", 
+                 "--no-deps"],
+                cwd=build_dir,
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            logging.info(f"PIP SUCCESS. Installed to {install_target}")
+        except subprocess.CalledProcessError as e:
+            logging.error("PIP INSTALL FAILED! Attempting Manual Copy...")
+            logging.error(f"STDOUT: {e.stdout}")
+            logging.error(f"STDERR: {e.stderr}")
+            # Do not raise, fall through to Manual Copy
+            pass
+
+        # VERIFICATION / MANUAL COPY FALLBACK
+        installed_pkg = os.path.join(install_target, "llama_cpp")
+        if not os.path.exists(installed_pkg):
+             logging.warning("Pip verification failed. Attempting MANUAL COPY...")
+             src_pkg = os.path.join(build_dir, "llama_cpp")
+             import shutil
+             if os.path.exists(installed_pkg): shutil.rmtree(installed_pkg)
+             
+             if os.path.exists(src_pkg):
+                 shutil.copytree(src_pkg, installed_pkg)
+                 logging.info("Manual Copy complete.")
+             else:
+                 raise RuntimeError(f"Source package {src_pkg} not found for manual copy!")
+
+        # Ensure libllama.so is in the package
+        dest_so = os.path.join(installed_pkg, "libllama.so")
+        if not os.path.exists(dest_so):
+             src_so = os.path.join(prebuilt_dir, "lib", "libllama.so")
+             if os.path.exists(src_so):
+                  import shutil
+                  shutil.copy2(src_so, dest_so)
+                  logging.info(f"Copied libllama.so to {dest_so}")
+             else:
+                  logging.warning("Could not find source libllama.so for copy!")
+
+        logging.info(f"FINAL INSTALL SUCCESS! Package at {installed_pkg}")
 
 recipe = LlamaCppPythonRecipe()

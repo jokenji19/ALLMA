@@ -5,8 +5,12 @@
 - [ ] **Main Entry Point**: Verify `main.py` is NOT truncated and contains the full execution footer (lines > 150).
 - [ ] **Blob Content**: Verify `allma_model` inside `ZIP_DATA` contains all required sub-packages (`ui`, `core`, `utils`).
 - [ ] **Critical Files**: Ensure `app_entry.py`, `chat_view.py`, and `setup_view.py` exist in the source map.
+- **[ ] CHECK 7: Code Integrity**
+    - [ ] Did you verify the file content after editing?
+    - [ ] Are all class methods properly defined (check for missing `def`)?
+    - [ ] Are indentations correct?
 
-## 2. Functional Verification
+## 5. Final Decisional Verification
 - [ ] **Extraction Simulation**: Run `main.py` locally. Does it extract to `unpacked_brain`?
 - [ ] **Dependecy Check**: Are all imports (Kivy, requests, internal libs) resolvable?
 - [ ] **Flow Test**:
