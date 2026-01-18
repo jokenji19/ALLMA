@@ -137,7 +137,7 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                         
                         new_content = content.replace(
                             'os.environ.get("CMAKE_ARGS"', 
-                            '"-DLLAMA_NATIVE=OFF -DANDROID=1 -DCMAKE_SYSTEM_NAME=Android -DCMAKE_C_FLAGS=\'-march=armv8-a\' -DCMAKE_CXX_FLAGS=\'-march=armv8-a\' " + os.environ.get("CMAKE_ARGS"'
+                            '"-DGGML_NATIVE=OFF -DLLAMA_NATIVE=OFF -DANDROID=1 -DCMAKE_SYSTEM_NAME=Android -DCMAKE_C_FLAGS=\'-march=armv8-a\' -DCMAKE_CXX_FLAGS=\'-march=armv8-a\' " + os.environ.get("CMAKE_ARGS"'
                         )
                         
                         with open(setup_path, 'w') as f:
