@@ -13,7 +13,7 @@ package.domain = org.allma
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
+source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so
 
 # (list) List of inclusions using pattern matching
 # Build 148: Explicit Code Blob Include
