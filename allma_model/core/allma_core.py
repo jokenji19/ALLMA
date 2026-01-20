@@ -171,7 +171,9 @@ class ALLMACore:
             from allma_model.llm.mobile_gemma_wrapper import MobileGemmaWrapper, LLAMA_CPP_AVAILABLE
             
             if not LLAMA_CPP_AVAILABLE:
-                logging.warning("llama-cpp-python not found. Falling back to safe mode.")
+                msg = "llama-cpp-python not found (LLAMA_CPP_AVAILABLE=False). The library is missing from APK."
+                logging.warning(msg)
+                self._mobile_llm_error = msg
                 return
 
             if not self.models_dir:
@@ -401,7 +403,7 @@ class ALLMACore:
                 # Genera risposta con Gemma
                 response_text = self._llm.generate(
                     prompt=full_prompt,
-                    max_tokens=600,
+                    max_tokens=256,
                     stop=["<end_of_turn>"]
                 )
                 logging.info(f"✅ Generated (Symbiosis): {response_text[:50]}...")

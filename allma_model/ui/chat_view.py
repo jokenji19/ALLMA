@@ -100,7 +100,12 @@ class ChatView(Screen):
             # Initialize core in background or here if fast enough
             # For now synchronous as it's the first chat load
             try:
-                self.core = ALLMACore()
+                # Recupera il percorso modelli corretto
+                from allma_model.utils.model_downloader import ModelDownloader
+                downloader = ModelDownloader()
+                models_dir = downloader.models_dir
+                
+                self.core = ALLMACore(models_dir=models_dir)
                 self.user_id = "user_mobile"
                 self.conversation_id = self.core.start_conversation(self.user_id)
                 

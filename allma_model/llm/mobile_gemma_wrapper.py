@@ -10,8 +10,11 @@ try:
     from llama_cpp import Llama
     LLAMA_CPP_AVAILABLE = True
 except ImportError:
+    import traceback
+    err = traceback.format_exc()
+    logging.error(f"CRITICAL: llama-cpp-python import failed:\n{err}")
+    print(f"CRITICAL: llama-cpp-python import failed:\n{err}")
     LLAMA_CPP_AVAILABLE = False
-    logging.warning("llama-cpp-python not found. This is expected during desktop dev if not installed.")
 
 # Default model path (relative to creating this class, but should be passed in)
 _DEFAULT_MODEL_NAME = "gemma-3n-e2b-it-q4_k_m.gguf"
@@ -50,13 +53,53 @@ class MobileGemmaWrapper:
         """Carica il modello con llama.cpp"""
         logging.info(f"[MobileGemma] Loading model from {self.model_path} ...")
         try:
-            # -1 threads = auto detect on Android
+            import sys
+            logging.info(f"[MobileGemma] Initializing Llama with path={self.model_path}...")
+            print(f"[MobileGemma] PRINT DEBUG: Initializing Llama...", flush=True)
+            
+            # PERMANENT FIX: Manually load libllama.so to bypass linker issues
+            import os
+            import ctypes
+            
+            # Possible locations for the library
+            possible_paths = [
+                # 1. Custom location in site-packages (where we put it via recipe/hotpatch)
+                "/data/data/org.allma.allma_prime/files/app/_python_bundle/site-packages/llama_cpp/libllama.so",
+                # 2. As a sibling to this file (if packaged near wrapper)
+                os.path.join(os.path.dirname(__file__), "libllama.so"),
+                # 3. Standard Android native lib dir (for distributed APKs)
+                "/data/app/org.allma.allma_prime/lib/arm64/libllama.so",
+                # 4. Fallback: Try to find it relative to site-packages root
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "_python_bundle", "site-packages", "llama_cpp", "libllama.so")
+            ]
+            
+            lib_path = None
+            for p in possible_paths:
+                if os.path.exists(p):
+                    lib_path = p
+                    break
+            
+            if lib_path:
+                print(f"[MobileGemma] Found libllama.so at {lib_path}, setting env...", flush=True)
+                os.environ["LLAMA_CPP_LIB"] = lib_path
+                try:
+                    ctypes.CDLL(lib_path)
+                    print(f"[MobileGemma] Pre-loaded {lib_path} successfully!", flush=True)
+                except Exception as e:
+                    print(f"[MobileGemma] FAILED to pre-load {lib_path}: {e}", flush=True)
+            else:
+                 print(f"[MobileGemma] WARNING: libllama.so NOT FOUND in any known path.", flush=True)
+
+            # Use minimal args first to rule out bad params
             self.llm = Llama(
                 model_path=self.model_path,
-                n_ctx=self.n_ctx,
-                n_threads=-1, 
-                verbose=False
+                n_ctx=512,          # Reduced context
+                n_threads=1,        # 1 thread
+                n_batch=1,          # 1 batch
+                verbose=True
             )
+            
+            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success!", flush=True)
             logging.info("[MobileGemma] Model loaded successfully.")
         except Exception as e:
             logging.error(f"[MobileGemma] Error loading model: {e}")
@@ -84,18 +127,32 @@ class MobileGemmaWrapper:
             stop = ["<end_of_turn>"]
 
         try:
+            # ABI FIX APPLIED (0.2.26 pinned). STREAMING DISABLED TO PREVENT CRASH.
+            logging.info(f"[MobileGemma] Generating response (Start) - Streaming DISABLED")
+            
+            # --- DEBUGGING CRASH ---
+            # Test 1: Tokenize
+            try:
+                logging.info("[MobileGemma] DEBUG: Attempting to tokenize prompt...")
+                tokens = self.llm.tokenize(prompt.encode('utf-8'))
+                logging.info(f"[MobileGemma] DEBUG: Tokenization successful. Loop: {len(tokens)} tokens.")
+            except Exception as e_tok:
+                logging.error(f"[MobileGemma] DEBUG: Tokenization CRASHED/FAILED: {e_tok}")
+            
+            # Test 2: Generate
+            logging.info("[MobileGemma] DEBUG: Starting Generation...")
             output = self.llm(
                 prompt,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
                 stop=stop,
-                echo=False 
+                echo=False,
+                stream=False
             )
-            # llama-cpp-python ritorna un dict in stile OpenAI
-            # {'id': '...', 'object': 'text_completion', 'created': 123, 'model': '...', 'choices': [{'text': '...', ...}], ...}
-            text = output['choices'][0]['text']
-            return text.strip()
+            
+            return output['choices'][0]['text']
+
         except Exception as e:
             logging.error(f"[MobileGemma] Inference error: {e}")
             return f"Error during inference: {e}"

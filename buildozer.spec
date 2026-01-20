@@ -17,7 +17,7 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip
 
 # (list) List of inclusions using pattern matching
 # Build 148: Explicit Code Blob Include
-source.include_patterns = assets/*,main.py,icon.png,code_blob.py,logo.png
+source.include_patterns = assets/*,main.py,icon.png,code_blob.py,logo.png,allma_model/*,libs/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec
@@ -37,7 +37,7 @@ version = 0.1
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded# (list) Application requirements
 # Build 136: Full Restoration (Standard + Graphics + Math)
-requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llama-cpp-python
+requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llamacpp_android,diskcache,typing_extensions
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
@@ -109,6 +109,7 @@ android.archs = arm64-v8a
 android.allow_backup = True
 
 # (str) XML file for the Android manifest
+android.manifest = AndroidManifest.xml
 #android.manifest_launch_mode = standard
 
 # (str) XML file for the Android manifest
@@ -128,6 +129,10 @@ p4a.local_recipes = ./libs/recipes
 
 # (int) Port number to specify an explicit --port= p4a argument (eg for bootstrap flask)
 #p4a.port =
+
+# (str) Env vars to export for the build process
+# FORCE SAFE BUILD: Disable OpenMP, Native arch optimization, and Perf stats
+env_vars = CMAKE_ARGS="-DGGML_OPENMP=OFF -DGGML_PERF=OFF -DGGML_NATIVE=OFF -DANDROID_PLATFORM=android-24",FORCE_CMAKE=1,CPATH="/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include"
 
 #
 # iOS specific

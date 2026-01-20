@@ -35,26 +35,40 @@ class ModelDownloader:
         """Restituisce la cartella dove salvare i modelli."""
         if platform == 'android':
             from android.storage import app_storage_path
-            # Salviamo nella cartella privata dell'app per evitare permessi complessi di Scoped Storage
-            # o nella cartella files interna
-            return os.path.join(app_storage_path(), 'app', 'models')
+            # Salviamo nella root di files/ per persistenza sicura
+            # app_storage_path returns /data/user/0/org.../files
+            return os.path.join(app_storage_path(), 'models')
         else:
             # Desktop (macOS/Linux/Windows)
             return os.path.join(os.getcwd(), 'models')
 
     def check_models_missing(self):
         """Ritorna la lista dei modelli mancanti."""
+        self.logger.info(f"[DEBUG] Models Dir: {self.models_dir}")
         missing = []
         if not os.path.exists(self.models_dir):
+            self.logger.info(f"[DEBUG] Models dir does not exist.")
             return list(self.models.keys())
             
         for key, info in self.models.items():
             path = os.path.join(self.models_dir, info['filename'])
-            if not os.path.exists(path):
+            exists = os.path.exists(path)
+            self.logger.info(f"[DEBUG] Checking {key} at {path} -> Exists: {exists}")
+            
+            if not exists:
                 missing.append(key)
             else:
-                # Controllo dimensione minima (se il download è fallito ed è 0 byte)
-                if os.path.getsize(path) < 1024 * 1024: # < 1MB
+                size = os.path.getsize(path)
+                self.logger.info(f"[DEBUG] File size for {key}: {size} bytes")
+                # Controllo dimensione minima (Gemma è ~2.7GB, quindi < 2GB è sicuramente corrotto)
+                min_size = 2 * 1024 * 1024 * 1024 if 'gemma' in key else 1024 * 1024
+                if size < min_size: 
+                    self.logger.warning(f"[DEBUG] File for {key} is too small ({size} bytes < {min_size}), marking as missing/corrupt.")
+                    try:
+                        os.remove(path) # Remove corrupt file immediately
+                        self.logger.info(f"[DEBUG] Corrupt file {path} deleted.")
+                    except OSError:
+                        pass
                     missing.append(key)
         return missing
 

@@ -6,14 +6,15 @@ import logging
 import subprocess
 import sys
 
-class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
-    name = 'llama-cpp-python'
-    version = '0.2.26'
+class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
+    name = 'llamacpp_android'
+    version = '0.2.90'
     # Use PyPI source because GitHub tarballs often lack submodules (vendor/llama.cpp)
     # causing the patch to miss the files, or the build to fetch fresh (unpatched) code.
     url = 'https://files.pythonhosted.org/packages/source/l/llama_cpp_python/llama_cpp_python-{version}.tar.gz'
     
     depends = ['setuptools', 'numpy']
+    site_packages_name = 'llama_cpp_python'
     
     # Non usiamo hostpython per la compilazione C++
     call_hostpython_via_targetpython = False
@@ -22,16 +23,14 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         env = super().get_recipe_env(arch)
         
         # CMAKE ARGS specifici per Android
-        # -DANDROID_ABI è gestito automaticamente da p4a solitamente, ma forziamo
-        # Disabilitiamo chiamate di sistema non supportate o non necessarie
         env['CMAKE_ARGS'] = (
             f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake "
             f"-DCMAKE_SYSTEM_NAME=Android "
             f"-DANDROID_ABI={arch.arch} "
             f"-DANDROID_PLATFORM=android-24 "
             "-DCMAKE_BUILD_TYPE=Release "
-            "-DLLAMA_CUBLAS=OFF "  # No CUDA
-            "-DLLAMA_OPENBLAS=OFF " # No OpenBLAS
+            "-DLLAMA_CUBLAS=OFF " 
+            "-DLLAMA_OPENBLAS=OFF "
             "-DLLAMA_BUILD_SERVER=OFF " 
             "-DLLAVA_BUILD=OFF "
             "-DLLAMA_NATIVE=OFF " 
@@ -39,14 +38,10 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             "-DCMAKE_CXX_FLAGS='-march=armv8-a' "
             "-DGGML_NATIVE=OFF " 
             "-DGGML_CPU_ARM_ARCH=8 "
-            # "-DGGML_OPENMP=OFF " # Re-enabling check (standard config)
-            # "-DGGML_PERF=OFF "   # Re-enabling check
+            "-DGGML_OPENMP=OFF " 
+            "-DGGML_PERF=OFF "  
         )
         
-        # Override flags per sicurezza
-        
-        # KEY FIX: Set these as ENV VARS, which CMake reads as defaults.
-        # This overrides internal CMake logic better than command line args sometimes.
         env['CMAKE_C_FLAGS'] = "-march=armv8-a"
         env['CMAKE_CXX_FLAGS'] = "-march=armv8-a"
         
@@ -56,11 +51,9 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         
         env['LLAMA_NATIVE'] = 'OFF'
         env['GGML_NATIVE'] = 'OFF'
+        env['GGML_OPENMP'] = 'OFF'
         
-        # Duplicate args for scikit-build specific env var
         env['SKBUILD_CMAKE_ARGS'] = env['CMAKE_ARGS']
-        
-        # Forza l'uso di CMAKE
         env['LLAMA_CPP_LIB_PRELOAD'] = '1'
         return env
 
@@ -69,10 +62,8 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         build_dir = self.get_build_dir(arch.arch)
         logging.info(f"Scanning {build_dir} for -march=native...")
         
-        # DEBUG: List all files to understand structure
         try:
             logging.info("File Structure Check:")
-            # sh.ls("-R", build_dir, _out=lambda L: logging.info(L.strip()))
         except Exception:
             pass
 
@@ -81,20 +72,15 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             for file in files:
                 filepath = os.path.join(root, file)
                 try:
-                    # Skip binary files/images to avoid encoding errors
                     if file.endswith(('.c', '.h', '.cpp', '.hpp', '.txt', '.cmake', '.make', '.sh')):
                         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                             content = f.read()
                         
                         if "-march=native" in content:
                             logging.info(f"FOUND POISON in {filepath}. REMOVING...")
-                            
-                            # Pure Python replacement - Robust and Dumb
                             new_content = content.replace("-march=native", "")
-                            
                             with open(filepath, 'w', encoding='utf-8') as f:
                                 f.write(new_content)
-                                
                             count += 1
                 except Exception as e:
                     logging.warning(f"Could not process {filepath}: {e}")
@@ -104,18 +90,16 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         # VERIFICATION: Did we miss anything?
         logging.info("VERIFICATION SCAN:")
         try:
-            # Check if ANY file still contains the poison
             grep_res = sh.grep("-r", "-march=native", build_dir, _ok_code=[0,1])
             if grep_res.exit_code == 0:
                 logging.error("CRITICAL: POISON STILL PRESENT!")
-                logging.error(grep_res.stdout.decode('utf-8')[:500]) # Print first 500 chars
+                logging.error(grep_res.stdout.decode('utf-8')[:500])
             else:
                 logging.info("VERIFICATION PASSED: No -march=native found in build_dir.")
         except Exception as e:
             logging.error(f"Verification failed: {e}") 
 
-        # BUILD 170: TROJAN HORSE
-        # Patch setup.py to force CMAKE_ARGS even if environment is stripped by pip
+        # SETUP.PY PATCH
         logging.info("Applying TROJAN HORSE patch to setup.py...")
         count_setup = 0
         for root, dirs, files in os.walk(build_dir):
@@ -125,29 +109,12 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                     with open(setup_path, 'r') as f:
                         content = f.read()
                     
-                    # We look for where it reads env vars and hijack it.
-                    # Usually: CMAKE_ARGS = os.environ.get("CMAKE_ARGS", "")
                     if "os.environ.get" in content:
                         logging.info(f"Injecting payload into {setup_path}")
-                        
-                        # Force our flags. Note: We keep the original get() call just in case, but prepend our flags.
-                        # We use a naive replace for the most common pattern or just prepend variables at the top.
-                        
-                        # Better approach: Prepend a hard overwrite at the top of the file (after imports)
-                        # But imports might be scattered.
-                        
-                        # Let's replace the common pattern:
-                        # CMAKE_ARGS = os.environ.get("CMAKE_ARGS", "")
-                        # with:
-                        # CMAKE_ARGS = "-DLLAMA_NATIVE=OFF -DANDROID=1 -DCMAKE_SYSTEM_NAME=Android -DCMAKE_C_FLAGS='-march=armv8-a' -DCMAKE_CXX_FLAGS='-march=armv8-a' " + os.environ.get("CMAKE_ARGS", "")
-                        
-                        # Since we don't know the exact line, let's just REPLACE 'os.environ.get("CMAKE_ARGS"' with our hacked version.
-                        
                         new_content = content.replace(
                             'os.environ.get("CMAKE_ARGS"', 
-                            '"-DGGML_NATIVE=OFF -DLLAMA_NATIVE=OFF -DANDROID=1 -DCMAKE_SYSTEM_NAME=Android -DCMAKE_C_FLAGS=\'-march=armv8-a\' -DCMAKE_CXX_FLAGS=\'-march=armv8-a\' " + os.environ.get("CMAKE_ARGS"'
+                            '"-DGGML_OPENMP=OFF -DGGML_PERF=OFF -DGGML_NATIVE=OFF -DLLAMA_NATIVE=OFF -DANDROID=1 -DCMAKE_SYSTEM_NAME=Android -DCMAKE_C_FLAGS=\'-march=armv8-a\' -DCMAKE_CXX_FLAGS=\'-march=armv8-a\' " + os.environ.get("CMAKE_ARGS"'
                         )
-                        
                         with open(setup_path, 'w') as f:
                             f.write(new_content)
                         count_setup += 1
@@ -155,20 +122,9 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
                     logging.error(f"Trojan Horse failed on {setup_path}: {e}")
         
         logging.info(f"Trojan Horse deployed in {count_setup} setup.py files.") 
-        
-        # [DISABLED] BUILD 172: CONFIG HIJACK (pyproject.toml)
-        # This causes TOML errors and is likely redundant with SKBUILD_CMAKE_ARGS
-        # logging.info("Applying CONFIG HIJACK to pyproject.toml...")
-        # ...
-        
-                    
         logging.info(f"Sanitization complete. Patched {count} files.")
 
     def build_arch(self, arch):
-        # BUILD 173: MANUAL COMPILATION
-        # We cannot trust pip/scikit-build to pass flags correctly.
-        # So we build libllama.so manually first, then tell pip to use it.
-        
         build_dir = self.get_build_dir(arch.arch)
         llama_cpp_dir = os.path.join(build_dir, 'vendor', 'llama.cpp')
         
@@ -185,10 +141,12 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
             "-B", lib_build_dir,
             f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake",
             "-DANDROID_ABI=arm64-v8a",
-            "-DANDROID_PLATFORM=android-21",
+            "-DANDROID_PLATFORM=android-24",
             "-DLLAMA_NATIVE=OFF",
             "-DGGML_NATIVE=OFF",
-            "-DLLAVA_BUILD=OFF",  # Disable Llava to avoid install errors with prebuilt llama
+            "-DGGML_OPENMP=OFF",
+            "-DGGML_PERF=OFF",
+            "-DLLAVA_BUILD=OFF",
             "-DBUILD_SHARED_LIBS=ON",
             "-DCMAKE_C_FLAGS=-march=armv8-a",
             "-DCMAKE_CXX_FLAGS=-march=armv8-a"
@@ -197,8 +155,31 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         logging.info(f"Starting Manual CMake: {cmd_cmake}")
         subprocess.check_call(cmd_cmake, env=env)
         
-        # 2b. Patch llama.cpp for Android POSIX constants
-        llama_cpp_file = os.path.join(llama_cpp_dir, 'llama.cpp')
+        # 2b. Patch llama.cpp for POSIX constants
+        # Check for llama.cpp location (changed in newer versions to src/llama.cpp)
+        possible_paths = [
+            os.path.join(llama_cpp_dir, 'llama.cpp'),
+            os.path.join(llama_cpp_dir, 'src', 'llama.cpp')
+        ]
+        
+        llama_cpp_file = None
+        for p in possible_paths:
+            if os.path.exists(p):
+                llama_cpp_file = p
+                break
+        
+        if not llama_cpp_file:
+             logging.error(f"Could not find llama.cpp source in {llama_cpp_dir}")
+             # List dir to help debug
+             logging.error(f"Dir contents: {os.listdir(llama_cpp_dir)}")
+             if os.path.exists(os.path.join(llama_cpp_dir, 'src')):
+                 logging.error(f"Src contents: {os.listdir(os.path.join(llama_cpp_dir, 'src'))}")
+             # Don't raise yet, maybe we don't need to patch if file not found? 
+             # But if we rely on it, we will fail later.
+             # Assume build will fail natively if we don't patch
+             raise FileNotFoundError(f"llama.cpp source not found in {possible_paths}")
+
+        logging.info(f"Patching {llama_cpp_file} for POSIX_MADV definitions...")
         with open(llama_cpp_file, 'r') as f:
             content = f.read()
             
@@ -224,22 +205,43 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
     #define posix_madvise madvise
 #endif
 """
-            # Insert after includes (approx line 43)
-            # define LLAMA_API_INTERNAL is at top. We inserts after #include "llama.h"
             content = content.replace('#include "llama.h"', '#include "llama.h"\n' + patch_code)
             with open(llama_cpp_file, 'w') as f:
                 f.write(content)
 
+        # 2c. HARDCORE OPENMP DISABLE PATCH
+        # The variables were ignored, so we patch the CMakeLists directly.
+        cmake_ggml = os.path.join(llama_cpp_dir, 'CMakeLists.txt')
+        if os.path.exists(cmake_ggml):
+            logging.info(f"Patching {cmake_ggml} to FORCE DISABLE OPENMP")
+            with open(cmake_ggml, 'r') as f:
+                cm_content = f.read()
+            
+            # Replace option default to OFF
+            cm_content = cm_content.replace('option(LLAMA_OPENMP "llama: use OpenMP" ON)', 'option(LLAMA_OPENMP "llama: use OpenMP" OFF)')
+            cm_content = cm_content.replace('option(GGML_OPENMP "ggml: use OpenMP" ON)', 'option(GGML_OPENMP "ggml: use OpenMP" OFF)')
+            
+            # FORCE DISABLE NATIVE (Optimization flags that break Android ABI)
+            cm_content = cm_content.replace('option(LLAMA_NATIVE "llama: enable -march=native optimizations" ON)', 'option(LLAMA_NATIVE "llama: enable -march=native optimizations" OFF)')
+            cm_content = cm_content.replace('option(GGML_NATIVE "ggml: enable -march=native optimizations" ON)', 'option(GGML_NATIVE "ggml: enable -march=native optimizations" OFF)')
+            
+            # Also brute force set it
+            cm_content += "\nset(LLAMA_OPENMP OFF CACHE BOOL \"Force OFF\" FORCE)\n"
+            cm_content += "\nset(GGML_OPENMP OFF CACHE BOOL \"Force OFF\" FORCE)\n"
+            cm_content += "\nset(LLAMA_NATIVE OFF CACHE BOOL \"Force OFF\" FORCE)\n"
+            cm_content += "\nset(GGML_NATIVE OFF CACHE BOOL \"Force OFF\" FORCE)\n"
+            
+            with open(cmake_ggml, 'w') as f:
+                f.write(cm_content)
+
         # 3. Build manually
         logging.info("Starting Manual Make...")
         try:
-             # Capture output so we can see why it fails
              subprocess.run(["make", "-j4"], cwd=lib_build_dir, env=env, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
              logging.error("MANUAL MAKE FAILED!")
              logging.error(f"STDOUT:\n{e.stdout}")
              logging.error(f"STDERR:\n{e.stderr}")
-             # Write to file for easier retrieval
              err_log = os.path.join(build_dir, "make_failure.log")
              with open(err_log, "w") as f:
                  f.write(f"STDOUT:\n{e.stdout}\n\nSTDERR:\n{e.stderr}")
@@ -261,7 +263,6 @@ class LlamaCppPythonRecipe(CompiledComponentsPythonRecipe):
         logging.info(f"MANUAL BUILD SUCCESS. Lib at: {lib_path}")
         
         # 5. BUILD 174: THE SURGEON (CMake Injection)
-        # We patch the root CMakeLists.txt to recognize our prebuilt library
         cmake_root = os.path.join(build_dir, "CMakeLists.txt")
         logging.info(f"Applying PREBUILT PATCH to {cmake_root}")
         
@@ -317,8 +318,6 @@ endif()
             if install_block_2 in new_content:
                 logging.info("PATCH APPLIED: install(TARGETS llama) [SOURCE]")
                 new_content = new_content.replace(install_block_2, f"if(NOT DEFINED ENV{{LLAMA_CPP_PREBUILT_DIR}})\n{install_block_2}\nendif()")
-            else:
-                logging.error("PATCH FAILED: Could not find install(TARGETS llama) [SOURCE]")
 
             # PATCH 3: DLLs Skbuild
             install_block_3 = """    install(
@@ -328,8 +327,6 @@ endif()
             if install_block_3 in new_content:
                 logging.info("PATCH APPLIED: install(DLLS) [SKBUILD]")
                 new_content = new_content.replace(install_block_3, f"if(NOT DEFINED ENV{{LLAMA_CPP_PREBUILT_DIR}})\n{install_block_3}\nendif()")
-            else:
-                logging.warning("PATCH WARNING: Could not find install(DLLS) [SKBUILD]")
 
             # PATCH 4: DLLs Source
             install_block_4 = """    install(
@@ -339,8 +336,6 @@ endif()
             if install_block_4 in new_content:
                 logging.info("PATCH APPLIED: install(DLLS) [SOURCE]")
                 new_content = new_content.replace(install_block_4, f"if(NOT DEFINED ENV{{LLAMA_CPP_PREBUILT_DIR}})\n{install_block_4}\nendif()")
-            else:
-                logging.warning("PATCH WARNING: Could not find install(DLLS) [SOURCE]")
 
             with open(cmake_root, 'w') as f:
                 f.write(new_content)
@@ -354,17 +349,34 @@ endif()
         os.makedirs(os.path.join(prebuilt_dir, "include"), exist_ok=True)
         
         import shutil
-        # Copy lib
-        shutil.copy(lib_path, os.path.join(prebuilt_dir, "lib", "libllama.so"))
-        # Copy headers
-        shutil.copy(os.path.join(llama_cpp_dir, "llama.h"), os.path.join(prebuilt_dir, "include", "llama.h"))
-        if os.path.exists(os.path.join(llama_cpp_dir, "ggml.h")):
-             shutil.copy(os.path.join(llama_cpp_dir, "ggml.h"), os.path.join(prebuilt_dir, "include", "ggml.h"))
+        
+        def find_and_copy(filename, dest_dir):
+            search_paths = [
+                os.path.join(llama_cpp_dir, filename),
+                os.path.join(llama_cpp_dir, 'include', filename),
+                os.path.join(llama_cpp_dir, 'src', filename),
+                os.path.join(llama_cpp_dir, 'ggml', 'include', filename),
+                os.path.join(llama_cpp_dir, 'ggml', 'src', filename),
+            ]
+            found = False
+            for p in search_paths:
+                if os.path.exists(p):
+                    shutil.copy(p, os.path.join(dest_dir, filename))
+                    logging.info(f"Copied {filename} from {p}")
+                    found = True
+                    break
+            if not found:
+                 logging.warning(f"Header {filename} not found in expected paths.")
+
+        find_and_copy("llama.h", os.path.join(prebuilt_dir, "include"))
+        find_and_copy("ggml.h", os.path.join(prebuilt_dir, "include"))
+        find_and_copy("ggml-alloc.h", os.path.join(prebuilt_dir, "include"))
+        find_and_copy("ggml-backend.h", os.path.join(prebuilt_dir, "include"))
         
         # 7. Set Environment Variable
         env['LLAMA_CPP_PREBUILT_DIR'] = prebuilt_dir
         
-        # 8. Install Python Package via Pip with Verified Target
+        # 8. Install Python Package
         logging.info("Installing build dependencies (scikit-build-core)...")
         try:
              subprocess.run(
@@ -380,16 +392,12 @@ endif()
              logging.error(e.stderr)
              raise e
 
-        # FIXED INSTALL LOGIC WITH TARGET AND MANUAL FALLBACK
         logging.info("Installing Python package via pip with PREBUILT linkage...")
         install_target = self.ctx.get_python_install_dir(arch.arch)
-        logging.info(f"Target Install Dir: {install_target}")
-        
         if not os.path.exists(install_target):
             os.makedirs(install_target)
 
         try:
-            # Run pip with target
             subprocess.run(
                 [sys.executable, "-m", "pip", "install", ".", 
                  "--no-build-isolation", 
@@ -405,9 +413,6 @@ endif()
             logging.info(f"PIP SUCCESS. Installed to {install_target}")
         except subprocess.CalledProcessError as e:
             logging.error("PIP INSTALL FAILED! Attempting Manual Copy...")
-            logging.error(f"STDOUT: {e.stdout}")
-            logging.error(f"STDERR: {e.stderr}")
-            # Do not raise, fall through to Manual Copy
             pass
 
         # VERIFICATION / MANUAL COPY FALLBACK
@@ -417,7 +422,6 @@ endif()
              src_pkg = os.path.join(build_dir, "llama_cpp")
              import shutil
              if os.path.exists(installed_pkg): shutil.rmtree(installed_pkg)
-             
              if os.path.exists(src_pkg):
                  shutil.copytree(src_pkg, installed_pkg)
                  logging.info("Manual Copy complete.")
@@ -437,4 +441,4 @@ endif()
 
         logging.info(f"FINAL INSTALL SUCCESS! Package at {installed_pkg}")
 
-recipe = LlamaCppPythonRecipe()
+recipe = LlamacppAndroidRecipe()

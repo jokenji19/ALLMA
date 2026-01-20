@@ -50,3 +50,13 @@
 
 ---
 *End of Log*
+
+---
+### Lesson 9: The Stale Build Artifact Trap (Build 177)
+**Issue:** Changes to Python source code in `buildozer.spec` or recipes were ignored in the APK, causing the app to run old code and misleading debugging efforts.
+**Root Cause:** `python-for-android` aggressively caches build outcomes (`dists`, `python-installs`) and does not re-copy Python source files unless the requirement version changes or a clean build is forced.
+**Detection:** Logs showed `n_batch=256` (old code) vs `n_batch=1` (new code on disk).
+**Solution:**
+1.  **Stop Assuming:** When code changes don't appear, assume stale cache.
+2.  **Clean Command:** Run `rm -rf .buildozer/android/platform/build-*/dists` AND `rm -rf .buildozer/android/platform/build-*/build/python-installs` before rebuilding critical logic.
+3.  **Future:** Use `p4a clean_dists` or simply delete the specific dist folder.

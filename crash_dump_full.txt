@@ -1,0 +1,121 @@
+01-20 02:18:18.750  9441  9494 I python  : [INFO   ] [Logger      ] Record log in /data/user/0/org.allma.allma_prime/files/app/.kivy/logs/kivy_26-01-20_5.txt
+01-20 02:18:18.750  9441  9494 I python  : [INFO   ] [Kivy        ] v2.3.0
+01-20 02:18:18.750  9441  9494 I python  : [INFO   ] [Kivy        ] Installed at "/data/user/0/org.allma.allma_prime/files/app/_python_bundle/site-packages/kivy/__init__.pyc"
+01-20 02:18:18.750  9441  9494 I python  : [INFO   ] [Python      ] v3.11.5 (main, Jan 20 2026, 01:59:06) [Clang 14.0.6 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0
+01-20 02:18:18.750  9441  9494 I python  : [INFO   ] [Python      ] Interpreter at ""
+01-20 02:18:18.750  9441  9494 I python  : [INFO   ] [Logger      ] Purge log fired. Processing...
+01-20 02:18:18.750  9441  9494 I python  : [INFO   ] [Logger      ] Purge finished!
+01-20 02:18:18.890  9441  9494 I python  : [INFO   ] [Factory     ] 195 symbols loaded
+01-20 02:18:18.947  9441  9494 I python  : [INFO   ] [Image       ] Providers: img_tex, img_dds, img_sdl2, img_pil (img_ffpyplayer ignored)
+01-20 02:18:18.951  9441  9494 I python  : [INFO   ] [Text        ] Provider: sdl2
+01-20 02:18:18.956  9441  9494 I python  : [INFO   ] [Window      ] Provider: sdl2
+01-20 02:18:18.978  9441  9494 I python  : [INFO   ] [GL          ] Using the "OpenGL ES 2" graphics system
+01-20 02:18:18.979  9441  9494 I python  : [INFO   ] [GL          ] Backend used <sdl2>
+01-20 02:18:18.979  9441  9494 I python  : [INFO   ] [GL          ] OpenGL version <b'OpenGL ES 3.2 V@0800.40.1 (GIT@e4a2ccdb56, Icac6f3510c, 1753112526) (Date:07/21/25)'>
+01-20 02:18:18.979  9441  9494 I python  : [INFO   ] [GL          ] OpenGL vendor <b'Qualcomm'>
+01-20 02:18:18.979  9441  9494 I python  : [INFO   ] [GL          ] OpenGL renderer <b'Adreno (TM) 830'>
+01-20 02:18:18.979  9441  9494 I python  : [INFO   ] [GL          ] OpenGL parsed version: 3, 2
+01-20 02:18:18.979  9441  9494 I python  : [INFO   ] [GL          ] Texture max size <16384>
+01-20 02:18:18.979  9441  9494 I python  : [INFO   ] [GL          ] Texture max units <16>
+01-20 02:18:18.983  9441  9494 I python  : [INFO   ] [Window      ] auto add sdl2 input provider
+01-20 02:18:18.984  9441  9494 I python  : [INFO   ] [Window      ] virtual keyboard not allowed, single mode, not docked
+01-20 02:18:18.998  9441  9494 I python  : [WARNING] [Base        ] Unknown <android> provider
+01-20 02:18:18.999  9441  9494 I python  : [INFO   ] [Base        ] Start application main loop
+01-20 02:18:18.999  9441  9494 I python  : [INFO   ] [GL          ] NPOT texture support is available
+01-20 02:18:19.479  9441  9522 I python  : [ERROR  ] code for hash blake2b was not found.
+01-20 02:18:19.479  9441  9522 I python  : Traceback (most recent call last):
+01-20 02:18:19.479  9441  9522 I python  :   File "/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a/build/other_builds/python3/arm64-v8a__ndk_target_24/python3/Lib/hashlib.py", line 307, in <module>
+01-20 02:18:19.479  9441  9522 I python  :   File "/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a/build/other_builds/python3/arm64-v8a__ndk_target_24/python3/Lib/hashlib.py", line 129, in __get_openssl_constructor
+01-20 02:18:19.479  9441  9522 I python  :   File "/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a/build/other_builds/python3/arm64-v8a__ndk_target_24/python3/Lib/hashlib.py", line 123, in __get_builtin_constructor
+01-20 02:18:19.479  9441  9522 I python  : ValueError: unsupported hash type blake2b
+01-20 02:18:19.479  9441  9522 I python  : [ERROR  ] code for hash blake2s was not found.
+01-20 02:18:19.479  9441  9522 I python  : Traceback (most recent call last):
+01-20 02:18:19.479  9441  9522 I python  :   File "/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a/build/other_builds/python3/arm64-v8a__ndk_target_24/python3/Lib/hashlib.py", line 307, in <module>
+01-20 02:18:19.479  9441  9522 I python  :   File "/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a/build/other_builds/python3/arm64-v8a__ndk_target_24/python3/Lib/hashlib.py", line 129, in __get_openssl_constructor
+01-20 02:18:19.479  9441  9522 I python  :   File "/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a/build/other_builds/python3/arm64-v8a__ndk_target_24/python3/Lib/hashlib.py", line 123, in __get_builtin_constructor
+01-20 02:18:19.479  9441  9522 I python  : ValueError: unsupported hash type blake2s
+01-20 02:18:19.565  9441  9522 I python  : [WARNING] Transformers library not found. Running in lightweight mode.
+01-20 02:18:19.637  9441  9494 I python  : [INFO   ] [[DEBUG] Models Dir] /data/user/0/org.allma.allma_prime/files/models
+01-20 02:18:19.637  9441  9494 I python  : [INFO   ] [[DEBUG] Checking gemma at /data/user/0/org.allma.allma_prime/files/models/gemma-3n-e2b-it-q4_k_m.gguf -> Exists] True
+01-20 02:18:19.637  9441  9494 I python  : [INFO   ] [[DEBUG] File size for gemma] 2787806304 bytes
+01-20 02:18:19.637  9441  9494 I python  : [INFO   ] [[DEBUG] Checking moondream at /data/user/0/org.allma.allma_prime/files/models/moondream2-mmproj-f16-20250414.gguf -> Exists] True
+01-20 02:18:19.637  9441  9494 I python  : [INFO   ] [[DEBUG] File size for moondream] 909777984 bytes
+01-20 02:18:19.640  9441  9494 I python  : [WARNING] Deprecated property "<VariableListProperty name=padding_y>" of object "<kivy.uix.textinput.TextInput object at 0x74df046890>" was accessed, it will be removed in a future version
+01-20 02:18:20.067  9441  9494 I python  : [INFO   ] [[DEBUG] Models Dir] /data/user/0/org.allma.allma_prime/files/models
+01-20 02:18:20.067  9441  9494 I python  : [INFO   ] [[DEBUG] Checking gemma at /data/user/0/org.allma.allma_prime/files/models/gemma-3n-e2b-it-q4_k_m.gguf -> Exists] True
+01-20 02:18:20.067  9441  9494 I python  : [INFO   ] [[DEBUG] File size for gemma] 2787806304 bytes
+01-20 02:18:20.068  9441  9494 I python  : [INFO   ] [[DEBUG] Checking moondream at /data/user/0/org.allma.allma_prime/files/models/moondream2-mmproj-f16-20250414.gguf -> Exists] True
+01-20 02:18:20.068  9441  9494 I python  : [INFO   ] [[DEBUG] File size for moondream] 909777984 bytes
+01-20 02:18:20.072  9441  9494 I python  : [WARNING] [Impossibile caricare emotion pipeline] name 'pipeline' is not defined
+01-20 02:18:20.072  9441  9494 I python  : Errore nel calcolo embeddings: 'numpy.ndarray' object has no attribute 'toarray'
+01-20 02:18:26.213  9441  9653 I python  : [INFO   ] [Initializing Mobile LLM from] /data/user/0/org.allma.allma_prime/files/models
+01-20 02:18:26.213  9441  9653 I python  : [INFO   ] [MobileGemma] Loading model from /data/user/0/org.allma.allma_prime/files/models/gemma-3n-e2b-it-q4_k_m.gguf ...
+01-20 02:18:26.213  9441  9653 I python  : [INFO   ] [MobileGemma] Initializing Llama with path=/data/user/0/org.allma.allma_prime/files/models/gemma-3n-e2b-it-q4_k_m.gguf, threads=1, ctx=1024, batch=256, mmap=True
+01-20 02:18:26.247  9441  9653 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0xa8 in tid 9653 (SDLThread), pid 9441 (SDLActivity)
+01-20 02:18:26.422  9678  9678 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+01-20 02:18:26.422  9678  9678 F DEBUG   : Build fingerprint: 'samsung/pa3qxeea/pa3q:16/BP2A.250605.031.A3/S938BXXS7BYKS_OXM7BYKS:user/release-keys'
+01-20 02:18:26.422  9678  9678 F DEBUG   : Revision: '11'
+01-20 02:18:26.422  9678  9678 F DEBUG   : ABI: 'arm64'
+01-20 02:18:26.422  9678  9678 F DEBUG   : Processor: '7'
+01-20 02:18:26.422  9678  9678 F DEBUG   : Timestamp: 2026-01-20 02:18:26.307980309+0100
+01-20 02:18:26.422  9678  9678 F DEBUG   : Process uptime: 8s
+01-20 02:18:26.422  9678  9678 F DEBUG   : Cmdline: org.allma.allma_prime
+01-20 02:18:26.422  9678  9678 F DEBUG   : pid: 9441, tid: 9653, name: SDLThread  >>> org.allma.allma_prime <<<
+01-20 02:18:26.422  9678  9678 F DEBUG   : uid: 10827
+01-20 02:18:26.422  9678  9678 F DEBUG   : tagged_addr_ctrl: 0000000000000001 (PR_TAGGED_ADDR_ENABLE)
+01-20 02:18:26.422  9678  9678 F DEBUG   : pac_enabled_keys: 000000000000000f (PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY, PR_PAC_APDBKEY)
+01-20 02:18:26.422  9678  9678 F DEBUG   : signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x00000000000000a8
+01-20 02:18:26.422  9678  9678 F DEBUG   : Cause: null pointer dereference
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x0  0000000000000000  x1  b4000077f267af50  x2  00000074e15f1470  x3  00000074f045f75c
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x4  00000074e15f1470  x5  00000074f04bd374  x6  00000078df1fc850  x7  0000000000000000
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x8  00000074e15f15c0  x9  00000074ce433524  x10 0000000000000000  x11 0000000000000001
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x12 0000000000000001  x13 00000074f05326bc  x14 0000000000000932  x15 b4000076427e46d0
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x16 00000074e745e860  x17 0000007580130110  x18 0000000000000000  x19 b4000077f267af50
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x20 00000074f064a958  x21 0000000000000000  x22 0000000000000001  x23 b400007752850ef0
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x24 0000000000001101  x25 00000074f064a958  x26 00000074e15f15d0  x27 0000000000000001
+01-20 02:18:26.422  9678  9678 F DEBUG   :     x28 00000074e15f15b8  x29 00000074e15f1450
+01-20 02:18:26.423  9678  9678 F DEBUG   :     lr  0000007580134050  sp  00000074e15f1440  pc  00000074ce433524  pst 0000000060001000
+01-20 02:18:26.423  9678  9678 F DEBUG   : 33 total frames
+01-20 02:18:26.423  9678  9678 F DEBUG   : backtrace:
+01-20 02:18:26.423  9678  9678 F DEBUG   :   NOTE: Function names and BuildId information is missing for some frames due
+01-20 02:18:26.423  9678  9678 F DEBUG   :   NOTE: to unreadable libraries. For unwinds of apps, only shared libraries
+01-20 02:18:26.423  9678  9678 F DEBUG   :   NOTE: found under the lib/ directory are readable.
+01-20 02:18:26.423  9678  9678 F DEBUG   :   NOTE: On this device, run setenforce 0 to make the libraries readable.
+01-20 02:18:26.423  9678  9678 F DEBUG   :   NOTE: Unreadable libraries:
+01-20 02:18:26.423  9678  9678 F DEBUG   :   NOTE:   /data/data/org.allma.allma_prime/files/app/_python_bundle/modules/_ctypes.cpython-311.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :   NOTE:   /data/data/org.allma.allma_prime/files/app/_python_bundle/site-packages/llama_cpp/libllama.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #00 pc 000000000009a524  /data/data/org.allma.allma_prime/files/app/_python_bundle/site-packages/llama_cpp/libllama.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #01 pc 000000000001004c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libffi.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #02 pc 000000000000c65c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libffi.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #03 pc 000000000000c13c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libffi.so (ffi_call+44)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #04 pc 00000000000154a0  /data/data/org.allma.allma_prime/files/app/_python_bundle/modules/_ctypes.cpython-311.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #05 pc 000000000000dd94  /data/data/org.allma.allma_prime/files/app/_python_bundle/modules/_ctypes.cpython-311.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #06 pc 00000000001f19a8  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyObject_MakeTpCall+328)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #07 pc 00000000002c9514  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyEval_EvalFrameDefault+17704)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #08 pc 00000000002c4f4c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #09 pc 00000000001f1754  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyObject_FastCallDictTstate+132)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #10 pc 00000000001f24d0  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyObject_Call_Prepend+128)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #11 pc 000000000025d430  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #12 pc 0000000000253314  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #13 pc 00000000001f19a8  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyObject_MakeTpCall+328)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #14 pc 00000000002c9514  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyEval_EvalFrameDefault+17704)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #15 pc 00000000002c4f4c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #16 pc 00000000001f1754  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyObject_FastCallDictTstate+132)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #17 pc 00000000001f24d0  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyObject_Call_Prepend+128)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #18 pc 000000000025d430  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #19 pc 0000000000253314  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #20 pc 00000000001f19a8  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyObject_MakeTpCall+328)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #21 pc 00000000002c9514  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyEval_EvalFrameDefault+17704)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #22 pc 00000000002c4f4c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #23 pc 00000000001f4828  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #24 pc 00000000002ca104  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyEval_EvalFrameDefault+20760)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #25 pc 00000000002c4f4c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #26 pc 00000000002ca104  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so (_PyEval_EvalFrameDefault+20760)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #27 pc 00000000002c4f4c  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #28 pc 00000000001f47b8  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #29 pc 0000000000381764  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #30 pc 0000000000326900  /data/app/~~cPrORjnZFsmyM_p1sav1rQ==/org.allma.allma_prime-Qlk4wbb2v1svph84XnxGkg==/lib/arm64/libpython3.11.so
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #31 pc 0000000000082740  /apex/com.android.runtime/lib64/bionic/libc.so (__pthread_start(void*)+184) (BuildId: 61a049a7ad18156ebc52d8d483539df9)
+01-20 02:18:26.423  9678  9678 F DEBUG   :       #32 pc 0000000000074b98  /apex/com.android.runtime/lib64/bionic/libc.so (__start_thread+68) (BuildId: 61a049a7ad18156ebc52d8d483539df9)
+01-20 02:18:26.445  7025  7025 I Dc.IafdService:   NOTE:   /data/data/org.allma.allma_prime/files/app/_python_bundle/modules/_ctypes.cpython-311.so
+01-20 02:18:26.445  7025  7025 I Dc.IafdService:   NOTE:   /data/data/org.allma.allma_prime/files/app/_python_bundle/site-packages/llama_cpp/libllama.so
