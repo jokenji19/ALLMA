@@ -68,6 +68,9 @@ orientation = portrait
 # (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
 
+# (str) SoftInputMode (adjustResize for chat apps to push input up)
+android.softinput_mode = adjustResize
+
 # (string) Presplash background color (for android)
 # Supported formats are: #RRGGBB #AARRGGBB or one of the following names:
 # red, blue, green, black, white, gray, cyan, magenta, yellow, lightgray,

@@ -41,7 +41,7 @@ Builder.load_string('''
     text_size: self.width - 40, None
     padding: 20, 12
     background_color: [0, 0, 0, 0] # Transparent for custom drawing
-    font_name: 'Roboto'
+    # Font Removed to use System Default
     color: Theme.text_light if self.is_user else Theme.text_primary
     canvas.before:
         Color:
@@ -62,7 +62,7 @@ Builder.load_string('''
 <SidebarItem@Button>:
     background_color: (0,0,0,0)
     color: Theme.text_primary
-    font_name: 'Roboto'
+    # Font Removed
     font_size: '16sp'
     size_hint_y: None
     height: dp(50)
@@ -102,7 +102,6 @@ Builder.load_string('''
                 # Menu Button
                 Button:
                     text: "=" 
-                    # Ideally an icon, using text for now or load asset if available
                     font_size: '24sp'
                     bold: True
                     size_hint_x: None
@@ -113,7 +112,7 @@ Builder.load_string('''
 
                 Label:
                     text: "ALLMA"
-                    font_name: 'Roboto'
+                    # Font Removed
                     bold: True
                     font_size: '20sp'
                     color: Theme.primary
@@ -132,6 +131,8 @@ Builder.load_string('''
                 bar_color: Theme.primary
                 bar_inactive_color: (0, 0, 0, 0)
                 viewclass: 'MessageBubble'
+                # Track scroll position
+                on_scroll_y: root.on_scroll(self.scroll_y)
                 
                 RecycleBoxLayout:
                     default_size: None, dp(56)
@@ -181,8 +182,9 @@ Builder.load_string('''
                         cursor_color: Theme.primary
                         padding_y: [self.height / 2.0 - (self.line_height / 2.0) * len(self._lines), 0]
                         padding_x: [15, 15]
-                        font_name: 'Roboto'
+                        # Font Removed
                         font_size: '16sp'
+                        write_tab: False # Prevent tab focus issues
                         on_text_validate: root.send_message()
 
                 Button:
@@ -201,15 +203,36 @@ Builder.load_string('''
                             pos: self.pos
                             size: self.size
                             radius: [25,] 
+        
+        # Scroll Down Button (Hidden by default)
+        Button:
+            id: scroll_btn
+            text: "⬇"
+            font_size: '20sp'
+            size_hint: None, None
+            size: dp(40), dp(40)
+            pos_hint: {'right': 0.95, 'y': 0.15}
+            background_color: (0, 0, 0, 0)
+            opacity: 0
+            disabled: True
+            on_release: root.scroll_to_bottom(force=True)
+            canvas.before:
+                Color:
+                    rgba: Theme.secondary
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [20,]
 
         # OVERLAY (Dim background when sidebar is open)
         Button:
             id: overlay
             background_color: (0, 0, 0, 0.4)
-            pos_hint: {'x': 0, 'y': 0}
+            # Default pos offscreen to ensure no blocking
+            pos_hint: {'x': -2, 'y': -2}
             size_hint: (1, 1)
             opacity: 0
-            disabled: True
+            # disabled: True (Handled by pos_hint for safety)
             on_release: root.toggle_sidebar()
 
         # SIDEBAR
@@ -225,7 +248,6 @@ Builder.load_string('''
                 Rectangle:
                     pos: self.pos
                     size: self.size
-                # Shadow rule would go here
 
             # Sidebar Header
             BoxLayout:
@@ -249,7 +271,7 @@ Builder.load_string('''
 
                 Label:
                     text: "Utente"
-                    font_name: 'Roboto'
+                    # Font Removed
                     bold: True
                     font_size: '18sp'
                     color: Theme.primary
@@ -270,11 +292,9 @@ Builder.load_string('''
 
                 SidebarItem:
                     text: "🧠  Memoria (SQL)"
-                    # Placeholder
 
                 SidebarItem:
                     text: "⚙️  Impostazioni"
-                    # Placeholder
 
                 # Spacer to push items up
                 Widget: 
@@ -292,6 +312,7 @@ class MessageBubble(RecycleDataViewBehavior, Label):
 
 class ChatView(Screen):
     sidebar_open = BooleanProperty(False)
+    is_at_bottom = BooleanProperty(True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -311,7 +332,32 @@ class ChatView(Screen):
                 self.add_message("👋 Ciao! Sono ALLMA. Come stai oggi?", False)
             except Exception as e:
                 self.add_message(f"Errore inizializzazione core: {e}", False)
+        
+        # Ensure focus isn't stolen
+        Window.bind(on_keyboard_height=self.on_keyboard_height)
 
+    def on_leave(self):
+        Window.unbind(on_keyboard_height=self.on_keyboard_height)
+
+    def on_keyboard_height(self, window, height):
+        # With adjustResize, we usually don't need manual handling, but let's ensure we scroll
+        if height > 0:
+            self.scroll_to_bottom(force=True)
+
+    def on_scroll(self, scroll_y):
+        # Logic to determine if user is near bottom
+        # scroll_y is 0 at bottom, 1 at top in RecycleView default?
+        # Actually in Kivy Scatter/Scrollview:
+        # vertical scroll_y: 0 is bottom, 1 is top.
+        if scroll_y < 0.05:
+            self.is_at_bottom = True
+            self.ids.scroll_btn.opacity = 0
+            self.ids.scroll_btn.disabled = True
+        else:
+            self.is_at_bottom = False
+            self.ids.scroll_btn.opacity = 1
+            self.ids.scroll_btn.disabled = False
+    
     def toggle_sidebar(self):
         self.sidebar_open = not self.sidebar_open
         
@@ -322,12 +368,21 @@ class ChatView(Screen):
         # Animate overlay
         overlay = self.ids.overlay
         if self.sidebar_open:
-            overlay.disabled = False
+            # Move overlay onto screen
+            overlay.pos_hint = {'x': 0, 'y': 0}
             anim_overlay = Animation(opacity=1, duration=0.3)
         else:
-            overlay.disabled = True
             anim_overlay = Animation(opacity=0, duration=0.3)
+            def on_anim_complete(a, w):
+                w.pos_hint = {'x': -2, 'y': -2}
+            
+            anim_overlay.bind(on_complete=on_anim_complete)
+            
         anim_overlay.start(overlay)
+
+        # Ensure correct state at start of animation
+        if self.sidebar_open:
+             overlay.pos_hint = {'x': 0, 'y': 0}
 
     def clear_history(self):
         self.history = []
@@ -371,12 +426,19 @@ class ChatView(Screen):
         
         self.history.append({'text': response_text, 'is_user': False})
         self.ids.rv.data = list(self.history)
-        self.scroll_to_bottom()
+        
+        # Only scroll if user was already at bottom or if forced by logic
+        self.scroll_to_bottom(force=self.is_at_bottom)
 
     def add_message(self, text, is_user, temp=False):
         self.history.append({'text': text, 'is_user': is_user, 'temp': temp})
         self.ids.rv.data = list(self.history)
-        self.scroll_to_bottom()
+        # Always scroll for user's own message
+        if is_user:
+            self.scroll_to_bottom(force=True)
+        else:
+            self.scroll_to_bottom(force=self.is_at_bottom)
 
-    def scroll_to_bottom(self):
-        Clock.schedule_once(lambda dt: setattr(self.ids.rv, 'scroll_y', 0), 0.1)
+    def scroll_to_bottom(self, force=False):
+        if force:
+            Clock.schedule_once(lambda dt: setattr(self.ids.rv, 'scroll_y', 0), 0.1)
