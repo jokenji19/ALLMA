@@ -1,6 +1,10 @@
 from kivy.app import App
 from kivy.uix.screenmanager import ScreenManager, FadeTransition
 from kivy.lang import Builder
+from kivy.core.window import Window
+
+# Force window to resize when keyboard appears
+Window.softinput_mode = 'resize'
 
 from allma_model.ui.setup_view import SetupView
 from allma_model.ui.chat_view import ChatView
