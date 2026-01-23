@@ -6,48 +6,82 @@ from kivy.clock import Clock
 from kivy.lang import Builder
 
 from allma_model.utils.model_downloader import ModelDownloader
+from allma_model.ui.theme import Theme
+# Register Theme in Factory for KV access if not already (safeguard)
+from kivy.factory import Factory
+Factory.register('Theme', cls=Theme)
 
 Builder.load_string('''
+#:import Theme allma_model.ui.theme.Theme
+
 <SetupView>:
+    # Main Gradient Background
+    canvas.before:
+        Rectangle:
+            pos: self.pos
+            size: self.size
+            texture: Theme.get_vertical_gradient_texture(Theme.bg_start, Theme.bg_end)
+
     BoxLayout:
         orientation: 'vertical'
-        padding: 50
-        spacing: 20
-        canvas.before:
-            Color:
-                rgba: 0.05, 0.05, 0.1, 1
-            Rectangle:
-                pos: self.pos
-                size: self.size
+        padding: dp(40)
+        spacing: dp(30)
+        
+        # Spacer
+        Widget:
+            size_hint_y: 0.3
 
-        Label:
-            text: "Allma Setup"
-            font_size: '24sp'
-            size_hint_y: 0.2
-            color: 0.8, 0.8, 1, 1
-
-        Label:
-            id: status_label
-            text: "Checking system requirements..."
-            text_size: self.width, None
-            halign: 'center'
-            valign: 'middle'
-            size_hint_y: 0.2
-            color: 0.9, 0.9, 0.9, 1
-
-        ProgressBar:
-            id: progress_bar
-            max: 100
-            value: 0
+        # Modern Card-like grouping (Visual only)
+        BoxLayout:
+            orientation: 'vertical'
             size_hint_y: None
-            height: '20dp'
+            height: self.minimum_height
+            spacing: dp(15)
+            
+            Label:
+                text: "✨ ALLMA"
+                font_name: 'Roboto'
+                font_size: '32sp'
+                bold: True
+                color: Theme.primary
+                size_hint_y: None
+                height: dp(50)
+                halign: 'center'
 
-        Label:
-            id: details_label
-            text: ""
-            font_size: '12sp'
-            size_hint_y: 0.6
-            color: 0.6, 0.6, 0.6, 1
+            Label:
+                id: status_label
+                text: "Verifico i requisiti..."
+                font_name: 'Roboto'
+                font_size: '16sp'
+                text_size: self.width, None
+                halign: 'center'
+                color: Theme.text_secondary
+                size_hint_y: None
+                height: dp(30)
+
+            # Custom Progress Bar styling is hard in pure Kivy without KivyMD
+            # We stick to default but placed nicely
+            ProgressBar:
+                id: progress_bar
+                max: 100
+                value: 0
+                size_hint_y: None
+                height: dp(10)
+                # Kivy standard progress bar is usually blue, might clash if lucky
+            
+            Label:
+                id: details_label
+                text: ""
+                font_name: 'Roboto'
+                font_size: '12sp'
+                halign: 'center'
+                color: Theme.text_secondary
+                size_hint_y: None
+                height: dp(20)
+
+        # Spacer to push up
+        Widget:
+
 ''')
 
 class SetupView(Screen):
@@ -65,7 +99,7 @@ class SetupView(Screen):
         Clock.schedule_once(self.check_requirements, 0.5)
 
     def check_requirements(self, dt):
-        self.ids.status_label.text = "Verifying AI Models..."
+        self.ids.status_label.text = "Controllo Modelli AI..."
         self.missing_models = self.downloader.check_models_missing()
         
         if not self.missing_models:
@@ -75,8 +109,8 @@ class SetupView(Screen):
 
     def start_downloads(self):
         count = len(self.missing_models)
-        self.ids.status_label.text = f"Downloading {count} AI Model(s)..."
-        self.ids.details_label.text = "This may take a while depending on your connection."
+        self.ids.status_label.text = f"Scarico {count} Moduli AI..."
+        self.ids.details_label.text = "Potrebbe volerci un po', resta con me."
         
         # Start background download
         self.downloader.start_background_download(
@@ -88,7 +122,7 @@ class SetupView(Screen):
 
     def on_single_model_downloaded(self, model_key):
         # Called from background thread
-        Clock.schedule_once(lambda dt: self.show_toast(f"Modello {model_key} scaricato!"))
+        Clock.schedule_once(lambda dt: self.show_toast(f"Modulo {model_key} acquisito!"))
 
     def show_toast(self, text):
         from kivy.utils import platform
@@ -111,7 +145,7 @@ class SetupView(Screen):
         self.ids.progress_bar.value = percent
         mb_curr = current / (1024*1024)
         mb_tot = total / (1024*1024)
-        self.ids.details_label.text = f"Downloading {model_key}: {mb_curr:.1f}MB / {mb_tot:.1f}MB ({percent:.1f}%)"
+        self.ids.details_label.text = f"{model_key}: {mb_curr:.1f}MB / {mb_tot:.1f}MB ({percent:.1f}%)"
 
     def on_download_complete(self, success, error_msg):
         Clock.schedule_once(lambda dt: self._handle_complete(success, error_msg))
@@ -120,12 +154,12 @@ class SetupView(Screen):
         if success:
             self.finish_setup()
         else:
-            self.ids.status_label.text = "Download Failed"
+            self.ids.status_label.text = "Download Fallito"
             self.ids.status_label.color = (1, 0.2, 0.2, 1)
-            self.ids.details_label.text = f"Error: {error_msg}\nRestart app to try again."
+            self.ids.details_label.text = f"Errore: {error_msg}\nRiavvia l'app."
 
     def finish_setup(self):
-        self.ids.status_label.text = "System Ready."
+        self.ids.status_label.text = "Tutto Pronto."
         self.ids.progress_bar.value = 100
         Clock.schedule_once(lambda dt: self._notify_complete(), 1.0)
 
