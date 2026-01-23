@@ -275,13 +275,16 @@ class IncrementalLearner:
             state.sources.add(unit.source)
             state.last_updated = unit.timestamp
             
-    def learn_from_interaction(self, interaction: Dict[str, str], user_id: str) -> None:
+    def learn_from_interaction(self, interaction: Dict[str, str], user_id: str) -> Optional[LearningUnit]:
         """
         Apprende dall'interazione con l'utente
         
         Args:
             interaction: Dizionario contenente input, response e feedback
             user_id: ID dell'utente
+            
+        Returns:
+            The created LearningUnit or None
         """
         input_text = interaction.get('input', '')
         response = interaction.get('response', '')
@@ -355,6 +358,8 @@ class IncrementalLearner:
             "timestamp": datetime.now().isoformat(),
             "confidence": ConfidenceLevel.MEDIUM.value
         })
+        
+        return unit
 
     def get_knowledge(self, topic: str) -> List[Dict[str, Any]]:
         """

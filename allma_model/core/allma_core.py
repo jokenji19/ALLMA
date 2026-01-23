@@ -460,12 +460,24 @@ class ALLMACore:
 
             
             # Integra l'apprendimento
-            self.incremental_learner.learn_from_interaction({
+            learned_unit = self.incremental_learner.learn_from_interaction({
                 'input': message,
                 'response': response.content,
                 'feedback': 'positive',  # Default a positive per ora
                 'topic': topic
             }, user_id)
+            
+            # --- PERSISTENZA SINAPTICA (The Fix) ---
+            if learned_unit:
+                # Salva nel Database Permanente
+                try:
+                    self.knowledge_memory.store_knowledge(
+                        content=f"Topic: {learned_unit.topic} | Idea: {learned_unit.content}",
+                        metadata=learned_unit.metadata
+                    )
+                    logging.info(f"[🧠 PERMANENT LEARNING] Concetto '{learned_unit.topic}' salvato nel Database (SQL).")
+                except Exception as e:
+                    logging.error(f"[🧠 MEMORY ERROR] Fallito salvataggio su DB: {e}")
             
             # 🎭 EMOTIONAL MILESTONES: Registra momento emotivo
             self.emotional_milestones.record_emotion(
