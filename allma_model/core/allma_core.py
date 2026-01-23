@@ -411,6 +411,15 @@ class ALLMACore:
                 )
                 logging.info(f"✅ Generated (Symbiosis): {response_text[:50]}...")
                 
+                # Clean artifacts (Aggressive)
+                if response_text:
+                    # Remove any <...> tag (like <end_of_turn>, <eos>, etc.)
+                    response_text = re.sub(r'<[^>]+>', '', response_text)
+                    # Remove "tofu" chars (object replacement char and similar) or unprintable control chars
+                    # Keep basic punctuation and emojis. 
+                    # For now just strip extra whitespace effectively
+                    response_text = response_text.strip()
+                
                 # Gestione fallback se tutti i retry falliscono
                 if response_text is None or response_text.startswith("Error"):
                     logging.error(f"❌ LLM inference failed. Fallback a response_generator")

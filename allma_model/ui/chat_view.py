@@ -22,6 +22,7 @@ Builder.load_string('''
     height: self.texture_size[1] + 20
     text_size: self.width - 30, None
     padding: 15, 10
+    font_name: 'Roboto'  # Force system font for better emoji support
     canvas.before:
         Color:
             rgba: (0.2, 0.6, 1, 1) if self.is_user else (0.3, 0.3, 0.3, 1)
@@ -70,6 +71,7 @@ Builder.load_string('''
                 foreground_color: 1, 1, 1, 1
                 cursor_color: 1, 1, 1, 1
                 padding_y: [15, 0]
+                font_name: 'Roboto'  # Force system font
                 on_text_validate: root.send_message()
 
             Button:
