@@ -15,6 +15,7 @@ from kivy.lang import Builder
 from threading import Thread
 from kivy.core.window import Window
 from kivy.animation import Animation
+from kivy.metrics import dp
 
 # Import Theme
 from allma_model.ui.theme import Theme
@@ -82,9 +83,17 @@ Builder.load_string('''
     FloatLayout:
         # Gradient Background
         GradientBackground:
-            
+        
+        # CHAT AREA (Header + List)
+        # We adjust bottom padding or height to accommodate input area + keyboard
         BoxLayout:
+            id: chat_container
             orientation: 'vertical'
+            pos_hint: {'x': 0, 'top': 1}
+            # Height is essentially window height. 
+            # We use bottom padding to "push" the list up above the input area.
+            # Initial padding_bottom = 80dp (Input) + 0 (Keyboard)
+            padding: [0, 0, 0, dp(80)]
             
             # Header
             BoxLayout:
@@ -122,7 +131,7 @@ Builder.load_string('''
                 
                 Widget: # Spacer
                 
-            # Chat Area
+            # Chat List
             RecycleView:
                 id: rv
                 scroll_type: ['bars', 'content']
@@ -143,68 +152,73 @@ Builder.load_string('''
                     spacing: dp(12)
                     padding: dp(20)
 
-            # Input Area
+        # INPUT AREA (Detached for Floating Animation)
+        BoxLayout:
+            id: input_area
+            size_hint_y: None
+            height: dp(80)
+            # Position manually managed (y)
+            pos_hint: {'x': 0}
+            y: 0 # Start at bottom
+            
+            padding: [dp(20), dp(10), dp(20), dp(20)]
+            spacing: dp(10)
+            canvas.before:
+                Color:
+                    rgba: (1, 1, 1, 0.8) # Glassy white bottom
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+            
+            # Input Wrapper
             BoxLayout:
-                size_hint_y: None
-                height: dp(80)
-                padding: [dp(20), dp(10), dp(20), dp(20)]
-                spacing: dp(10)
                 canvas.before:
                     Color:
-                        rgba: (1, 1, 1, 0.8) # Glassy white bottom
-                    Rectangle:
+                        rgba: Theme.input_border
+                    RoundedRectangle:
                         pos: self.pos
                         size: self.size
+                        radius: [24,]
+                    Color:
+                        rgba: Theme.input_bg
+                    RoundedRectangle:
+                        pos: self.x + 1, self.y + 1
+                        size: self.width - 2, self.height - 2
+                        radius: [23,]
                 
-                # Input Wrapper
-                BoxLayout:
-                    canvas.before:
-                        Color:
-                            rgba: Theme.input_border
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [24,]
-                        Color:
-                            rgba: Theme.input_bg
-                        RoundedRectangle:
-                            pos: self.x + 1, self.y + 1
-                            size: self.width - 2, self.height - 2
-                            radius: [23,]
-                    
-                    TextInput:
-                        id: input_field
-                        multiline: False
-                        hint_text: "Scrivi un messaggio..."
-                        hint_text_color: Theme.text_secondary
-                        background_color: (0, 0, 0, 0)
-                        foreground_color: Theme.text_primary
-                        cursor_color: Theme.primary
-                        padding_y: [self.height / 2.0 - (self.line_height / 2.0) * len(self._lines), 0]
-                        padding_x: [15, 15]
-                        # Font Removed
-                        font_size: '16sp'
-                        write_tab: False # Prevent tab focus issues
-                        on_text_validate: root.send_message()
+                TextInput:
+                    id: input_field
+                    multiline: False
+                    hint_text: "Scrivi un messaggio..."
+                    hint_text_color: Theme.text_secondary
+                    background_color: (0, 0, 0, 0)
+                    foreground_color: Theme.text_primary
+                    cursor_color: Theme.primary
+                    padding_y: [self.height / 2.0 - (self.line_height / 2.0) * len(self._lines), 0]
+                    padding_x: [15, 15]
+                    # Font Removed
+                    font_size: '16sp'
+                    write_tab: False 
+                    on_text_validate: root.send_message()
 
-                Button:
-                    text: ">"
-                    font_size: '24sp'
-                    bold: True
-                    size_hint_x: None
-                    width: dp(50)
-                    background_color: (0,0,0,0)
-                    color: (1,1,1,1)
-                    on_release: root.send_message()
-                    canvas.before:
-                        Color:
-                            rgba: Theme.primary
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [25,] 
+            Button:
+                text: ">"
+                font_size: '24sp'
+                bold: True
+                size_hint_x: None
+                width: dp(50)
+                background_color: (0,0,0,0)
+                color: (1,1,1,1)
+                on_release: root.send_message()
+                canvas.before:
+                    Color:
+                        rgba: Theme.primary
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [25,] 
         
-        # Scroll Down Button (Hidden by default)
+        # Scroll Down Button
         Button:
             id: scroll_btn
             text: "⬇"
@@ -224,15 +238,13 @@ Builder.load_string('''
                     size: self.size
                     radius: [20,]
 
-        # OVERLAY (Dim background when sidebar is open)
+        # OVERLAY
         Button:
             id: overlay
             background_color: (0, 0, 0, 0.4)
-            # Default pos offscreen to ensure no blocking
             pos_hint: {'x': -2, 'y': -2}
             size_hint: (1, 1)
             opacity: 0
-            # disabled: True (Handled by pos_hint for safety)
             on_release: root.toggle_sidebar()
 
         # SIDEBAR
@@ -264,14 +276,13 @@ Builder.load_string('''
                         size: self.size
 
                 Label:
-                    text: "👤" # Placeholder Avatar
+                    text: "👤" 
                     font_size: '40sp'
                     size_hint: None, None
                     size: dp(60), dp(60)
 
                 Label:
                     text: "Utente"
-                    # Font Removed
                     bold: True
                     font_size: '18sp'
                     color: Theme.primary
@@ -296,7 +307,6 @@ Builder.load_string('''
                 SidebarItem:
                     text: "⚙️  Impostazioni"
 
-                # Spacer to push items up
                 Widget: 
 
 ''')
@@ -333,22 +343,49 @@ class ChatView(Screen):
             except Exception as e:
                 self.add_message(f"Errore inizializzazione core: {e}", False)
         
-        # Ensure focus isn't stolen
         Window.bind(on_keyboard_height=self.on_keyboard_height)
 
     def on_leave(self):
         Window.unbind(on_keyboard_height=self.on_keyboard_height)
 
     def on_keyboard_height(self, window, height):
-        # With adjustResize, we usually don't need manual handling, but let's ensure we scroll
+        # Determine target Y for input area
+        # height is keyboard height in pixels
+        
+        # We animate the input area moving up
+        anim_duration = 0.2
+        
+        # Input Area Y: simply 'height' (msg bar rides on top of keyboard)
+        target_y = height
+        
+        # Chat Container Padding:
+        # Needs to be InputHeight (dp(80) approx 160-200px) + Keyboard Height
+        # We need to convert dp(80) to pixels to be precise, usually ~ 2.5/3x on modern phones
+        # Using self.ids.input_area.height is reliable
+        input_h = self.ids.input_area.height
+        target_padding = height + input_h
+        
+        # Animate Input Area Position
+        anim_input = Animation(y=target_y, duration=anim_duration, t='out_cubic')
+        anim_input.start(self.ids.input_area)
+        
+        # Animate Chat Container Padding (Only bottom component)
+        # We can't animate list directly, so we use a property or just set it?
+        # Animation doesn't support list elements natively easily.
+        # But we can animate numeric property if we bound it.
+        # For simplicity/robustness, let's just SET padding for now, or use Clock for smooth steps if tricky.
+        # Wait, Animation DOES support properties. But 'padding' is ReferenceListProperty.
+        # We can try animating `height` of a spacer? No.
+        
+        # Let's set padding immediately. The input area animation covers the visual transition.
+        # If user finds it "janky", we can refine.
+        self.ids.chat_container.padding = [0, 0, 0, target_padding]
+        
+        # Scroll to bottom if opening
         if height > 0:
-            self.scroll_to_bottom(force=True)
+            Clock.schedule_once(lambda dt: self.scroll_to_bottom(force=True), 0.1)
 
     def on_scroll(self, scroll_y):
-        # Logic to determine if user is near bottom
-        # scroll_y is 0 at bottom, 1 at top in RecycleView default?
-        # Actually in Kivy Scatter/Scrollview:
-        # vertical scroll_y: 0 is bottom, 1 is top.
         if scroll_y < 0.05:
             self.is_at_bottom = True
             self.ids.scroll_btn.opacity = 0
@@ -365,10 +402,8 @@ class ChatView(Screen):
         anim = Animation(x=target_x, duration=0.3, t='out_cubic')
         anim.start(self.ids.sidebar)
         
-        # Animate overlay
         overlay = self.ids.overlay
         if self.sidebar_open:
-            # Move overlay onto screen
             overlay.pos_hint = {'x': 0, 'y': 0}
             anim_overlay = Animation(opacity=1, duration=0.3)
         else:
@@ -380,7 +415,6 @@ class ChatView(Screen):
             
         anim_overlay.start(overlay)
 
-        # Ensure correct state at start of animation
         if self.sidebar_open:
              overlay.pos_hint = {'x': 0, 'y': 0}
 
@@ -397,11 +431,7 @@ class ChatView(Screen):
 
         self.add_message(text, True)
         self.ids.input_field.text = ""
-        
-        # Show user we are thinking
         Clock.schedule_once(lambda dt: self.add_message("Sto pensando... 💭", False, temp=True), 0.1)
-
-        # Process in background
         Thread(target=self._process_message, args=(text,)).start()
 
     def _process_message(self, text):
@@ -426,14 +456,11 @@ class ChatView(Screen):
         
         self.history.append({'text': response_text, 'is_user': False})
         self.ids.rv.data = list(self.history)
-        
-        # Only scroll if user was already at bottom or if forced by logic
         self.scroll_to_bottom(force=self.is_at_bottom)
 
     def add_message(self, text, is_user, temp=False):
         self.history.append({'text': text, 'is_user': is_user, 'temp': temp})
         self.ids.rv.data = list(self.history)
-        # Always scroll for user's own message
         if is_user:
             self.scroll_to_bottom(force=True)
         else:
@@ -441,4 +468,5 @@ class ChatView(Screen):
 
     def scroll_to_bottom(self, force=False):
         if force:
+            # Scroll to 0 (bottom in Kivy ScrollView/RecycleView)
             Clock.schedule_once(lambda dt: setattr(self.ids.rv, 'scroll_y', 0), 0.1)
