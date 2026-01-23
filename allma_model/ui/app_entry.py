@@ -11,8 +11,8 @@ from allma_model.utils.model_downloader import ModelDownloader
 
 class AllmaInternalApp(App):
     def build(self):
-        # Disable Kivy's handling to let Android native adjustResize work
-        Window.softinput_mode = ""
+        # Force window to resize when keyboard appears (Standard Kivy behavior)
+        Window.softinput_mode = 'resize'
         self.sm = ScreenManager(transition=FadeTransition())
         
         # Check initial state

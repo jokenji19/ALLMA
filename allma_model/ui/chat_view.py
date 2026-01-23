@@ -354,30 +354,11 @@ class ChatView(Screen):
         Window.unbind(on_keyboard_height=self.on_keyboard_height)
 
     def on_keyboard_height(self, window, height):
-        # HYBRID LOGIC:
-        # 1. Check if Window size actually changed (Native Resize worked?)
-        # Window.height updates almost instantly in adjustResize mode
-        
-        current_win_height = Window.height
-        
-        # We need a small tolerance or just logic
-        # If window height is significantly smaller than initial, Resize worked.
-        # If window height is basically same as initial, Resize failed (or adjustPan active).
-        
-        is_resized = (current_win_height < (self.initial_window_height * 0.9))
-        
-        if is_resized:
-            # Native resize works!
-            # We DONT need padding.
-            self.ids.main_layout.padding = [0, 0, 0, 0]
-        else:
-            # Native resize failed!
-            # We MUST inject padding manually.
-            self.ids.main_layout.padding = [0, 0, 0, height]
-            
-        # Also always scroll to bottom on open
+        # STANDARD LOGIC:
+        # Just ensure we scroll to the bottom when keyboard opens.
+        # Kivy 'resize' mode handles the window resizing automatically.
         if height > 0:
-            Clock.schedule_once(lambda dt: self.scroll_to_bottom(force=True), 0.1)
+            Clock.schedule_once(lambda dt: self.scroll_to_bottom(force=True), 0.2)
 
     def on_scroll(self, scroll_y):
         # Logic to determine if user is near bottom
