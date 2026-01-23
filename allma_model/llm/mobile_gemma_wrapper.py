@@ -6,18 +6,12 @@ import os
 import logging
 from typing import List, Optional
 
-try:
-    from llama_cpp import Llama
-    LLAMA_CPP_AVAILABLE = True
-except ImportError:
-    import traceback
-    err = traceback.format_exc()
-    logging.error(f"CRITICAL: llama-cpp-python import failed:\n{err}")
-    print(f"CRITICAL: llama-cpp-python import failed:\n{err}")
-    LLAMA_CPP_AVAILABLE = False
+# Delayed import mechanism match
+# We set this to True to bypass allma_core checks and let _load() handle the actual import/failure
+LLAMA_CPP_AVAILABLE = True
 
 # Default model path (relative to creating this class, but should be passed in)
-_DEFAULT_MODEL_NAME = "gemma-3n-e2b-it-q4_k_m.gguf"
+_DEFAULT_MODEL_NAME = "gemma-2-2b-it-q4_k_m.gguf"
 
 class MobileGemmaWrapper:
     """
@@ -46,7 +40,10 @@ class MobileGemmaWrapper:
         if not os.path.exists(self.model_path):
             logging.error(f"Modello non trovato in: {self.model_path}")
             return
-
+            
+        size = os.path.getsize(self.model_path)
+        logging.info(f"[MobileGemma] File exists! Size: {size} bytes ({size/(1024*1024):.2f} MB)")
+        
         self._load()
 
     def _load(self):
@@ -54,33 +51,61 @@ class MobileGemmaWrapper:
         logging.info(f"[MobileGemma] Loading model from {self.model_path} ...")
         try:
             import sys
-            logging.info(f"[MobileGemma] Initializing Llama with path={self.model_path}...")
-            print(f"[MobileGemma] PRINT DEBUG: Initializing Llama...", flush=True)
-            
-            # PERMANENT FIX: Manually load libllama.so to bypass linker issues
             import os
             import ctypes
             
-            # Possible locations for the library
-            possible_paths = [
-                # 1. Custom location in site-packages (where we put it via recipe/hotpatch)
-                "/data/data/org.allma.allma_prime/files/app/_python_bundle/site-packages/llama_cpp/libllama.so",
-                # 2. As a sibling to this file (if packaged near wrapper)
-                os.path.join(os.path.dirname(__file__), "libllama.so"),
-                # 3. Standard Android native lib dir (for distributed APKs)
-                "/data/app/org.allma.allma_prime/lib/arm64/libllama.so",
-                # 4. Fallback: Try to find it relative to site-packages root
-                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "_python_bundle", "site-packages", "llama_cpp", "libllama.so")
-            ]
+            # --- CRITICAL: PRE-LOAD libggml.so GLOBALLY ---
+            # llama-cpp-python usually fails because it can't find symbols from libggml.so
+            private_root = os.environ.get("ANDROID_PRIVATE", "/data/data/org.allma.allma_prime/files/app")
+            libggml_path = os.path.join(private_root, "libggml.so")
             
+            if os.path.exists(libggml_path):
+                print(f"[MobileGemma] Pre-loading libggml.so from {libggml_path}...", flush=True)
+                try:
+                    ctypes.CDLL(libggml_path, mode=ctypes.RTLD_GLOBAL)
+                    print("[MobileGemma] SUCCESS: libggml.so pre-loaded globally.", flush=True)
+                except Exception as e:
+                    print(f"[MobileGemma] WARNING: Failed to pre-load libggml.so: {e}", flush=True)
+            else:
+                print(f"[MobileGemma] libggml.so NOT FOUND at {libggml_path}", flush=True)
+
+            logging.info(f"[MobileGemma] Initializing Llama with path={self.model_path}...")
+            print(f"[MobileGemma] PRINT DEBUG: Initializing Llama...", flush=True)
+            
+            # PERMANENT FIX: Respect main.py's smuggling and verify paths
+            import os
+            import ctypes
+            
+            # 0. Check if LLAMA_CPP_LIB is already set (by main.py)
+            env_lib = os.environ.get("LLAMA_CPP_LIB")
             lib_path = None
-            for p in possible_paths:
-                if os.path.exists(p):
-                    lib_path = p
-                    break
+            
+            if env_lib and os.path.exists(env_lib):
+                print(f"[MobileGemma] Using env LLAMA_CPP_LIB: {env_lib}", flush=True)
+                lib_path = env_lib
+            else:
+                print(f"[MobileGemma] env LLAMA_CPP_LIB is {env_lib} (missing or invalid), searching...", flush=True)
+                
+                # Possible locations for the library
+                private_root = os.environ.get("ANDROID_PRIVATE", "/data/data/org.allma.allma_prime/files/app")
+                possible_paths = [
+                    # 1. The smuggled location (MOST LIKELY)
+                    os.path.join(private_root, "libllama.so"),
+                    # 2. Custom location in site-packages
+                    os.path.join(private_root, "_python_bundle/site-packages/llama_cpp/libllama.so"),
+                    # 3. As a sibling to this file
+                    os.path.join(os.path.dirname(__file__), "libllama.so"),
+                    # 4. Standard Android native lib dir
+                    "/data/app/org.allma.allma_prime/lib/arm64/libllama.so",
+                ]
+                
+                for p in possible_paths:
+                    if os.path.exists(p):
+                        lib_path = p
+                        break
             
             if lib_path:
-                print(f"[MobileGemma] Found libllama.so at {lib_path}, setting env...", flush=True)
+                print(f"[MobileGemma] Resolved libllama.so at {lib_path}, setting env...", flush=True)
                 os.environ["LLAMA_CPP_LIB"] = lib_path
                 try:
                     ctypes.CDLL(lib_path)
@@ -88,12 +113,26 @@ class MobileGemmaWrapper:
                 except Exception as e:
                     print(f"[MobileGemma] FAILED to pre-load {lib_path}: {e}", flush=True)
             else:
-                 print(f"[MobileGemma] WARNING: libllama.so NOT FOUND in any known path.", flush=True)
+                 print(f"[MobileGemma] CRITICAL WARNING: libllama.so NOT FOUND in any known path. Search paths: {possible_paths}", flush=True)
+
+            # --- LAZY IMPORT ---
+            try:
+                from llama_cpp import Llama
+                print("[MobileGemma] Llama class imported successfully!", flush=True)
+            except ImportError:
+                print("[MobileGemma] ImportError for Llama class. Re-trying with manual extensive lib check...", flush=True)
+                # Fallback: Try to force load libraries again manually just in case
+                if lib_path:
+                    try:
+                       ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
+                    except: pass
+                
+                from llama_cpp import Llama # Retry or fail hard
 
             # Use minimal args first to rule out bad params
             self.llm = Llama(
                 model_path=self.model_path,
-                n_ctx=512,          # Reduced context
+                n_ctx=2048,          # Increased context to avoid overflow (270+256 > 512)
                 n_threads=1,        # 1 thread
                 n_batch=1,          # 1 batch
                 verbose=True

@@ -17,10 +17,10 @@ class ModelDownloader:
         # Nota: Usiamo link diretti a HuggingFace GGUF
         self.models = {
             "gemma": {
-                # Update to Gemma 3n (Google's latest efficient model)
-                "url": "https://huggingface.co/bartowski/google_gemma-3n-E2B-it-GGUF/resolve/main/google_gemma-3n-E2B-it-Q4_K_M.gguf",
-                "filename": "gemma-3n-e2b-it-q4_k_m.gguf",
-                "size_mb": 1600 # Approx size for 2B Q4
+                # Update to Gemma 2 2B (Standard, widely compatible)
+                "url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+                "filename": "gemma-2-2b-it-q4_k_m.gguf",
+                "size_mb": 1630 # Verified via curl (1.59GB)
             },
             "moondream": {
                 "url": "https://huggingface.co/ggml-org/moondream2-20250414-GGUF/resolve/main/moondream2-mmproj-f16-20250414.gguf",
@@ -60,8 +60,9 @@ class ModelDownloader:
             else:
                 size = os.path.getsize(path)
                 self.logger.info(f"[DEBUG] File size for {key}: {size} bytes")
-                # Controllo dimensione minima (Gemma è ~2.7GB, quindi < 2GB è sicuramente corrotto)
-                min_size = 2 * 1024 * 1024 * 1024 if 'gemma' in key else 1024 * 1024
+                # Controllo dimensione minima (tolleranza 10%)
+                expected_mb = info.get('size_mb', 100)
+                min_size = (expected_mb * 1024 * 1024) * 0.9
                 if size < min_size: 
                     self.logger.warning(f"[DEBUG] File for {key} is too small ({size} bytes < {min_size}), marking as missing/corrupt.")
                     try:
@@ -134,7 +135,7 @@ class ModelDownloader:
             if os.path.exists(path): os.remove(path)
             return False, error_msg
 
-    def start_background_download(self, model_keys, progress_callback, completion_callback):
+    def start_background_download(self, model_keys, progress_callback, completion_callback, on_model_complete=None):
         """Avvia il download in un thread separato. completion_callback(success, error_msg)"""
         def _download_thread():
             success_all = True
@@ -142,7 +143,13 @@ class ModelDownloader:
             
             for key in model_keys:
                 success, error = self.download_model(key, lambda d, t: progress_callback(key, d, t))
-                if not success:
+                if success:
+                    if on_model_complete:
+                        try:
+                            on_model_complete(key)
+                        except Exception as e:
+                            self.logger.error(f"Error in on_model_complete: {e}")
+                else:
                     success_all = False
                     last_error = error
                     break

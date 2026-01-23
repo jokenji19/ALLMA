@@ -169,9 +169,12 @@ class ALLMACore:
 
         try:
             from allma_model.llm.mobile_gemma_wrapper import MobileGemmaWrapper, LLAMA_CPP_AVAILABLE
+            import allma_model.llm.mobile_gemma_wrapper as raw_module
+            logging.info(f"DEBUG: Loaded MobileGemmaWrapper from {raw_module.__file__}")
+            logging.info(f"DEBUG: LLAMA_CPP_AVAILABLE value is: {LLAMA_CPP_AVAILABLE}")
             
             if not LLAMA_CPP_AVAILABLE:
-                msg = "llama-cpp-python not found (LLAMA_CPP_AVAILABLE=False). The library is missing from APK."
+                msg = f"ALANTURING_MARKER: llama-cpp-python not found (LLAMA_CPP_AVAILABLE=False). Source: {raw_module.__file__}"
                 logging.warning(msg)
                 self._mobile_llm_error = msg
                 return

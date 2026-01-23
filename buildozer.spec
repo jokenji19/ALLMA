@@ -13,11 +13,11 @@ package.domain = org.allma
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so
+source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin
 
 # (list) List of inclusions using pattern matching
 # Build 148: Explicit Code Blob Include
-source.include_patterns = assets/*,main.py,icon.png,code_blob.py,logo.png,allma_model/*,libs/*
+#source.include_patterns = assets/*,main.py,icon.png,code_blob.py,logo.png,allma_model,libs,libllama.so,payload.png
 
 # (list) Source files to exclude (let empty to not exclude anything)
 source.exclude_exts = spec
@@ -37,7 +37,7 @@ version = 0.1
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded# (list) Application requirements
 # Build 136: Full Restoration (Standard + Graphics + Math)
-requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llamacpp_android,diskcache,typing_extensions
+requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llamacpp_android,diskcache,typing_extensions,jinja2,MarkupSafe
 
 # (str) Python for android branch to use, if not master, useful to try new features
 # p4a.branch = develop
@@ -107,6 +107,9 @@ android.archs = arm64-v8a
 
 # (bool) enables Android auto backup feature (Android API >= 23)
 android.allow_backup = True
+
+# (list) Android libraries to add to the libs/arm64-v8a directory
+#android.add_libs_arm64 = libs/lib-arm64/libhelloworld.so
 
 # (str) XML file for the Android manifest
 android.manifest = AndroidManifest.xml

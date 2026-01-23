@@ -82,8 +82,25 @@ class SetupView(Screen):
         self.downloader.start_background_download(
             self.missing_models, 
             self.update_progress,
-            self.on_download_complete
+            self.on_download_complete,
+            self.on_single_model_downloaded
         )
+
+    def on_single_model_downloaded(self, model_key):
+        # Called from background thread
+        Clock.schedule_once(lambda dt: self.show_toast(f"Modello {model_key} scaricato!"))
+
+    def show_toast(self, text):
+        from kivy.utils import platform
+        if platform == 'android':
+            from jnius import autoclass, cast
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            JString = autoclass('java.lang.String')
+            Toast = autoclass('android.widget.Toast')
+            context =  PythonActivity.mActivity
+            Toast.makeText(context, cast('java.lang.CharSequence', JString(text)), Toast.LENGTH_LONG).show()
+        else:
+            print(f"[TOAST] {text}")
 
     def update_progress(self, model_key, current, total):
         # Called from thread, must schedule UI update

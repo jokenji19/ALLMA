@@ -33,5 +33,22 @@ class AllmaInternalApp(App):
         # Switch to chat when setup is done
         self.sm.current = 'chat'
 
+    def on_start(self):
+        # Check if the native library was just downloaded
+        if os.environ.get("ALLMA_LIB_DOWNLOADED") == "1":
+            self.show_toast("Motore AI (Lib) installato correttamente!")
+
+    def show_toast(self, text):
+        from kivy.utils import platform
+        if platform == 'android':
+            from jnius import autoclass, cast
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            JString = autoclass('java.lang.String')
+            Toast = autoclass('android.widget.Toast')
+            context =  PythonActivity.mActivity
+            Toast.makeText(context, cast('java.lang.CharSequence', JString(text)), Toast.LENGTH_LONG).show()
+        else:
+            print(f"[TOAST] {text}")
+
 if __name__ == '__main__':
     AllmaInternalApp().run()

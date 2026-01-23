@@ -53,10 +53,17 @@
 
 ---
 ### Lesson 9: The Stale Build Artifact Trap (Build 177)
-**Issue:** Changes to Python source code in `buildozer.spec` or recipes were ignored in the APK, causing the app to run old code and misleading debugging efforts.
+**Issue:** Changes to Python source9. **ALWAYS** use `buildozer android clean` or at least `buildozer android debug` when changing libraries or recipes. `deploy run` alone skips the build step and re-deploys the OLD APK.
+10. **Library Wrappers vs. Environment Variables**: If you manually load a library in `main.py` and set an environment variable (like `LLAMA_CPP_LIB`), ensure the library's Python wrapper (e.g., `llama_cpp`) checks that variable *before* trying its own hardcoded search paths. Otherwise, it effectively ignores your successful bootstrap loading.
 **Root Cause:** `python-for-android` aggressively caches build outcomes (`dists`, `python-installs`) and does not re-copy Python source files unless the requirement version changes or a clean build is forced.
 **Detection:** Logs showed `n_batch=256` (old code) vs `n_batch=1` (new code on disk).
 **Solution:**
-1.  **Stop Assuming:** When code changes don't appear, assume stale cache.
-2.  **Clean Command:** Run `rm -rf .buildozer/android/platform/build-*/dists` AND `rm -rf .buildozer/android/platform/build-*/build/python-installs` before rebuilding critical logic.
-3.  **Future:** Use `p4a clean_dists` or simply delete the specific dist folder.
+2.  **Explicit Config:** Add `so` to `source.include_exts` in `buildozer.spec`.
+3.  **Pre-load:** Use `ctypes.CDLL("./libname.so")` in `main.py` to force loading before any sub-modules try to access it.
+### Lesson 10: The Phantom Library (Packaging Native Libs)
+**Problem:** Even if a recipe compiles a `.so` library correctly, Buildozer might not automatically package it into the APK if it's not in a standard location or explicitly included.
+**Symptoms:** `OSError: Shared library ... not found` at runtime, even though the build succeeded.
+**Solution:**
+1.  **Manual Injection:** Copy the compiled `.so` (found in `.buildozer/.../build-lib-arm64/`) directly to the project root.
+2.  **Explicit Config:** Add `so` to `source.include_exts` in `buildozer.spec`.
+3.  **Pre-load:** Use `ctypes.CDLL("./libname.so")` in `main.py` to force loading before any sub-modules try to access it.
