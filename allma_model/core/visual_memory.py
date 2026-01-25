@@ -1,13 +1,24 @@
 import os
 import json
-import numpy as np
-import cv2
-from PIL import Image
+import shutil
+import time
 from datetime import datetime
+try:
+    import cv2
+    import numpy as np
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    cv2 = None
+    
+    # Mock Numpy to prevent type hint crashes
+    class MockNumpy:
+        class ndarray: pass
+    np = MockNumpy()
+from PIL import Image
 from typing import Dict, List, Optional, Tuple, Any
 import pickle
 import uuid
-import shutil
 
 class VisualMemorySystem:
     def __init__(self, storage_dir: str = "visual_memory"):

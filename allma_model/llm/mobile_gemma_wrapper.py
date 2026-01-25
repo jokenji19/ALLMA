@@ -11,7 +11,7 @@ from typing import List, Optional
 LLAMA_CPP_AVAILABLE = True
 
 # Default model path (relative to creating this class, but should be passed in)
-_DEFAULT_MODEL_NAME = "gemma-2-2b-it-q4_k_m.gguf"
+_DEFAULT_MODEL_NAME = "Hermes-3-Llama-3.2-3B.Q4_K_M.gguf"
 
 class MobileGemmaWrapper:
     """
@@ -129,16 +129,18 @@ class MobileGemmaWrapper:
                 
                 from llama_cpp import Llama # Retry or fail hard
 
-            # Use minimal args first to rule out bad params
+            # Optimized for High-End Android (S25 Ultra / Gen 4)
+            # n_threads=8 (Use Performance Cores)
+            # n_batch=256 (Speed up prompt processing)
             self.llm = Llama(
                 model_path=self.model_path,
-                n_ctx=2048,          # Increased context to avoid overflow (270+256 > 512)
-                n_threads=1,        # 1 thread
-                n_batch=1,          # 1 batch
+                n_ctx=4096,         # <--- INCREASED MEMORY: Was 2048, now 4096 for Hermes
+                n_threads=8,        # <--- KEY FIX: Was 1, now 8 for S25 Ultra
+                n_batch=256,        # <--- KEY FIX: Was 1, now 256 for prompt ingestion speed
                 verbose=True
             )
             
-            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success!", flush=True)
+            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success! (Threads: 8)", flush=True)
             logging.info("[MobileGemma] Model loaded successfully.")
         except Exception as e:
             logging.error(f"[MobileGemma] Error loading model: {e}")
@@ -151,12 +153,14 @@ class MobileGemmaWrapper:
         temperature: float = 0.7,
         top_p: float = 0.9,
         stop: Optional[List[str]] = None,
+        callback: Optional[callable] = None # Support streaming
     ) -> str:
         """
         Genera testo dato un prompt.
         Args:
             prompt: Può essere raw text o formatted chat.
             max_tokens: Limite token generati.
+            callback: Funzione(str) chiamata per ogni token generato.
         """
         if not self.llm:
             return "Error: Model not loaded."
@@ -166,20 +170,11 @@ class MobileGemmaWrapper:
             stop = ["<end_of_turn>"]
 
         try:
-            # ABI FIX APPLIED (0.2.26 pinned). STREAMING DISABLED TO PREVENT CRASH.
-            logging.info(f"[MobileGemma] Generating response (Start) - Streaming DISABLED")
+            # Enable streaming if callback is provided
+            stream_mode = (callback is not None)
             
-            # --- DEBUGGING CRASH ---
-            # Test 1: Tokenize
-            try:
-                logging.info("[MobileGemma] DEBUG: Attempting to tokenize prompt...")
-                tokens = self.llm.tokenize(prompt.encode('utf-8'))
-                logging.info(f"[MobileGemma] DEBUG: Tokenization successful. Loop: {len(tokens)} tokens.")
-            except Exception as e_tok:
-                logging.error(f"[MobileGemma] DEBUG: Tokenization CRASHED/FAILED: {e_tok}")
+            logging.info(f"[MobileGemma] Generating response (Stream={stream_mode})")
             
-            # Test 2: Generate
-            logging.info("[MobileGemma] DEBUG: Starting Generation...")
             output = self.llm(
                 prompt,
                 max_tokens=max_tokens,
@@ -187,10 +182,21 @@ class MobileGemmaWrapper:
                 top_p=top_p,
                 stop=stop,
                 echo=False,
-                stream=False
+                stream=stream_mode 
             )
             
-            return output['choices'][0]['text']
+            if stream_mode:
+                text_buffer = ""
+                for chunk in output:
+                    # llama-cpp-python stream chunk format:
+                    # {'id': '...', 'object': 'text_completion', 'created': 123, 'model': '...', 'choices': [{'text': 'T', 'index': 0, 'logprobs': None, 'finish_reason': None}]}
+                    token = chunk['choices'][0]['text']
+                    text_buffer += token
+                    if callback:
+                        callback(token)
+                return text_buffer
+            else:
+                return output['choices'][0]['text']
 
         except Exception as e:
             logging.error(f"[MobileGemma] Inference error: {e}")

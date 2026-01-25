@@ -1,6 +1,20 @@
-import cv2
-import numpy as np
-import pytesseract
+import os
+try:
+    import cv2
+    import numpy as np
+    import pytesseract
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    cv2 = None
+    
+    # Mock Numpy to prevent type hint crashes
+    class MockNumpy:
+        class ndarray: pass
+        def mean(self, *args): return 0
+    np = MockNumpy()
+    
+    pytesseract = None
 from PIL import Image
 from typing import Dict, List, Optional, Any
 import re

@@ -5,7 +5,26 @@ Definizione dei tipi di memoria utilizzati nel sistema avanzato
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+# Fallback for type hinting if numpy is missing
+if np is None:
+    class MockNumpy:
+        class ndarray: pass
+        def random(self, *args): return [0.0] * 768
+        def rand(self, *args): return [0.0] * 768
+        def exp(self, x): return 1.0
+        def dot(self, a, b): return 0.0
+        def array(self, x): return x
+        
+        class linalg:
+            @staticmethod
+            def norm(x): return 1.0
+            
+    np = MockNumpy()
 
 @dataclass
 class Memory:

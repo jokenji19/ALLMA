@@ -22,6 +22,10 @@ class EmotionalState(Enum):
     DETERMINATION = "determination"
     CONFUSION = "confusion"
     INSPIRATION = "inspiration"
+    NEUTRAL = "neutral"
+    ANGER = "anger"
+    FEAR = "fear"
+    SURPRISE = "surprise"
 
 @dataclass
 class EmotionalResponse:
@@ -342,16 +346,37 @@ class CoalescenceProcessor:
             duration=1.0
         )
 
-    def integrate_knowledge(self, content: str, source_type: str, emotional_state: EmotionalResponse) -> None:
-        """Integra la conoscenza dal contenuto"""
+    def integrate_knowledge(self, content: str, source_type: str, emotional_state: Any) -> None:
+        """Integra la conoscenza dal contenuto. Handles polymorphic emotional_state."""
         if not content:
             return
+
+        # Adapt from types.EmotionalState if needed
+        final_emotional_state = emotional_state
+        if not isinstance(emotional_state, EmotionalResponse):
+            # Try to extract details
+            primary_str = getattr(emotional_state, 'primary_emotion', 'neutral').lower()
+            intensity = getattr(emotional_state, 'intensity', 0.5)
+            
+            # Map string to Enum
+            try:
+                primary_enum = EmotionalState(primary_str)
+            except ValueError:
+                # Fallback mapping
+                if primary_str == 'joy': primary_enum = EmotionalState.JOY
+                elif primary_str == 'sadness': primary_enum = EmotionalState.SADNESS
+                else: primary_enum = EmotionalState.NEUTRAL
+            
+            final_emotional_state = EmotionalResponse(
+                primary=primary_enum,
+                intensity=intensity
+            )
 
         # Crea una memoria temporanea per l'integrazione
         memory = Memory(
             content=content,
             timestamp=time.time(),
-            emotional_response=emotional_state,
+            emotional_response=final_emotional_state,
             context={"source_type": source_type}
         )
         

@@ -1,11 +1,40 @@
 from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime, timedelta
-import pytz
-from langdetect import detect
-import cv2
-import numpy as np
-from PIL import Image
-from transformers import pipeline
+try:
+    import pytz
+except ImportError:
+    pytz = None
+
+try:
+    from langdetect import detect
+    LANGDETECT_AVAILABLE = True
+except ImportError:
+    LANGDETECT_AVAILABLE = False
+    
+try:
+    import cv2
+    import numpy as np
+    from PIL import Image
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    
+    # Mock Numpy to prevent type hint crashes
+    class MockNumpy:
+        class ndarray: pass
+        def mean(self, *args): return 0
+        def std(self, *args): return 0
+        def unique(self, *args): return [], []
+        def argsort(self, *args): return []
+        def count_nonzero(self, *args): return 0
+    np = MockNumpy()
+
+try:
+    from transformers import pipeline
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+
 import requests
 from .visual_memory import VisualMemorySystem
 from .ocr_processor import OCRProcessor
@@ -34,9 +63,13 @@ class ContextUnderstandingSystem:
         
         try:
             # Carica i modelli di ML
-            self.emotion_detector = pipeline("text-classification", 
-                                          model="j-hartmann/emotion-english-distilroberta-base", 
-                                          top_k=None)
+            if TRANSFORMERS_AVAILABLE:
+                self.emotion_detector = pipeline("text-classification", 
+                                              model="j-hartmann/emotion-english-distilroberta-base", 
+                                              top_k=None)
+            else:
+                self.emotion_detector = None
+                print("Transformers not available, using fallback emotion detection.")
         except Exception as e:
             print(f"Error loading models: {e}")
             self.emotion_detector = None
@@ -100,7 +133,9 @@ class ContextUnderstandingSystem:
                 
             # Traduci in inglese se necessario
             try:
-                lang = detect(text)
+                lang = 'en'
+                if LANGDETECT_AVAILABLE:
+                    lang = detect(text)
                 if lang != 'en':
                     text = self.translate_text(text, lang, 'en') or text
             except:
@@ -126,7 +161,10 @@ class ContextUnderstandingSystem:
         """Analizza input multilingua"""
         try:
             # Rileva la lingua
-            detected_lang = detect(text)
+            if LANGDETECT_AVAILABLE:
+                detected_lang = detect(text)
+            else:
+                detected_lang = 'en' # Fallback default
             
             # Traduci in inglese per l'analisi
             if detected_lang != 'en':
@@ -155,6 +193,9 @@ class ContextUnderstandingSystem:
     def process_image(self, image_path: str, label: Optional[str] = None, description: Optional[str] = None) -> Dict[str, Any]:
         """Analizza un'immagine e opzionalmente la memorizza"""
         try:
+            if not CV2_AVAILABLE:
+                return {'error': "OpenCV not available"}
+
             # Carica e preprocessa l'immagine
             image = cv2.imread(image_path)
             if image is None:

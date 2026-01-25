@@ -5,8 +5,18 @@ from pypdf import PdfReader
 import pdfplumber
 from docx import Document
 from openpyxl import load_workbook
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    cv2 = None
+    
+    # Mock Numpy to prevent type hint crashes
+    class MockNumpy:
+        class ndarray: pass
+    np = MockNumpy()
 from PIL import Image
 from .ocr_processor import OCRProcessor
 

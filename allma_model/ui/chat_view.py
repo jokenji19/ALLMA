@@ -1,9 +1,16 @@
-from kivy.uix.screenmanager import Screen
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.floatlayout import FloatLayout
-from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
-from kivy.uix.recycleview import RecycleView
+from kivymd.uix.screen import MDScreen
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.floatlayout import MDFloatLayout
+from kivymd.uix.textfield import MDTextField
+from kivymd.uix.button import MDIconButton, MDFlatButton
+from kivymd.uix.label import MDLabel
+from kivymd.uix.card import MDCard
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.list import OneLineIconListItem, IconLeftWidget, MDList
+from kivymd.uix.navigationdrawer import MDNavigationLayout, MDNavigationDrawer
+from kivymd.uix.screenmanager import MDScreenManager
+from kivymd.uix.scrollview import MDScrollView
+from kivymd.uix.recycleview import MDRecycleView
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivy.uix.label import Label
 from kivy.properties import BooleanProperty, StringProperty, ObjectProperty, NumericProperty
@@ -27,305 +34,267 @@ Factory.register('Theme', cls=Theme)
 
 Builder.load_string('''
 #:import Theme allma_model.ui.theme.Theme
-#:import Factory kivy.factory.Factory
-
-<GradientBackground@Widget>:
-    canvas.before:
-        Rectangle:
-            pos: self.pos
-            size: self.size
-            texture: Theme.get_vertical_gradient_texture(Theme.bg_start, Theme.bg_end)
 
 <MessageBubble>:
+    orientation: 'vertical'
     size_hint_y: None
-    height: self.texture_size[1] + 24
-    text_size: self.width - 40, None
-    padding: 20, 12
-    background_color: [0, 0, 0, 0] # Transparent for custom drawing
-    # Font Removed to use System Default
-    color: Theme.text_light if self.is_user else Theme.text_primary
-    canvas.before:
-        Color:
-            rgba: Theme.bubble_user_bg if self.is_user else Theme.bubble_bot_bg
-        RoundedRectangle:
-            pos: self.pos
-            size: self.size
-            # Soft corners: User (Right), Bot (Left)
-            radius: [18, 18, 0, 18] if self.is_user else [18, 18, 18, 0]
-        # Subtle Shadow
-        Color:
-            rgba: (0, 0, 0, 0.05) if not self.is_user else (0, 0, 0, 0)
-        RoundedRectangle:
-            pos: self.pos[0] + 2, self.pos[1] - 2
-            size: self.size
-            radius: [18, 18, 18, 0]
+    height: self.minimum_height
+    padding: [dp(10), dp(5)]
+    spacing: dp(2)
+    adaptive_height: True
+    
+    # Thought Section
+    MDBoxLayout:
+        orientation: 'vertical'
+        adaptive_height: True
+        size_hint_y: None
+        height: self.minimum_height if root.thought_text else 0
+        opacity: 1 if root.thought_text else 0
+        padding: [dp(20), 0, 0, dp(5)]
+        
+        MDIconButton:
+            icon: "thought-bubble-outline" if not root.thought_visible else "thought-bubble"
+            theme_text_color: "Custom"
+            text_color: (0.5, 0.5, 0.5, 1)
+            on_release: root.toggle_thought()
+            size_hint: None, None
+            size: dp(30), dp(30)
+            user_font_size: "20sp"
+            pos_hint: {'left': 1}
+            opacity: 1 if root.thought_text else 0
 
-<SidebarItem@Button>:
-    background_color: (0,0,0,0)
-    color: Theme.text_primary
-    # Font Removed
-    font_size: '16sp'
-    size_hint_y: None
-    height: dp(50)
-    text_size: self.width, None
-    halign: 'left'
-    valign: 'middle'
-    padding_x: dp(20)
-    canvas.before:
-        Color:
-            rgba: (0,0,0, 0.05) if self.state == 'down' else (0,0,0,0)
-        Rectangle:
-            pos: self.pos
-            size: self.size
+        MDLabel:
+            text: root.thought_text
+            adaptive_height: True
+            opacity: 1 if root.thought_visible else 0
+            size_hint_y: None
+            height: self.texture_size[1] if root.thought_visible else 0
+            color: (0.4, 0.4, 0.4, 1)
+            font_style: "Caption"
+            italic: True
+            padding: [dp(5), dp(5)]
+            text_size: root.width * 0.85, None
+
+    # Message Bubble
+    AnchorLayout:
+        anchor_x: 'right' if root.is_user else 'left'
+        size_hint_y: None
+        height: card.height
+        
+        MDCard:
+            id: card
+            size_hint: None, None
+            size: lbl.size[0] + dp(30), lbl.size[1] + dp(20)
+            radius: [dp(20), dp(20), dp(5), dp(20)] if root.is_user else [dp(20), dp(20), dp(20), dp(5)]
+            md_bg_color: (0.2, 0.6, 1, 0.9) if root.is_user else (0.92, 0.92, 0.93, 1)
+            elevation: 0
+            padding: dp(15)
+            
+            Label:
+                id: lbl
+                text: root.text
+                size_hint: None, None
+                text_size: (root.width * 0.75, None)
+                size: self.texture_size
+                color: (1, 1, 1, 1) if root.is_user else (0.1, 0.1, 0.1, 1)
+                font_size: '16sp'
+                valign: 'middle'
+                halign: 'left'
 
 <ChatView>:
-    # Main Container
-    FloatLayout:
-        # Gradient Background
-        GradientBackground:
-            
-        # Main Layout (Vertical: Header, Chat, Input)
-        # We put everything back in one box so resize works naturally
-        BoxLayout:
-            id: main_layout
-            orientation: 'vertical'
-            # Padding bottom will be manipulated if resize fails
-            padding: [0, 0, 0, 0]
-            
-            # Header
-            BoxLayout:
-                size_hint_y: None
-                height: dp(60)
-                padding: dp(15)
-                spacing: dp(15)
-                canvas.before:
-                    Color:
-                        rgba: (1, 1, 1, 0.0) 
-                    Rectangle:
-                        pos: self.pos
-                        size: self.size
-
-                # Menu Button
-                Button:
-                    text: "=" 
-                    font_size: '24sp'
-                    bold: True
-                    size_hint_x: None
-                    width: dp(40)
-                    background_color: (0,0,0,0)
-                    color: Theme.primary
-                    on_release: root.toggle_sidebar()
-
-                Label:
-                    text: "ALLMA"
-                    # Font Removed
-                    bold: True
-                    font_size: '20sp'
-                    color: Theme.primary
-                    size_hint_x: None
-                    width: self.texture_size[0]
-                    halign: 'left'
-                
-                Widget: # Spacer
-                
-            # Chat Area
-            RecycleView:
-                id: rv
-                scroll_type: ['bars', 'content']
-                scroll_wheel_distance: dp(114)
-                bar_width: dp(4)
-                bar_color: Theme.primary
-                bar_inactive_color: (0, 0, 0, 0)
-                viewclass: 'MessageBubble'
-                # Track scroll position
-                on_scroll_y: root.on_scroll(self.scroll_y)
-                
-                RecycleBoxLayout:
-                    default_size: None, dp(56)
-                    default_size_hint: 1, None
-                    size_hint_y: None
-                    height: self.minimum_height
-                    orientation: 'vertical'
-                    spacing: dp(12)
-                    padding: dp(20)
-
-            # Input Area
-            BoxLayout:
-                id: input_area
-                size_hint_y: None
-                height: dp(80)
-                padding: [dp(20), dp(10), dp(20), dp(20)]
-                spacing: dp(10)
-                canvas.before:
-                    Color:
-                        rgba: (1, 1, 1, 0.8) # Glassy white bottom
-                    Rectangle:
-                        pos: self.pos
-                        size: self.size
-                
-                # Input Wrapper
-                BoxLayout:
-                    canvas.before:
-                        Color:
-                            rgba: Theme.input_border
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [24,]
-                        Color:
-                            rgba: Theme.input_bg
-                        RoundedRectangle:
-                            pos: self.x + 1, self.y + 1
-                            size: self.width - 2, self.height - 2
-                            radius: [23,]
-                    
-                    TextInput:
-                        id: input_field
-                        multiline: False
-                        hint_text: "Scrivi un messaggio..."
-                        hint_text_color: Theme.text_secondary
-                        background_color: (0, 0, 0, 0)
-                        foreground_color: Theme.text_primary
-                        cursor_color: Theme.primary
-                        padding_y: [self.height / 2.0 - (self.line_height / 2.0) * len(self._lines), 0]
-                        padding_x: [15, 15]
-                        # Font Removed
-                        font_size: '16sp'
-                        write_tab: False # Prevent tab focus issues
-                        on_text_validate: root.send_message()
-
-                Button:
-                    text: ">"
-                    font_size: '24sp'
-                    bold: True
-                    size_hint_x: None
-                    width: dp(50)
-                    background_color: (0,0,0,0)
-                    color: (1,1,1,1)
-                    on_release: root.send_message()
-                    canvas.before:
-                        Color:
-                            rgba: Theme.primary
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [25,] 
+    MDNavigationLayout:
         
-        # Scroll Down Button (Hidden by default)
-        Button:
-            id: scroll_btn
-            text: "⬇"
-            font_size: '20sp'
-            size_hint: None, None
-            size: dp(40), dp(40)
-            pos_hint: {'right': 0.95, 'y': 0.15}
-            background_color: (0, 0, 0, 0)
-            opacity: 0
-            disabled: True
-            on_release: root.scroll_to_bottom(force=True)
-            canvas.before:
-                Color:
-                    rgba: Theme.secondary
-                RoundedRectangle:
-                    pos: self.pos
-                    size: self.size
-                    radius: [20,]
+        # Main Screen Content Wrapper
+        MDScreenManager:
+            MDScreen:
+                # Main Chat Interface
+                MDBoxLayout:
+                    orientation: 'vertical'
+                    md_bg_color: (0.98, 0.98, 0.99, 1)
+                    
+                    # Header
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: dp(70)
+                        padding: [dp(20), dp(10)]
+                        md_bg_color: (1, 1, 1, 0)
+                        
+                        MDIconButton:
+                            icon: "menu"
+                            theme_text_color: "Custom"
+                            text_color: (0.2, 0.2, 0.2, 1)
+                            on_release: root.toggle_sidebar()
+                            pos_hint: {'center_y': 0.5}
 
-        # OVERLAY (Dim background when sidebar is open)
-        Button:
-            id: overlay
-            background_color: (0, 0, 0, 0.4)
-            # Default pos offscreen to ensure no blocking
-            pos_hint: {'x': -2, 'y': -2}
-            size_hint: (1, 1)
-            opacity: 0
-            # disabled: True (Handled by pos_hint for safety)
-            on_release: root.toggle_sidebar()
+                        MDLabel:
+                            text: "ALLMA"
+                            bold: True
+                            font_style: "H5"
+                            theme_text_color: "Custom"
+                            text_color: (0.1, 0.1, 0.1, 1) 
+                            pos_hint: {'center_y': 0.5}
+                            halign: 'center'
+                            size_hint_x: 1
+                        
+                        Widget:
+                            size_hint_x: None
+                            width: dp(48)
+                    
+                    # Chat Area
+                    ScrollView:
+                        id: scroll_view
+                        scroll_type: ['bars', 'content']
+                        scroll_wheel_distance: dp(114)
+                        bar_width: dp(0)
+                        on_scroll_y: root.on_scroll(self.scroll_y)
+                        
+                        MDBoxLayout:
+                            id: chat_list
+                            orientation: 'vertical'
+                            adaptive_height: True
+                            padding: [dp(20), dp(10), dp(20), dp(20)]
+                            spacing: dp(18)
 
-        # SIDEBAR
-        BoxLayout:
-            id: sidebar
-            orientation: 'vertical'
-            size_hint: (None, 1)
-            width: dp(280)
-            x: -self.width # Start off-screen
-            canvas.before:
-                Color:
-                    rgba: (1, 1, 1, 1) # White bg
-                Rectangle:
-                    pos: self.pos
-                    size: self.size
+                    # Input Area
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: dp(90)
+                        padding: [dp(15), dp(10), dp(15), dp(15)]
+                        md_bg_color: (0,0,0,0)
+                        
+                        MDCard:
+                            radius: [dp(25),] 
+                            md_bg_color: (1, 1, 1, 1)
+                            elevation: 4
+                            shadow_softness: 8
+                            shadow_offset: (0, 2)
+                            padding: [dp(15), dp(5), dp(5), dp(5)]
+                            
+                            MDTextField:
+                                id: input_field
+                                hint_text: "Scrivi..."
+                                mode: "line"
+                                # Set line colors to White (same as card) to hide them
+                                line_color_normal: (1, 1, 1, 1)
+                                line_color_focus: (1, 1, 1, 1)
+                                text_color_normal: (0.2, 0.2, 0.2, 1)
+                                hint_text_color_normal: (0.6, 0.6, 0.6, 1)
+                                multiline: False
+                                on_text_validate: root.send_message()
+                                size_hint_x: 1
+                                pos_hint: {'center_y': 0.5}
+                                font_size: '16sp'
 
-            # Sidebar Header
-            BoxLayout:
-                size_hint_y: None
-                height: dp(150)
-                orientation: 'vertical'
-                padding: dp(20)
-                spacing: dp(10)
-                canvas.before:
-                    Color:
-                        rgba: Theme.bg_start
-                    Rectangle:
-                        pos: self.pos
-                        size: self.size
-
-                Label:
-                    text: "👤" # Placeholder Avatar
-                    font_size: '40sp'
-                    size_hint: None, None
-                    size: dp(60), dp(60)
-
-                Label:
-                    text: "Utente"
-                    # Font Removed
-                    bold: True
-                    font_size: '18sp'
-                    color: Theme.primary
-                    size_hint_y: None
-                    height: dp(30)
-                    halign: 'left'
-                    text_size: self.width, None
-
-            # Menu Items
-            BoxLayout:
-                orientation: 'vertical'
-                padding: dp(0)
-                spacing: dp(2)
+                            MDIconButton:
+                                icon: "arrow-up-circle"
+                                theme_text_color: "Custom"
+                                text_color: (0.2, 0.6, 1, 1)
+                                user_font_size: "36sp"
+                                on_release: root.send_message()
+                                pos_hint: {'center_y': 0.5}
                 
-                SidebarItem:
-                    text: "💬  Nuova Chat"
-                    on_release: root.clear_history()
+                # Scroll FAB Overlay
+                MDFloatLayout:
+                    size_hint: None, None
+                    size: 0, 0 
+                    
+                    MDIconButton:
+                        id: scroll_btn
+                        icon: "arrow-down-drop-circle"
+                        user_font_size: "40sp"
+                        theme_text_color: "Custom"
+                        text_color: (0.5, 0.5, 0.5, 0.8)
+                        pos_hint: {'right': 0.95, 'y': 0.15}
+                        opacity: 0
+                        disabled: True
+                        on_release: root.scroll_to_bottom(force=True)
 
-                SidebarItem:
-                    text: "🧠  Memoria (SQL)"
-
-                SidebarItem:
-                    text: "⚙️  Impostazioni"
-
-                # Spacer to push items up
-                Widget: 
-
+        # Native Sidebar Drawer
+        MDNavigationDrawer:
+            id: nav_drawer
+            radius: (0, dp(16), dp(16), 0)
+            
+            MDBoxLayout:
+                orientation: 'vertical'
+                padding: 0
+                spacing: 0
+                
+                # Drawer Header
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: dp(180)
+                    orientation: 'vertical'
+                    padding: dp(24)
+                    md_bg_color: app.theme_cls.primary_color
+                    
+                    MDIcon:
+                        icon: "account-circle"
+                        font_size: dp(64)
+                        theme_text_color: "Custom"
+                        text_color: (1, 1, 1, 1)
+                    
+                    MDLabel:
+                        text: "Utente"
+                        font_style: "H5"
+                        theme_text_color: "Custom"
+                        text_color: (1, 1, 1, 1)
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                    
+                    MDLabel:
+                        text: "Allma Core v0.3"
+                        font_style: "Caption"
+                        theme_text_color: "Custom"
+                        text_color: (1, 1, 1, 0.7)
+                
+                # Menu Items
+                MDScrollView:
+                    MDList:
+                        OneLineIconListItem:
+                            text: "Nuova Chat"
+                            on_release: root.clear_history()
+                            IconLeftWidget:
+                                icon: "message-plus"
+                        
+                        OneLineIconListItem:
+                            text: "La mia Memoria"
+                            on_release: root.show_memory()
+                            IconLeftWidget:
+                                icon: "brain"
+                                
+                        OneLineIconListItem:
+                            text: "Impostazioni"
+                            on_release: root.show_settings()
+                            IconLeftWidget:
+                                icon: "cog"
+                
 ''')
 
-class MessageBubble(RecycleDataViewBehavior, Label):
+class MessageBubble(MDBoxLayout):
+    text = StringProperty("")
+    thought_text = StringProperty("")
     is_user = BooleanProperty(False)
-    index = None
+    thought_visible = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.text = kwargs.get('text', '')
+        self.is_user = kwargs.get('is_user', False)
+        self.thought_text = kwargs.get('thought_text', '')
+        self.thought_visible = kwargs.get('thought_visible', False)
 
-    def refresh_view_attrs(self, rv, index, data):
-        self.index = index
-        self.is_user = data.get('is_user', False)
-        return super(MessageBubble, self).refresh_view_attrs(rv, index, data)
+    def toggle_thought(self):
+        self.thought_visible = not self.thought_visible
 
-class ChatView(Screen):
+class ChatView(MDScreen):
     sidebar_open = BooleanProperty(False)
     is_at_bottom = BooleanProperty(True)
-    initial_window_height = NumericProperty(0)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.core = None
         self.history = []
+        self.dialog = None
 
     def on_enter(self):
         if not self.core:
@@ -341,30 +310,16 @@ class ChatView(Screen):
             except Exception as e:
                 self.add_message(f"Errore inizializzazione core: {e}", False)
         
-        # Store initial height (usually when no keyboard is active)
-        # We delay slighty to ensure layout is done
-        Clock.schedule_once(lambda dt: self.store_initial_height(), 0.5)
-        
         Window.bind(on_keyboard_height=self.on_keyboard_height)
-
-    def store_initial_height(self):
-        self.initial_window_height = Window.height
 
     def on_leave(self):
         Window.unbind(on_keyboard_height=self.on_keyboard_height)
 
     def on_keyboard_height(self, window, height):
-        # STANDARD LOGIC:
-        # Just ensure we scroll to the bottom when keyboard opens.
-        # Kivy 'resize' mode handles the window resizing automatically.
         if height > 0:
             Clock.schedule_once(lambda dt: self.scroll_to_bottom(force=True), 0.2)
 
     def on_scroll(self, scroll_y):
-        # Logic to determine if user is near bottom
-        # scroll_y is 0 at bottom, 1 at top in RecycleView default?
-        # Actually in Kivy Scatter/Scrollview:
-        # vertical scroll_y: 0 is bottom, 1 is top.
         if scroll_y < 0.05:
             self.is_at_bottom = True
             self.ids.scroll_btn.opacity = 0
@@ -375,36 +330,137 @@ class ChatView(Screen):
             self.ids.scroll_btn.disabled = False
     
     def toggle_sidebar(self):
-        self.sidebar_open = not self.sidebar_open
-        
-        target_x = 0 if self.sidebar_open else -self.ids.sidebar.width
-        anim = Animation(x=target_x, duration=0.3, t='out_cubic')
-        anim.start(self.ids.sidebar)
-        
-        # Animate overlay
-        overlay = self.ids.overlay
-        if self.sidebar_open:
-            # Move overlay onto screen
-            overlay.pos_hint = {'x': 0, 'y': 0}
-            anim_overlay = Animation(opacity=1, duration=0.3)
-        else:
-            anim_overlay = Animation(opacity=0, duration=0.3)
-            def on_anim_complete(a, w):
-                w.pos_hint = {'x': -2, 'y': -2}
-            
-            anim_overlay.bind(on_complete=on_anim_complete)
-            
-        anim_overlay.start(overlay)
+        self.ids.nav_drawer.set_state("toggle")
 
-        # Ensure correct state at start of animation
-        if self.sidebar_open:
-             overlay.pos_hint = {'x': 0, 'y': 0}
+    def show_memory(self):
+        """Show accumulated memory in a dialog"""
+        if self.ids.nav_drawer.state == "open":
+            self.ids.nav_drawer.set_state("close")
+            
+        memory_text = "Nessun ricordo trovato..."
+        
+        if self.core and hasattr(self.core, 'incremental_learner'):
+            facts = []
+            kb = self.core.incremental_learner.knowledge_base
+            for topic, units in kb.items():
+                if units:
+                    latest = units[-1]
+                    facts.append(f"• [b]{topic.upper()}[/b]: {latest.content[:60]}...")
+            
+            if facts:
+                memory_text = "\n\n".join(facts)
+        
+        self.dialog = MDDialog(
+            title="🧠 Memoria di ALLMA",
+            text=memory_text,
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="CHIUDI",
+                    theme_text_color="Custom",
+                    text_color=self.theme_cls.primary_color,
+                    on_release=lambda x: self.dialog.dismiss()
+                )
+            ],
+        )
+        self.dialog.open()
+
+    def show_settings(self):
+        """Show settings dialog"""
+        if self.ids.nav_drawer.state == "open":
+            self.ids.nav_drawer.set_state("close")
+
+        # Basic Info
+        version = "v0.3.1 (Mobile)"
+        model_name = "Gemma 2 2B (4-bit)"
+        
+        # Prepare content
+        content = MDList()
+        
+        # Info Item
+        item_info = OneLineIconListItem(text=f"ALLMA {version}")
+        item_info.add_widget(IconLeftWidget(icon="information"))
+        content.add_widget(item_info)
+
+        item_model = OneLineIconListItem(text=f"Modello: {model_name}")
+        item_model.add_widget(IconLeftWidget(icon="robot"))
+        content.add_widget(item_model)
+
+        # Clear Memory Item
+        item_clear = OneLineIconListItem(text="Elimina Tutta la Memoria", on_release=self.clear_all_memory)
+        item_clear.add_widget(IconLeftWidget(icon="delete-forever", theme_text_color="Custom", text_color=(1, 0, 0, 1)))
+        content.add_widget(item_clear)
+
+        self.dialog = MDDialog(
+            title="⚙️ Impostazioni",
+            type="custom",
+            content_cls=content,
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="CHIUDI",
+                    theme_text_color="Custom",
+                    text_color=self.theme_cls.primary_color,
+                    on_release=lambda x: self.dialog.dismiss()
+                )
+            ],
+        )
+        self.dialog.open()
+
+    def clear_all_memory(self, *args):
+        """Clear all memory databases"""
+        self.dialog.dismiss()
+        
+        # Confirmation Dialog
+        self.dialog = MDDialog(
+            title="⚠️ Sei sicuro?",
+            text="Questa azione eliminerà tutti i ricordi e le conoscenze apprese da ALLMA. Non si può annullare.",
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="ANNULLA",
+                    on_release=lambda x: self.dialog.dismiss()
+                ),
+                MDFlatButton(
+                    text="ELIMINA TUTTO",
+                    theme_text_color="Custom",
+                    text_color=(1, 0, 0, 1),
+                    on_release=self._perform_memory_wipe
+                )
+            ]
+        )
+        self.dialog.open()
+
+    def _perform_memory_wipe(self, *args):
+        self.dialog.dismiss()
+        try:
+            if self.core:
+                # 1. Clear SQL Knowledge
+                import sqlite3
+                if hasattr(self.core, 'knowledge_memory') and self.core.knowledge_memory:
+                    with sqlite3.connect(self.core.knowledge_memory.db_path) as conn:
+                        conn.execute("DELETE FROM knowledge")
+                        conn.commit()
+                
+                # 2. Clear Runtime Knowledge
+                if hasattr(self.core, 'incremental_learner'):
+                    self.core.incremental_learner.knowledge_base.clear()
+                    self.core.incremental_learner.knowledge_states.clear()
+                
+                # 3. Clear History
+                self.history = []
+                self.ids.rv.data = []
+                
+                self.add_message("🗑️ Memoria completamente formattata. Sono come nuova.", False)
+        except Exception as e:
+            self.add_message(f"Errore durante la pulizia: {e}", False)
 
     def clear_history(self):
         self.history = []
-        self.ids.rv.data = []
-        self.toggle_sidebar()
+        self.ids.chat_list.clear_widgets()
         self.add_message("🧹 Chat pulita. Di cosa vuoi parlare?", False)
+        if self.ids.nav_drawer.state == "open":
+            self.ids.nav_drawer.set_state("close")
 
     def send_message(self):
         text = self.ids.input_field.text.strip()
@@ -413,48 +469,113 @@ class ChatView(Screen):
 
         self.add_message(text, True)
         self.ids.input_field.text = ""
-        
-        # Show user we are thinking
-        Clock.schedule_once(lambda dt: self.add_message("Sto pensando... 💭", False, temp=True), 0.1)
-
-        # Process in background
+        # Initialize with empty text but visible thought
+        Clock.schedule_once(lambda dt: self.add_message("", False, temp=True, thought_visible=True), 0.1)
         Thread(target=self._process_message, args=(text,)).start()
 
     def _process_message(self, text):
+        # Container for streaming text
+        stream_data = {'text': "", 'thought': ""}
+        
+        # Throttled UI Updater (Direct Widget Update)
+        def update_ui(dt):
+            current_text = stream_data['text']
+            current_thought = stream_data['thought']
+            
+            # Find the last bubble widget
+            # In Kivy BoxLayout, children[0] is the LAST added widget (visually at bottom)
+            if self.ids.chat_list.children:
+                last_bubble = self.ids.chat_list.children[0]
+                
+                # Verify it is our bot bubble (temp check removed, we assume logic flow)
+                if hasattr(last_bubble, 'is_user') and not last_bubble.is_user:
+                     if last_bubble.text != current_text: 
+                         last_bubble.text = current_text
+                     
+                     if current_thought:
+                         last_bubble.thought_text = current_thought
+                         last_bubble.thought_visible = True
+                     
+                     if self.is_at_bottom:
+                         self.scroll_to_bottom(force=False)
+            
+            # Stop if streaming done? No mechanism here, rely on final update
+            
+        ui_event = Clock.schedule_interval(update_ui, 0.05)
+        
+        def on_token(token_data):
+            if isinstance(token_data, dict):
+                msg_type = token_data.get('type', 'answer')
+                content = token_data.get('content', '')
+                if msg_type == 'thought':
+                    stream_data['thought'] += content
+                else:
+                    stream_data['text'] += content
+            else:
+                stream_data['text'] += token_data
+
         try:
             if self.core:
                 result = self.core.process_message(
                     user_id=self.user_id,
                     conversation_id=self.conversation_id,
-                    message=text
+                    message=text,
+                    stream_callback=on_token
                 )
                 response = result.content if hasattr(result, 'content') else str(result)
+                thought = result.thought_trace if hasattr(result, 'thought_trace') else None
             else:
                 response = "Core non inizializzato."
+                thought = None
         except Exception as e:
             response = f"Errore interno: {e}"
+            thought = None
+        finally:
+             ui_event.cancel()
 
-        Clock.schedule_once(lambda dt: self._update_response(str(response)))
+        Clock.schedule_once(lambda dt: self._update_final(str(response), thought))
 
-    def _update_response(self, response_text):
-        if self.history and self.history[-1].get('temp', False):
-            self.history.pop()
+    def _update_final(self, response, thought):
+         # Make sure final state is consistent
+         if self.ids.chat_list.children:
+             last_bubble = self.ids.chat_list.children[0]
+             last_bubble.text = response
+             if thought:
+                 last_bubble.thought_text = thought.get('raw_thought', '')
+                 last_bubble.thought_visible = False # Collapse after done, or keep open? User preference. User said "when finishes it is stable", implying they see it?
+                 # User Request: "che venga fatto vedere tutto il pensiero...".
+                 # If I collapse it, they lose it?
+                 # Let's keep it visible IF it was populated.
+                 # Wait, user said "but when it finishes it is stable".
+                 # I'll default to visible=False (collapsed) but with button available to re-open?
+                 # Or keep open if user opened it?
+                 # For now, let's keep it visible=False (collapsed) to show clean answer, user can expand.
+                 # BUT while streaming it was visible!
+                 # If I collapse it now, it jumps.
+                 # Let's LEAVE IT as is (don't set thought_visible=False).
+                 pass
+         self.scroll_to_bottom(force=True)
+
+    def _update_response(self, response_text, thought_trace=None):
+        # Legacy method refactored into _update_final logic
+        pass
+
+    def add_message(self, text, is_user, temp=False, thought_visible=False):
+        # Create Widget
+        bubble = MessageBubble(
+            text=text,
+            is_user=is_user,
+            thought_text="Inizio analisi..." if temp and not is_user else "",
+            thought_visible=thought_visible
+        )
+        self.ids.chat_list.add_widget(bubble)
+        self.history.append({'text': text, 'is_user': is_user}) # Keep simple history for consistency
         
-        self.history.append({'text': response_text, 'is_user': False})
-        self.ids.rv.data = list(self.history)
-        
-        # Only scroll if user was already at bottom or if forced by logic
-        self.scroll_to_bottom(force=self.is_at_bottom)
-
-    def add_message(self, text, is_user, temp=False):
-        self.history.append({'text': text, 'is_user': is_user, 'temp': temp})
-        self.ids.rv.data = list(self.history)
-        # Always scroll for user's own message
-        if is_user:
-            self.scroll_to_bottom(force=True)
-        else:
-            self.scroll_to_bottom(force=self.is_at_bottom)
+        self.scroll_to_bottom(force=True)
 
     def scroll_to_bottom(self, force=False):
-        if force:
-            Clock.schedule_once(lambda dt: setattr(self.ids.rv, 'scroll_y', 0), 0.1)
+        # For ScrollView, scroll_y=0 is bottom
+        Clock.schedule_once(lambda dt: setattr(self.ids.scroll_view, 'scroll_y', 0), 0.1)
+
+    def on_scroll(self, scroll_y):
+        self.is_at_bottom = scroll_y <= 0.05

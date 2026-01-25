@@ -43,6 +43,7 @@ class ProcessedResponse:
     is_valid: bool = True
     includes_code: bool = False
     references_previous_context: bool = False
+    thought_trace: Optional[Dict[str, Any]] = None
 
     @property
     def topic(self) -> str:

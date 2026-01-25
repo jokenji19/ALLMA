@@ -17,10 +17,10 @@ class ModelDownloader:
         # Nota: Usiamo link diretti a HuggingFace GGUF
         self.models = {
             "gemma": {
-                # Update to Gemma 2 2B (Standard, widely compatible)
-                "url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
-                "filename": "gemma-2-2b-it-q4_k_m.gguf",
-                "size_mb": 1630 # Verified via curl (1.59GB)
+                # Hermes 3 (Llama 3.2 3B) Q4_K_M - The "Rebel" AI (Uncensored/Creative)
+                "url": "https://huggingface.co/NousResearch/Hermes-3-Llama-3.2-3B-GGUF/resolve/main/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf",
+                "filename": "Hermes-3-Llama-3.2-3B.Q4_K_M.gguf",
+                "size_mb": 2000 
             },
             "moondream": {
                 "url": "https://huggingface.co/ggml-org/moondream2-20250414-GGUF/resolve/main/moondream2-mmproj-f16-20250414.gguf",
@@ -103,7 +103,9 @@ class ModelDownloader:
         self.logger.info(f"Inizio download {model_key} in {path}")
 
         try:
-            response = requests.get(url, stream=True, timeout=30) # Add timeout
+            # FIX: Add headers to look like a browser to avoid 401 on some HF repos
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            response = requests.get(url, stream=True, timeout=30, headers=headers) 
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))

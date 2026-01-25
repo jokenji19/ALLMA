@@ -33,6 +33,10 @@ class CommunicationStyle(str, Enum):
     DETAILED = "detailed"      # Comunicazione dettagliata
     SIMPLIFIED = "simplified"  # Comunicazione semplificata
     INTERACTIVE = "interactive" # Comunicazione interattiva
+    ADAPTIVE = "adaptive"       # Si adatta al contesto (Default)
+    CASUAL = "casual"           # Alias per INFORMAL
+    EMPATHETIC = "empathetic"   # Alias per SUPPORTIVE
+    EXPLANATORY = "explanatory" # Alias per DETAILED
 
 @dataclass
 class LearningPreference:
@@ -91,6 +95,7 @@ class ProcessedResponse:
     confidence: float = 0.0
     technical_level: TechnicalLevel = TechnicalLevel.INTERMEDIATE
     includes_advanced_concepts: bool = False
+    thought_trace: Optional[Dict[str, Any]] = None
 
 class EmotionalState:
     """Stato emotivo dell'utente"""

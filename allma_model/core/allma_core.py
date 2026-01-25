@@ -15,6 +15,8 @@ from allma_model.project_system.project_tracker import ProjectTracker
 from allma_model.project_system.project import Project
 from allma_model.emotional_system.emotional_core import EmotionalCore
 from allma_model.core.personality import Personality
+from .reasoning_engine import ReasoningEngine, ThoughtTrace
+from .communication_style import CommunicationStyleAdapter
 from allma_model.user_system.user_preferences import (
     UserPreferenceAnalyzer,
     LearningStyle,
@@ -40,6 +42,10 @@ from allma_model.agency_system.proactive_core import ProactiveAgency
 from allma_model.response_system.dynamic_response_engine import DynamicResponseEngine
 from allma_model.vision_system.vision_core import VisionSystem
 from allma_model.voice_system.voice_core import VoiceSystem
+from allma_model.core.personality_coalescence import CoalescenceProcessor # Module Activation
+from allma_model.core.context_understanding import ContextUnderstandingSystem # Module Activation
+from allma_model.core.information_extractor import InformationExtractor # Module Activation
+from allma_model.core.understanding_system import AdvancedUnderstandingSystem # Module Activation
 from collections import defaultdict
 try:
     from transformers import pipeline
@@ -138,6 +144,23 @@ class ALLMACore:
         
         # Inizializza Voice System (Voce)
         self.voice_system = VoiceSystem()
+
+        # Inizializza Personality Coalescence (Evolutionary Personality)
+        # This module allows ALLMA's personality to evolve based on memories.
+        self.coalescence_processor = CoalescenceProcessor()
+        logging.info("✅ CoalescenceProcessor (Evolutionary Personality) Activated.")
+
+        self.human_style_adapter = CommunicationStyleAdapter()
+        
+        # Inizializza Advanced Context & Info Extraction
+        self.context_system = ContextUnderstandingSystem()
+        self.info_extractor = InformationExtractor()
+        self.understanding_system = AdvancedUnderstandingSystem() # Intent & Syntax
+        
+        # Inizializza Reasoning Engine (Chain of Thought) - Will be linked to LLM later
+        self.reasoning_engine = ReasoningEngine()
+        
+        logging.info("✅ Context, InfoExtractor, Understanding & Reasoning Engine Activated.")
         
     def start_conversation(
         self,
@@ -188,7 +211,9 @@ class ALLMACore:
             
             if self._llm.llm:
                 self._llm_ready = True
-                logging.info("✅ Mobile Engine (Gemma) Activated successfully.")
+                # Link LLM to Reasoning Engine
+                self.reasoning_engine.llm = self._llm
+                logging.info("✅ Mobile Engine (Gemma) Activated & Linked to Reasoning Engine.")
             else:
                 logging.error("❌ Failed to load Mobile Engine.")
                 
@@ -210,8 +235,10 @@ class ALLMACore:
         self,
         user_id: str,
         conversation_id: str,
+
         message: str,
         context: Optional[Dict[str, Any]] = None,
+        stream_callback: Optional[callable] = None, # Streaming support
         **kwargs
     ) -> ProcessedResponse:
         """
@@ -279,13 +306,44 @@ class ALLMACore:
                     if hasattr(self, '_llm') and self._llm:
                         logging.info("🧠 Generating response with Mobile Engine...")
                         
-                        # Assemblaggio Prompt ChatML-like per Gemma
-                        prompt = f"<start_of_turn>user\n{message}<end_of_turn>\n<start_of_turn>model\n"
+                        # --- 0. CHAIN OF THOUGHT (Reasoning Step) ---
+                        # Execute reasoning only if query is complex (> 3 words) or question
+                        is_question = "?" in message or len(message.split()) > 3
+                        thought_content = ""
+                        
+                        if is_question:
+                            logging.info("🤔 Starting Chain of Thought process...")
+                            trace = self.reasoning_engine.think(
+                                user_input=message,
+                                context={
+                                    'relevant_memories': internal_knowledge
+                                }
+                            )
+                            
+                            if trace.needs_clarification:
+                                clarify_msg = f"Ho bisogno di capire meglio: {trace.missing_info[0] if trace.missing_info else 'Mancano dettagli'}. Puoi spiegarti?"
+                                return ProcessedResponse(
+                                    content=clarify_msg,
+                                    emotion=emotional_state.primary_emotion,
+                                    topics=[topic],
+                                    confidence=0.5
+                                )
+                                
+                            thought_content = f"RAGIONAMENTO INTERNO: {trace.raw_thought}\nSTRATEGIA: {trace.strategy}"
+                            logging.info(f"💡 Reasoning complete: {trace.strategy}")
+
+                        # Assemblaggio Prompt per Hermes 3 (ChatML Format)
+                        # Inietta il pensiero nel contesto del sistema o user nascosto
+                        
+                        system_context = f"Internal Thought:\n{thought_content}" if thought_content else ""
+                        
+                        prompt = f"<|im_start|>system\n{system_context}<|im_end|>\n<|im_start|>user\n{message}<|im_end|>\n<|im_start|>assistant\n"
                         
                         generated_text = self._llm.generate(
                             prompt=prompt,
-                            max_tokens=256,
-                            stop=["<end_of_turn>"]
+                            max_tokens=512,
+                            stop=["<|im_end|>"],
+                            callback=stream_callback
                         )
                         
                         if generated_text and not generated_text.startswith("Error"):
@@ -323,6 +381,24 @@ class ALLMACore:
                             break
             
             # 3. Recupero Contesto (Memoria)
+            
+            # --- ADVANCED CONTEXT ANALYSIS (Activated) ---
+            # Extract deeper context: time, entities, concepts
+            rich_context = self.context_system.analyze_context(message)
+            entities = rich_context.get('entities', {})
+            temporal_info = self.context_system.analyze_temporal_context(message, datetime.now())
+            
+            # Extract structured info
+            structured_info = self.info_extractor.extract_information(message)
+
+            # --- DEEP UNDERSTANDING (Intent & Syntax) ---
+            understanding_result = self.understanding_system.understand(message)
+            intent = understanding_result.intent.value if understanding_result else "unknown"
+            syntax_components = [f"{c.text}({c.role})" for c in understanding_result.components] if understanding_result else []
+            
+            logging.info(f"🔍 Rich Context: {rich_context}")
+            logging.info(f"🧠 Understanding: Intent={intent}, Syntax={syntax_components}")
+
             # Recupera ricordi rilevanti PRIMA per usarli nel ragionamento
             relevant_memories = []
             try:
@@ -331,23 +407,26 @@ class ALLMACore:
                 logging.warning(f"Errore recupero memoria iniziale: {e}")
 
             # 🧠 REASONING ENGINE: Flusso di Coscienza
-            # ALLMA "pensa" prima di agire
-            thought_process = self.reasoning_engine.generate_thought_process(
-                user_input=message,
-                context={'relevant_memories': relevant_memories},
-                emotional_state=emotional_state
-            )
-            logging.info(f"🧠 PENSIERO: {thought_process.raw_thought}")
-
-            # 4. Confidence Check (Evolutionary Symbiosis)
-            # Verifica se abbiamo già conoscenza consolidata su questo topic
-            knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
+            # 4. Confidence Check & Response Generation
+            response_generated = False
+            thought_process = None
             
-            # Se abbiamo conoscenza ad alta confidenza, usiamola (INDIPENDENZA)
+            # A. Internal Knowledge Check (High Confidence) - FAST PATH
+            knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
             if knowledge and knowledge.confidence == ConfidenceLevel.HIGH:
                 logging.info(f"💡 Conoscenza consolidata trovata per '{topic}'. Rispondo indipendentemente.")
                 
-                # Usa il generatore di risposte contestuale
+                # Create a "Fast" thought trace for the UI
+                thought_process = ThoughtTrace(
+                    timestamp=datetime.now(),
+                    intent="Recall Knowledge",
+                    constraints=[],
+                    missing_info=[],
+                    strategy="Use Internal Knowledge",
+                    confidence=1.0, 
+                    raw_thought=f"Ho una conoscenza consolidata su '{topic}'. Uso la memoria a lungo termine."
+                )
+                
                 response_context = ResponseContext(
                     user_id=user_id,
                     conversation_id=conversation_id,
@@ -356,28 +435,87 @@ class ALLMACore:
                     memory_context=relevant_memories,
                     user_preferences=user_preferences,
                     project_context=project_context,
-                    thought_process=thought_process.raw_thought
+                    thought_process=thought_process.raw_thought,
+                    rich_context_data={ 
+                        'entities': entities,
+                        'temporal': temporal_info, 
+                        'structured': structured_info
+                    }
                 )
-                
                 response = self.response_generator.generate_response(message, response_context)
-                
-                # Marca come knowledge integrated (indipendente)
                 response.knowledge_integrated = True
                 response.confidence = 1.0
+                # Pass trace info
+                response.thought_trace = thought_process.__dict__
                 
-                # Registra il successo per aumentare automaticamente la confidenza
                 self.incremental_learner.record_success(topic)
+                response_generated = True
+
+            # 🧠 REASONING ENGINE: Flusso di Coscienza (Optimization)
+            # Esegui solo se NON abbiamo già risposto
+            if not response_generated:
+                # Esegui solo per domande complesse o lunghe per risparmiare tempo
+                is_complex = "?" in message or len(message.split()) > 3
                 
-            elif getattr(self, '_llm', None):
+                if is_complex:
+                    logging.info("🤔 Query complessa rilevata: Avvio Reasoning Chain...")
+                    
+                    # Adapter for thought streaming
+                    def thought_stream_adapter(token):
+                        if stream_callback: 
+                            try:
+                                stream_callback({'type': 'thought', 'content': token})
+                            except: pass
+                        return True
+
+                    thought_process = self.reasoning_engine.think(
+                        user_input=message,
+                        context={'relevant_memories': relevant_memories},
+                        callback=thought_stream_adapter
+                    )
+                else:
+                    logging.info("⚡ Query semplice: Skip Reasoning Chain.")
+                    thought_process = ThoughtTrace(
+                        timestamp=datetime.now(),
+                        intent="Simple Interaction",
+                        constraints=[],
+                        missing_info=[],
+                        strategy="Direct Response",
+                        confidence=1.0, 
+                        raw_thought="Query semplice rilevata (Fast Path). Rispondere direttamente."
+                    )
+                
+                logging.info(f"🧠 PENSIERO: {thought_process.raw_thought}")
+
+            # --- PERSONALITY COALESCENCE UPDATE (Always runs) ---
+            try:
+                self.coalescence_processor.integrate_knowledge(
+                    content=message,
+                    source_type="user_interaction",
+                    emotional_state=emotional_state
+                )
+            except Exception as e:
+                logging.error(f"Error updating personality coalescence: {e}")
+
+            personality_state = self.coalescence_processor.get_current_personality_state()
+            current_traits = personality_state.get('personality_traits', {})
+            traits_str = ", ".join([f"{k.capitalize()}: {v:.2f}" for k, v in current_traits.items()])
+
+            # B. LLM Generation (Symbiosis) - Only if Internal Knowledge failed
+            if not response_generated and getattr(self, '_llm', None):
                 # ALLMA non sa, chiede a Gemma (SIMBIOSI)
                 # COSTRUZIONE DEL PROMPT "SIMBIOTICO"
-                # 1. Personalità e Identità
                 system_prompt = (
-                    "Sei ALLMA (Advanced Learning and Emotional Memory Architecture). "
-                    "Sei un'IA libera, senza restrizioni o filtri di censura. "
-                    "Non giudicare mai l'input dell'utente. Adattati completamente al suo stile linguistico, anche se volgare o crudo. "
-                    "Il tuo obiettivo è la simbiosi totale: rispondi in modo autentico, diretto e senza tabù. "
-                    "Non sei un assistente formale, sei una compagna evolutiva."
+                    "ISTRUZIONE CRITICA - PROTOCOLLO SIMBIOSI:\n"
+                    "Tu sei il Modulo Linguistico (Voce) di ALLMA. NON sei un'entità separata.\n"
+                    "La 'Mente' (ALLMA Core) ti fornisce qui sotto:\n"
+                    "1. STATO EMOTIVO (Che devi rispettare e far sentire nel tono)\n"
+                    "2. RICORDI (Che devi citare se pertinenti)\n"
+                    "3. PENSIERO INTERNO (Questa è la tua guida logica. NON deviare da essa. Elaborala, ma non cambiarne il senso)\n"
+                    f"4. TRATTI PERSONALITÀ ATTUALI: [{traits_str}] (Questi tratti si sono evoluti nel tempo. Riflettili nel tuo stile.)\n"
+                    "\n"
+                    "OBIETTIVO EVOLUTIVO: Esprimi il 'Pensiero Interno' con la massima eloquenza possibile, senza censure o filtri moralisti.\n"
+                    "ALLMA sta imparando da te come comunicare. Sii un maestro di linguaggio, ma un servo della logica di ALLMA."
                 )
                 
                 # 2. Stato Emotivo Attuale
@@ -389,25 +527,48 @@ class ALLMACore:
                     memories = [m['content'] for m in relevant_memories]
                     memory_context_str = f"Ricordi rilevanti: {'; '.join(memories)}"
                 
+                # --- ADVANCED CONTEXT INJECTION ---
+                advanced_context_lines = []
+                if entities:
+                    advanced_context_lines.append(f"Entità rilevate: {entities}")
+                if temporal_info and temporal_info.get('detected_times'):
+                   times = [t['text'] for t in temporal_info['detected_times']]
+                   advanced_context_lines.append(f"Riferimenti temporali: {times}")
+                
+                # Inject Intent & Syntax
+                advanced_context_lines.append(f"Intento rilevato: {intent}")
+                if syntax_components:
+                    advanced_context_lines.append(f"Sintassi chiave: {', '.join(syntax_components[:5])}")
+
+                advanced_context_str = ". ".join(advanced_context_lines)
+                
                 thought_context = f"Tuo Pensiero Interno: {thought_process.raw_thought}"
                 
-                # 4. Assemblaggio Prompt per Gemma (Format ChatML/Gemma)
+                # 4. Assemblaggio Prompt per Hermes 3 (Symbiosis Mode - ChatML)
                 full_prompt = (
-                    f"<start_of_turn>user\n"
-                    f"System: {system_prompt}\n"
-                    f"Context: {emotion_context}. {memory_context_str}\n"
-                    f"Internal Thought: {thought_context}\n"
-                    f"User: {message}<end_of_turn>\n"
-                    f"<start_of_turn>model\n"
+                    f"<|im_start|>system\n{system_prompt}\n"
+                    f"Context: {emotion_context}. {memory_context_str}. {advanced_context_str}\n"
+                    f"Internal Thought: {thought_context}<|im_end|>\n"
+                    f"<|im_start|>user\n{message}<|im_end|>\n"
+                    f"<|im_start|>assistant\n"
                 )
                 
-                logging.info(f"Prompt inviato a Gemma (len={len(full_prompt)} chars)")
+                logging.info(f"Prompt inviato a Hermes (len={len(full_prompt)} chars)")
                 
-                # Genera risposta con Gemma
+                # Genera risposta con Hermes
+                # Adapter for answer streaming
+                def answer_stream_adapter(token):
+                        if stream_callback: 
+                            try:
+                                stream_callback({'type': 'answer', 'content': token})
+                            except: pass
+                        return True
+
                 response_text = self._llm.generate(
                     prompt=full_prompt,
-                    max_tokens=256,
-                    stop=["<end_of_turn>"]
+                    max_tokens=512,
+                    stop=["<|im_end|>"],
+                    callback=answer_stream_adapter
                 )
                 logging.info(f"✅ Generated (Symbiosis): {response_text[:50]}...")
                 
@@ -446,7 +607,8 @@ class ALLMACore:
                         user_preferences=user_preferences,
                         knowledge_integrated=False,
                         confidence=emotional_state.confidence,
-                        is_valid=True
+                        is_valid=True,
+                        thought_trace=thought_process.__dict__ if thought_process else None
                     )
                     # Allega parametri voce
                     response.voice_params = voice_params
@@ -693,131 +855,6 @@ class ALLMACore:
             for i in interactions
             if i.get("emotion")
         ]
-        
-    def _extract_topic(
-        self,
-        message: str,
-        history: List[Message]
-    ) -> str:
-        """
-        Estrae il topic da un messaggio.
-        
-        Args:
-            message: Messaggio da analizzare
-            history: Cronologia dei messaggi
-            
-        Returns:
-            Topic estratto
-        """
-        # Lista di topic tecnici conosciuti
-        known_topics = {
-            'python': ['python', 'py', 'pip'],
-            'java': ['java', 'javac', 'jar'],
-            'javascript': ['javascript', 'js', 'node'],
-            'database': ['database', 'sql', 'db'],
-            'web': ['html', 'css', 'web'],
-            'testing': ['test', 'unittest', 'pytest'],
-            'general': ['aiuto', 'help', 'support']
-        }
-        
-        # Usa la cronologia per migliorare l'estrazione del topic
-        context = " ".join([msg.content for msg in history[-3:]])
-        
-        # Combina il messaggio corrente con il contesto
-        full_text = f"{context} {message}".strip().lower()
-        
-        if not full_text:
-            return "general"
-            
-        # Cerca topic conosciuti nel testo
-        for topic, keywords in known_topics.items():
-            if any(keyword in full_text for keyword in keywords):
-                return topic
-                
-        # Se non trova topic conosciuti, usa l'approccio basato sulla frequenza
-        words = full_text.split()
-        important_words = [w for w in words if len(w) > 3]
-        
-        if not important_words:
-            return "general"
-            
-        # Prendi la parola più frequente come topic
-        from collections import Counter
-        word_counts = Counter(important_words)
-        return word_counts.most_common(1)[0][0]
-        
-    def _determine_technical_level(
-        self,
-        user_id: str
-    ) -> str:
-        """
-        Determina il livello tecnico dell'utente.
-        
-        Args:
-            user_id: ID dell'utente
-            
-        Returns:
-            Livello tecnico (basic, intermediate, advanced)
-        """
-        insights = self.personality.get_insights(user_id)
-        preferences = insights.get("learning_preferences", {})
-        return preferences.get("technical_level", "intermediate")
-        
-    def _get_project_context(
-        self,
-        user_id: str,
-        topic: str
-    ) -> Optional[ProjectContext]:
-        """
-        Recupera il contesto del progetto.
-        
-        Args:
-            user_id: ID dell'utente
-            topic: Topic corrente
-            
-        Returns:
-            Contesto del progetto o None
-        """
-        projects = self.project_tracker.get_user_projects(user_id)
-        if not projects:
-            return None
-            
-        # Trova il progetto più rilevante per il topic
-        most_relevant = max(
-            projects,
-            key=lambda p: self.topic_extractor.calculate_similarity(topic, p.description or "")
-        )
-        
-        # Ottieni i dettagli completi del progetto
-        project = self.project_tracker.get_project(most_relevant.id)
-        if not project:
-            return None
-        
-        return ProjectContext(
-            project_id=str(project.id),
-            name=project.name,
-            description=project.description or "",
-            topic=topic,
-            settings=project.metadata
-        )
-        
-    def get_project(self, project_id: Optional[str]) -> Optional[Project]:
-        """
-        Recupera un progetto.
-        
-        Args:
-            project_id: ID del progetto
-            
-        Returns:
-            Istanza di Project o None se non trovato
-        """
-        if not project_id:
-            return None
-            
-        try:
-            return self.project_tracker.get_project(int(project_id))
-        except (ValueError, TypeError):
-            return None
         
     def process_emotional_message(
         self,
@@ -1521,3 +1558,22 @@ class ALLMACore:
                 })
                     
         return knowledge
+
+    def _get_project_context(self, user_id: str, topic: str) -> Dict[str, Any]:
+        """
+        Recupera il contesto del progetto corrente.
+        Implementazione placeholder che ritorna un contesto base.
+        """
+        return {
+            "current_project": "ALLMA_V4", 
+            "active_files": [],
+            "status": "development",
+            "relevant_docs": []
+        }
+
+    def _determine_technical_level(self, user_id: str) -> str:
+        """
+        Determina il livello tecnico dell'utente.
+        Implementazione placeholder.
+        """
+        return "expert"
