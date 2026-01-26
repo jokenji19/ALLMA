@@ -8,6 +8,7 @@ from datetime import datetime
 import numpy as np
 from collections import defaultdict
 import re
+from allma_model.memory_system.knowledge_memory import KnowledgeMemory
 
 EmotionalIntensity = NewType('EmotionalIntensity', float)
 
@@ -239,8 +240,14 @@ class PersonalityCore:
 
 class CoalescenceProcessor:
     """Processore di coalescenza per la personalità"""
-    def __init__(self):
+    """Processore di coalescenza per la personalità"""
+    def __init__(self, db_path="allma.db", personality_module=None):
         self.core = PersonalityCore()
+        
+        # Use passed personality module + db or create defaults
+        self.db_path = db_path
+        self.personality = personality_module 
+        
         self.suspension_time = 2.0
         self.integration_threshold = 0.5
         self.diary_file = "allma_diary.json"
@@ -256,7 +263,7 @@ class CoalescenceProcessor:
             "creatività": ["creatività", "innovazione", "arte", "espressione"]
         }
         self.learned_concepts = {}  # Dizionario per memorizzare i concetti appresi
-        self.knowledge = KnowledgeMemory()  # Memoria della conoscenza
+        self.knowledge = KnowledgeMemory()  # Memoria della conoscenza condivisa - DEBUG NO ARGS
 
     def _identify_relevant_values(self, content: str) -> List[str]:
         """Identifica i valori rilevanti per l'esperienza"""
@@ -477,10 +484,27 @@ class CoalescenceProcessor:
         
         return response
 
-    def process_droplet(self, droplet: Dict[str, Any]) -> List[str]:
-        """Processa una nuova esperienza"""
-        # Per ora non facciamo nulla con il droplet
-        pass
+    def process_droplet(self, droplet: Dict[str, Any] = None, text: str = None) -> List[str]:
+        """Processa una nuova esperienza (droplet o testo diretto)"""
+        content = text
+        if droplet and 'content' in droplet:
+            content = droplet['content']
+            
+        if not content:
+            return []
+
+        # Analizza contesto emotivo
+        emotional_response = self._analyze_emotional_context(content)
+        
+        # Integra conoscenza
+        self.integrate_knowledge(content, "dream_coalescence", emotional_response)
+        
+        # Aggiorna tratti (Simulazione)
+        droplet_obj = self.create_droplet(content, {"source": "dream"})
+        self._update_values(droplet_obj)
+        self._update_personality_traits(emotional_response.intensity, 0.5, 0.5)
+        
+        return ["Processed"]
 
     def _evaluate_integration(self, memory: Memory) -> bool:
         """Valuta se una memoria dovrebbe essere integrata"""

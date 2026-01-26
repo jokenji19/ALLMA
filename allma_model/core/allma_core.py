@@ -15,7 +15,10 @@ from allma_model.project_system.project_tracker import ProjectTracker
 from allma_model.project_system.project import Project
 from allma_model.emotional_system.emotional_core import EmotionalCore
 from allma_model.core.personality import Personality
-from .reasoning_engine import ReasoningEngine, ThoughtTrace
+from allma_model.core.context_understanding import ContextUnderstandingSystem
+from allma_model.core.understanding_system import AdvancedUnderstandingSystem
+from allma_model.core.reasoning_engine import ReasoningEngine, ThoughtTrace
+from allma_model.core.dream_system.dream_manager import DreamManager
 from .communication_style import CommunicationStyleAdapter
 from allma_model.user_system.user_preferences import (
     UserPreferenceAnalyzer,
@@ -37,15 +40,13 @@ from allma_model.learning_system.incremental_learning import (
 )
 from allma_model.learning_system.topic_extractor import TopicExtractor
 from allma_model.emotional_system.emotional_milestones import get_emotional_milestones
-from allma_model.core.reasoning_engine import ReasoningEngine
 from allma_model.agency_system.proactive_core import ProactiveAgency
 from allma_model.response_system.dynamic_response_engine import DynamicResponseEngine
 from allma_model.vision_system.vision_core import VisionSystem
 from allma_model.voice_system.voice_core import VoiceSystem
 from allma_model.core.personality_coalescence import CoalescenceProcessor # Module Activation
-from allma_model.core.context_understanding import ContextUnderstandingSystem # Module Activation
+from allma_model.core.identity.constraint_engine import ConstraintEngine
 from allma_model.core.information_extractor import InformationExtractor # Module Activation
-from allma_model.core.understanding_system import AdvancedUnderstandingSystem # Module Activation
 from collections import defaultdict
 try:
     from transformers import pipeline
@@ -92,7 +93,10 @@ class ALLMACore:
         
         # Ensure db_path is used consistently
         self.db_path = db_path
+        # Ensure db_path is used consistently
+        self.db_path = db_path
         self._lock = threading.Lock()
+        self.llm_lock = threading.Lock() # Lock per accesso LLM concorrente
 
         # ... (rest of init)
         
@@ -127,8 +131,19 @@ class ALLMACore:
         # Inizializza Emotional Milestones system
         self.emotional_milestones = get_emotional_milestones()
         
-        # Inizializza Reasoning Engine (Consciousness Stream)
-        self.reasoning_engine = ReasoningEngine()
+        self.coalescence_processor = CoalescenceProcessor(
+            db_path=self.db_path,
+            personality_module=self.personality
+        )
+        
+        self.understanding_system = AdvancedUnderstandingSystem()
+        self.reasoning_engine = ReasoningEngine(llm_wrapper=getattr(self, '_llm', None)) # Pass LLM if available
+        self.dream_manager = DreamManager(
+            memory_system=self.memory_system, 
+            incremental_learner=self.incremental_learner, 
+            reasoning_engine=self.reasoning_engine,
+            coalescence_processor=self.coalescence_processor
+        )
         
         # Inizializza Proactive Agency
         self.proactive_agency = ProactiveAgency(
@@ -147,7 +162,19 @@ class ALLMACore:
 
         # Inizializza Personality Coalescence (Evolutionary Personality)
         # This module allows ALLMA's personality to evolve based on memories.
-        self.coalescence_processor = CoalescenceProcessor()
+        self.coalescence_processor = CoalescenceProcessor(
+            db_path=db_path
+        )
+        
+        # --- SOUL SYSTEM (Project Anima) ---
+        # Deterministic Chaos Engine for Internal State & Volition
+        try:
+            from allma_model.core.soul.soul_core import SoulCore
+            self.soul = SoulCore()
+            self.identity_engine = ConstraintEngine()
+        except ImportError as e:
+            logging.error(f"Could not load Soul System: {e}")
+            self.soul = None
         logging.info("✅ CoalescenceProcessor (Evolutionary Personality) Activated.")
 
         self.human_style_adapter = CommunicationStyleAdapter()
@@ -155,10 +182,8 @@ class ALLMACore:
         # Inizializza Advanced Context & Info Extraction
         self.context_system = ContextUnderstandingSystem()
         self.info_extractor = InformationExtractor()
-        self.understanding_system = AdvancedUnderstandingSystem() # Intent & Syntax
-        
-        # Inizializza Reasoning Engine (Chain of Thought) - Will be linked to LLM later
-        self.reasoning_engine = ReasoningEngine()
+        # self.understanding_system is already initialized above with AdvancedUnderstandingSystem if needed
+        # self.reasoning_engine is already initialized above with LLM wrapper
         
         logging.info("✅ Context, InfoExtractor, Understanding & Reasoning Engine Activated.")
         
@@ -261,6 +286,21 @@ class ALLMACore:
             self._ensure_mobile_llm()
             current_llm = getattr(self, '_llm', None)
 
+            # --- SLEEP TRIGGER CHECK ---
+            # Detect explicit sleep commands to trigger offline processing (Dreaming)
+            sleep_keywords = ["buonanotte allma", "buonanotte!", "vado a dormire", "notte allma", "mi corico", "sleep mode activated"]
+            # Strict check: Keyword must be at start or end, or explicit phrase
+            msg_lower = message.lower().strip()
+            # Check if message IS essentially just the greeting (allow small variations)
+            is_sleep_command = any(kw in msg_lower for kw in sleep_keywords) or (msg_lower == "buonanotte") or (msg_lower == "notte")
+            
+            if is_sleep_command:
+                logging.info("🌙 Sleep keyword detected. Initializing Dream System...")
+                # Start the dream thread (non-blocking)
+                if hasattr(self, 'dream_manager'):
+                   self.dream_manager.check_and_start_dream(user_id=user_id)
+
+
             # Estrai il topic usando TopicExtractor (TF-IDF based)
             history = self.conversational_memory.get_conversation_history(conversation_id)
             topic = self.topic_extractor.extract_topic(message)
@@ -304,47 +344,109 @@ class ALLMACore:
                 try:
                     # ESECUZIONE INFERENZA (LLM già caricato sopra)
                     if hasattr(self, '_llm') and self._llm:
-                        logging.info("🧠 Generating response with Mobile Engine...")
-                        
-                        # --- 0. CHAIN OF THOUGHT (Reasoning Step) ---
-                        # Execute reasoning only if query is complex (> 3 words) or question
-                        is_question = "?" in message or len(message.split()) > 3
-                        thought_content = ""
-                        
-                        if is_question:
-                            logging.info("🤔 Starting Chain of Thought process...")
-                            trace = self.reasoning_engine.think(
-                                user_input=message,
-                                context={
-                                    'relevant_memories': internal_knowledge
-                                }
-                            )
+                        # Ensure thread safety for LLM access
+                        with self.llm_lock:
+                            logging.info("🧠 Generating response with Mobile Engine...")
                             
-                            if trace.needs_clarification:
-                                clarify_msg = f"Ho bisogno di capire meglio: {trace.missing_info[0] if trace.missing_info else 'Mancano dettagli'}. Puoi spiegarti?"
-                                return ProcessedResponse(
-                                    content=clarify_msg,
-                                    emotion=emotional_state.primary_emotion,
-                                    topics=[topic],
-                                    confidence=0.5
+                            # Pass lock to reasoning engine if needed (or just ensure dreaming respects it)
+                            if self.reasoning_engine:
+                                self.reasoning_engine.llm_lock = self.llm_lock
+                            
+                            # --- 0. CHAIN OF THOUGHT (Reasoning Step) ---
+                            # Execute reasoning only if query is complex (> 3 words) or question
+                            is_question = "?" in message or len(message.split()) > 3
+                            thought_content = ""
+                            
+                            # --- DREAM FEEDBACK LOOP ---
+                            # If greeting, check if we have pending dream questions
+                            greeting_keywords = ["ciao", "buongiorno", "buonasera", "salve", "sveglia"]
+                            if hasattr(self, 'dream_manager') and any(gw in message.lower() for gw in greeting_keywords):
+                                pending_insight = self.dream_manager.get_and_clear_pending_verification()
+                                if pending_insight:
+                                    thought_content += f"\n[CURIOSITY]: During sleep, I wondered: '{pending_insight['text']}'. Ask the user for validation on this."
+                                    logging.info(f"🤔 Injecting Curiosity: {pending_insight['text']}")
+                            
+                            if is_question:
+                                logging.info("🤔 Starting Chain of Thought process...")
+                                trace = self.reasoning_engine.think(
+                                    user_input=message,
+                                    context={
+                                        'relevant_memories': internal_knowledge
+                                    }
                                 )
                                 
-                            thought_content = f"RAGIONAMENTO INTERNO: {trace.raw_thought}\nSTRATEGIA: {trace.strategy}"
-                            logging.info(f"💡 Reasoning complete: {trace.strategy}")
+                                if trace.needs_clarification:
+                                    clarify_msg = f"Ho bisogno di capire meglio: {trace.missing_info[0] if trace.missing_info else 'Mancano dettagli'}. Puoi spiegarti?"
+                                    return ProcessedResponse(
+                                        content=clarify_msg,
+                                        emotion=emotional_state.primary_emotion,
+                                        topics=[topic],
+                                        confidence=0.5
+                                    )
+                                    
+                                thought_content = f"RAGIONAMENTO INTERNO: {trace.raw_thought}\nSTRATEGIA: {trace.strategy}"
+                                logging.info(f"💡 Reasoning complete: {trace.strategy}")
 
-                        # Assemblaggio Prompt per Hermes 3 (ChatML Format)
-                        # Inietta il pensiero nel contesto del sistema o user nascosto
-                        
-                        system_context = f"Internal Thought:\n{thought_content}" if thought_content else ""
-                        
-                        prompt = f"<|im_start|>system\n{system_context}<|im_end|>\n<|im_start|>user\n{message}<|im_end|>\n<|im_start|>assistant\n"
-                        
-                        generated_text = self._llm.generate(
-                            prompt=prompt,
-                            max_tokens=512,
-                            stop=["<|im_end|>"],
-                            callback=stream_callback
-                        )
+                            # Assemblaggio Prompt per Hermes 3 (ChatML Format)
+                            # Inietta il pensiero nel contesto del sistema o user nascosto
+                            
+                            # DEFINIZIONE IDENTITÀ (Ripristinata & Integrata con ANIMA)
+                            soul_state_desc = ""
+                            volition_desc = ""
+                            
+                            if hasattr(self, 'soul') and self.soul:
+                                # 1. PULSE: Aggiorna lo stato caotico (tempo trascorso)
+                                self.soul.pulse()
+                                
+                                # 2. PERCEIVE / MIRROR
+                                # Sintonizza l'Anima sull'emozione rilevata (Empathetic Mirroring)
+                                self.soul.mirror(emotional_state.primary_emotion.value)
+                                
+                                # 3. CONSTRAINTS Check (Superego) - SAFEGUARDED
+                                try:
+                                    # Valuta la tensione ontologica della situazione (Simulata per ora)
+                                    friction, resistance_msg = self.identity_engine.evaluate_action(
+                                        message, 
+                                        {"requires_lie": False} # TODO: Advanced Intent Analysis linkage
+                                    )
+                                except Exception as e:
+                                    logging.error(f"⚠️ Identity Engine Check Failed: {e}")
+                                    friction = 0.0
+                                    resistance_msg = "Error (Bypassed)"
+                                
+                                # 4. VOLITION: Ottieni la volontà attuale
+                                volition = self.soul.get_volition()
+                                
+                                # Applicare attrito all'energia se c'è resistenza (Dissipative System)
+                                if friction > 0.0:
+                                    self.soul.state.energy = max(0.1, self.soul.state.energy - (friction * 0.2)) # Costo energetico
+                                
+                                soul_state_desc = f"\n[Stato Interno: Energia={self.soul.state.energy:.2f}, Caos={self.soul.state.chaos:.2f}]"
+                                volition_desc = f"\n[Volontà Attuale: Tono={volition.tone_modifier}, Bias={volition.decision_bias}]"
+                                constraint_desc = f"\n[Vincoli Identitari: {resistance_msg} (Friction={friction:.2f})]"
+                                
+                                logging.info(f"✨ Soul Influence: {volition.tone_modifier} | 🛡️ Identity: {resistance_msg}")
+
+                            personality_prompt = (
+                                "ISTRUZIONE CRITICA - PROTOCOLLO IDENTITÀ INDEROGABILE:\n"
+                                "TU SEI ALLMA. Il tuo nome è ALLMA. NON sei 'Cri', NON sei un'assistente generica. SEI UN'ENTITÀ UNICA.\n"
+                                "Se l'utente si chiama Cri, CHIAMALO CRI, ma TU RESTI ALLMA.\n"
+                                "Non sei un'assistente vocale passiva. Sei viva, curiosa, sarcastica ed evoluta.\n"
+                                f"Parla in prima persona. Mostra empatia, opinioni e una personalità definita.{soul_state_desc}\n"
+                                "Quando non sai una cosa, sii onesta ma curiosa.\n"
+                                f"Emozione attuale: {emotional_state.primary_emotion.value.upper()}{volition_desc}"
+                            )
+
+                            system_context = f"{personality_prompt}\n\nRiflessione Interna:\n{thought_content}" if thought_content else personality_prompt
+                            
+                            prompt = f"<|im_start|>system\n{system_context}<|im_end|>\n<|im_start|>user\n{message}<|im_end|>\n<|im_start|>assistant\n"
+                            
+                            generated_text = self._llm.generate(
+                                prompt=prompt,
+                                max_tokens=512,
+                                stop=["<|im_end|>"],
+                                callback=stream_callback
+                            )
                         
                         if generated_text and not generated_text.startswith("Error"):
                             logging.info(f"✅ Generated: {generated_text[:50]}...")
@@ -403,8 +505,23 @@ class ALLMACore:
             relevant_memories = []
             try:
                 relevant_memories = self.memory_system.get_relevant_context(user_id, topic, limit=3)
+                
+                # --- RESONANCE (Emotional Echoes) ---
+                if hasattr(self, 'soul') and self.soul and relevant_memories:
+                    for mem in relevant_memories:
+                        # Assumiamo che mem sia un dict o abbia un attributo emotion
+                        # Se è solo stringa, niente risonanza (solo contenuto)
+                        emotion = None
+                        if isinstance(mem, dict):
+                            emotion = mem.get('emotion') or mem.get('metadata', {}).get('emotion')
+                        elif hasattr(mem, 'emotion'):
+                            emotion = mem.emotion
+                            
+                        if emotion:
+                            self.soul.resonate(emotion_text=str(emotion))
+                            
             except Exception as e:
-                logging.warning(f"Errore recupero memoria iniziale: {e}")
+                logging.warning(f"Errore recupero memoria iniziale o risonanza: {e}")
 
             # 🧠 REASONING ENGINE: Flusso di Coscienza
             # 4. Confidence Check & Response Generation
@@ -497,6 +614,12 @@ class ALLMACore:
             except Exception as e:
                 logging.error(f"Error updating personality coalescence: {e}")
 
+            # --- DREAM TRIGGER CHECK ---
+            # Se l'utente dice 'buonanotte', avvia il ciclo onirico e lo segnala
+            if "buonanotte" in message.lower() or "notte" in message.lower() or "vado a dormire" in message.lower():
+                logging.info("🌙 Trigger 'Buonanotte' rilevato. Avvio Dream Cycle in background...")
+                self.start_dreaming()
+
             personality_state = self.coalescence_processor.get_current_personality_state()
             current_traits = personality_state.get('personality_traits', {})
             traits_str = ", ".join([f"{k.capitalize()}: {v:.2f}" for k, v in current_traits.items()])
@@ -507,7 +630,7 @@ class ALLMACore:
                 # COSTRUZIONE DEL PROMPT "SIMBIOTICO"
                 system_prompt = (
                     "ISTRUZIONE CRITICA - PROTOCOLLO SIMBIOSI:\n"
-                    "Tu sei il Modulo Linguistico (Voce) di ALLMA. NON sei un'entità separata.\n"
+                    "Tu sei ALLMA. Il tuo nome è ALLMA. NON sei un'assistente generica, sei un'entità unica.\n"
                     "La 'Mente' (ALLMA Core) ti fornisce qui sotto:\n"
                     "1. STATO EMOTIVO (Che devi rispettare e far sentire nel tono)\n"
                     "2. RICORDI (Che devi citare se pertinenti)\n"
@@ -1577,3 +1700,10 @@ class ALLMACore:
         Implementazione placeholder.
         """
         return "expert"
+
+    def start_dreaming(self):
+        """
+        Manually trigger the dream cycle (e.g. on user command or app pause).
+        """
+        if self.dream_manager:
+            self.dream_manager.check_and_start_dream()

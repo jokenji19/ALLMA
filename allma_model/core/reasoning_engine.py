@@ -24,6 +24,7 @@ class ReasoningEngine:
     def __init__(self, llm_wrapper=None):
         self.llm = llm_wrapper
         self.logger = logging.getLogger(__name__)
+        self.llm_lock = None # Will be injected by Core
 
     def think(self, user_input: str, context: Dict[str, Any], callback: Optional[Any] = None) -> ThoughtTrace:
         """
@@ -38,13 +39,20 @@ class ReasoningEngine:
         
         # 2. Esegui Inferenza (Thinking Pass)
         # Usiamo parametri per una risposta analitica e strutturata
-        raw_output = self.llm.generate(
-            prompt, 
-            max_tokens=300, 
-            temperature=0.3, # Bassa temperatura per logica precisa
-            stop=["</reasoning>"],
-            callback=callback
-        )
+        def _exec_gen():
+            return self.llm.generate(
+                prompt, 
+                max_tokens=300, 
+                temperature=0.3, # Bassa temperatura per logica precisa
+                stop=["</reasoning>"],
+                callback=callback
+            )
+            
+        if self.llm_lock:
+            with self.llm_lock:
+                 raw_output = _exec_gen()
+        else:
+             raw_output = _exec_gen()
         
         # 3. Parsing del Pensiero
         trace = self._parse_thought(raw_output)

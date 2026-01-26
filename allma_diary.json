@@ -1,0 +1,71 @@
+{
+  "entries": [
+    {
+      "timestamp": 1769380236.177034,
+      "datetime": "2026-01-25 23:30:36",
+      "content": "Ciao ALLMA",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "neutral",
+      "emotional_details": {
+        "primary": "neutral",
+        "secondary": null,
+        "intensity": 0.1
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1769380236.177034,
+      "datetime": "2026-01-25 23:30:36",
+      "content": "Ciao ALLMA",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "neutral",
+      "emotional_details": {
+        "primary": "neutral",
+        "secondary": null,
+        "intensity": 0.1
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    }
+  ],
+  "personality_evolution": []
+}

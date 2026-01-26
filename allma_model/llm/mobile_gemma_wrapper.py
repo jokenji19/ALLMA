@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import logging
+import threading # <--- Added
 from typing import List, Optional
 
 # Delayed import mechanism match
@@ -32,6 +33,7 @@ class MobileGemmaWrapper:
         self.model_path = os.path.join(models_dir, model_name)
         self.n_ctx = n_ctx
         self.llm = None
+        self.inference_lock = threading.Lock() # <--- CRITICAL FIX: Global Lock
         
         if not LLAMA_CPP_AVAILABLE:
             logging.error("Tentativo di inizializzare MobileGemmaWrapper senza llama_cpp installato.")
@@ -129,14 +131,23 @@ class MobileGemmaWrapper:
                 
                 from llama_cpp import Llama # Retry or fail hard
 
-            # Optimized for High-End Android (S25 Ultra / Gen 4)
-            # n_threads=8 (Use Performance Cores)
-            # n_batch=256 (Speed up prompt processing)
+            # STABILIZATION FIX (2026-01-26):
+            # The previous setting (Batch=256, Threads=8) caused crashes during LONG generation.
+            # We are switching to "Safe Mode" to prioritize stability over raw speed.
+            
+            # import gc and gc.collect() are already above
+            import gc
+            gc.collect()
+
             self.llm = Llama(
                 model_path=self.model_path,
-                n_ctx=4096,         # <--- INCREASED MEMORY: Was 2048, now 4096 for Hermes
-                n_threads=8,        # <--- KEY FIX: Was 1, now 8 for S25 Ultra
-                n_batch=256,        # <--- KEY FIX: Was 1, now 256 for prompt ingestion speed
+                n_ctx=4096,         # RESTORED FULL QUALITY (v163)
+                                    # Concurrency Crash fixed via Lock.
+                                    # OOM Risk handled by mmap=True.
+                n_threads=4,        # Stable Threads
+                n_batch=128,        # Stable Batch
+                use_mmap=True,      # Mmap Active
+                use_mlock=False,
                 verbose=True
             )
             
@@ -170,33 +181,37 @@ class MobileGemmaWrapper:
             stop = ["<end_of_turn>"]
 
         try:
-            # Enable streaming if callback is provided
-            stream_mode = (callback is not None)
-            
-            logging.info(f"[MobileGemma] Generating response (Stream={stream_mode})")
-            
-            output = self.llm(
-                prompt,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                stop=stop,
-                echo=False,
-                stream=stream_mode 
-            )
-            
-            if stream_mode:
-                text_buffer = ""
-                for chunk in output:
-                    # llama-cpp-python stream chunk format:
-                    # {'id': '...', 'object': 'text_completion', 'created': 123, 'model': '...', 'choices': [{'text': 'T', 'index': 0, 'logprobs': None, 'finish_reason': None}]}
-                    token = chunk['choices'][0]['text']
-                    text_buffer += token
-                    if callback:
-                        callback(token)
-                return text_buffer
-            else:
-                return output['choices'][0]['text']
+            # CRITICAL: LOCK THE LLM. 
+            # Prevents "Dream Cycle" / Background threads from crashing the engine 
+            # while main chat is generating.
+            with self.inference_lock:
+                # Enable streaming if callback is provided
+                stream_mode = (callback is not None)
+                
+                logging.info(f"[MobileGemma] Generating response (Stream={stream_mode})")
+                
+                output = self.llm(
+                    prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    stop=stop,
+                    echo=False,
+                    stream=stream_mode 
+                )
+                
+                if stream_mode:
+                    text_buffer = ""
+                    for chunk in output:
+                        # llama-cpp-python stream chunk format:
+                        # {'id': '...', 'object': 'text_completion', 'created': 123, 'model': '...', 'choices': [{'text': 'T', 'index': 0, 'logprobs': None, 'finish_reason': None}]}
+                        token = chunk['choices'][0]['text']
+                        text_buffer += token
+                        if callback:
+                            callback(token)
+                    return text_buffer
+                else:
+                    return output['choices'][0]['text']
 
         except Exception as e:
             logging.error(f"[MobileGemma] Inference error: {e}")
