@@ -100,29 +100,44 @@ class AllmaInternalApp(MDApp):
         downloader = ModelDownloader()
         missing = downloader.check_models_missing()
         
-        # Always add both screens, but decide which to show first
+        # Setup View is always needed first
         self.setup_screen = SetupView(name='setup')
         self.setup_screen.set_callback(self.on_setup_complete)
-        self.chat_screen = ChatView(name='chat')
-        
         self.sm.add_widget(self.setup_screen)
-        self.sm.add_widget(self.chat_screen)
         
         if missing:
+            print(f"[AllmaInternalApp] Missing models: {missing}. Enforcing SetupView.")
+            # DO NOT ADD ChatView yet. This prevents any accidental switch.
             self.sm.current = 'setup'
         else:
-            self.sm.current = 'chat'
+            print("[AllmaInternalApp] Models present. Loading ChatView immediately.")
+            # Setup done, load chat
+            self.load_and_switch_chat()
             
         return self.sm
 
+    def load_and_switch_chat(self):
+        if not self.sm.has_screen('chat'):
+            # Lazy load ChatView
+            from allma_model.ui.chat_view import ChatView
+            self.chat_screen = ChatView(name='chat')
+            self.sm.add_widget(self.chat_screen)
+        
+        self.sm.current = 'chat'
+
     def on_setup_complete(self):
         # Switch to chat when setup is done
-        self.sm.current = 'chat'
+        print("[AllmaInternalApp] Setup Complete. Switching to Chat.")
+        self.load_and_switch_chat()
 
     def on_start(self):
         # Configure Android System Bars (White/Light Theme)
         # Use a delay to ensure Kivy Window is fully initialized before we override flags
         Clock.schedule_once(lambda dt: AndroidBars.configure_bars(), 0.5)
+
+        # REDUNDANT CHECK: If we are in Setup, trigger check again just in case
+        if self.sm.current == 'setup':
+             Clock.schedule_once(lambda dt: self.setup_screen.check_requirements(0), 1.0)
 
         # Check if the native library was just downloaded
         if os.environ.get("ALLMA_LIB_DOWNLOADED") == "1":
@@ -131,12 +146,15 @@ class AllmaInternalApp(MDApp):
     def show_toast(self, text):
         from kivy.utils import platform
         if platform == 'android':
-            from jnius import autoclass, cast
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            JString = autoclass('java.lang.String')
-            Toast = autoclass('android.widget.Toast')
-            context =  PythonActivity.mActivity
-            Toast.makeText(context, cast('java.lang.CharSequence', JString(text)), Toast.LENGTH_LONG).show()
+            try:
+                from jnius import autoclass, cast
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                JString = autoclass('java.lang.String')
+                Toast = autoclass('android.widget.Toast')
+                context =  PythonActivity.mActivity
+                Toast.makeText(context, cast('java.lang.CharSequence', JString(text)), Toast.LENGTH_LONG).show()
+            except Exception as e:
+                print(f"Toast Error: {e}")
         else:
             print(f"[TOAST] {text}")
 

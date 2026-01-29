@@ -2,7 +2,12 @@ from typing import Dict, List, Any, Optional, Set
 from dataclasses import dataclass
 import numpy as np
 from datetime import datetime
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 from transformers import AutoTokenizer, AutoModel
 # from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -25,14 +30,14 @@ class Context:
     user_state: Dict[str, Any]
     previous_contexts: List['Context']
     confidence: float
-    embedding: Optional[torch.Tensor] = None
+    embedding: Optional['torch.Tensor'] = None
 
 class ContextualLearningSystem:
     """Sistema per l'apprendimento contestuale"""
     
     def __init__(self):
         self.contexts: List[Context] = []
-        self.context_embeddings: Dict[str, torch.Tensor] = {}
+        self.context_embeddings: Dict[str, 'torch.Tensor'] = {}
         
         # Carica il modello per le embedding
         self.tokenizer = AutoTokenizer.from_pretrained("dbmdz/bert-base-italian-xxl-uncased")
@@ -164,7 +169,7 @@ class ContextualLearningSystem:
                 
         return similar_contexts
     
-    def _generate_embedding(self, text: str) -> torch.Tensor:
+    def _generate_embedding(self, text: str) -> 'torch.Tensor':
         """Genera embedding per il testo"""
         inputs = self.tokenizer(
             text,

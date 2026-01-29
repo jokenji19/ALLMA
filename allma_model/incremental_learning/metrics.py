@@ -1,4 +1,9 @@
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 import numpy as np
 from typing import Dict, List, Any
 from collections import defaultdict

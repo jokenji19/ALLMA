@@ -1,6 +1,11 @@
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 import numpy as np
 

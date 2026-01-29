@@ -14,8 +14,14 @@ from datetime import datetime, timedelta
 import json
 import logging
 import math
-import torch
-from torch.nn.functional import cosine_similarity
+try:
+    import torch
+    from torch.nn.functional import cosine_similarity
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    cosine_similarity = None
+    TORCH_AVAILABLE = False
 from collections import defaultdict
 import threading
 from threading import Lock
@@ -199,7 +205,7 @@ class AssociativeMemory:
     """Gestisce le associazioni tra concetti usando una rete neurale semplice"""
     def __init__(self, embedding_dim: int = 64):
         self.embedding_dim = embedding_dim
-        self.concept_embeddings: Dict[str, torch.Tensor] = {}
+        self.concept_embeddings: Dict[str, 'torch.Tensor'] = {}
         self._lock = Lock()
         
     def add_association(self, concept1: str, concept2: str, strength: float = 1.0):

@@ -39,9 +39,19 @@ class MobileGemmaWrapper:
             logging.error("Tentativo di inizializzare MobileGemmaWrapper senza llama_cpp installato.")
             return
 
+        # Auto-Scan for GGUF if default not found
         if not os.path.exists(self.model_path):
-            logging.error(f"Modello non trovato in: {self.model_path}")
-            return
+             logging.warning(f"Default model not found at {self.model_path}. Scanning dir...")
+             found_models = [f for f in os.listdir(models_dir) if f.endswith('.gguf')]
+             if found_models:
+                 # Pick the largest one (likely the model)
+                 best_model = max(found_models, key=lambda f: os.path.getsize(os.path.join(models_dir, f)))
+                 self.model_path = os.path.join(models_dir, best_model)
+                 logging.info(f"Auto-selected model: {best_model}")
+             else:
+                 logging.error(f"No GGUF models found in {models_dir}")
+                 return
+
             
         size = os.path.getsize(self.model_path)
         logging.info(f"[MobileGemma] File exists! Size: {size} bytes ({size/(1024*1024):.2f} MB)")

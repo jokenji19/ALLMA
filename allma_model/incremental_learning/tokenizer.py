@@ -1,4 +1,9 @@
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 from typing import Dict, List, Union
 from collections import Counter
 
@@ -28,15 +33,17 @@ class ALLMATokenizer:
         """Restituisce l'indice di un token"""
         return self.vocab.get(item, self.special_tokens['<UNK>'])
         
-    def tokenize(self, text: str) -> torch.Tensor:
+    def tokenize(self, text: str) -> 'torch.Tensor':
         """Converte il testo in una lista di token"""
         words = text.lower().split()
         tokens = [self.vocab.get(word, self.special_tokens['<UNK>']) for word in words]
-        return torch.tensor(tokens, dtype=torch.long)
+        if TORCH_AVAILABLE:
+            return torch.tensor(tokens, dtype=torch.long)
+        return tokens # Return list if torch not available
         
-    def decode(self, tokens: Union[List[int], torch.Tensor]) -> str:
+    def decode(self, tokens: Union[List[int], 'torch.Tensor']) -> str:
         """Converte una lista di token in testo"""
-        if isinstance(tokens, torch.Tensor):
+        if TORCH_AVAILABLE and isinstance(tokens, torch.Tensor):
             tokens = tokens.cpu().tolist()
         return ' '.join([self.reverse_vocab.get(token, '<UNK>') for token in tokens])
         
@@ -81,7 +88,7 @@ class ALLMATokenizer:
                 self.reverse_vocab[idx] = word
                 self.current_idx = max(self.current_idx, idx + 1)
 
-    def __call__(self, text: str) -> torch.Tensor:
+    def __call__(self, text: str) -> 'torch.Tensor':
         """
         Tokenizza il testo e restituisce un tensore
         
@@ -100,4 +107,6 @@ class ALLMATokenizer:
         # Aggiungi i token speciali
         tokens = [self.special_tokens['<BOS>']] + tokens + [self.special_tokens['<EOS>']]
         
-        return torch.tensor(tokens, dtype=torch.long)
+        if TORCH_AVAILABLE:
+            return torch.tensor(tokens, dtype=torch.long)
+        return tokens

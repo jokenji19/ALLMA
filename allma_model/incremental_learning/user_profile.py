@@ -51,9 +51,16 @@ class InteractionMetrics:
     average_session_length: float = 0.0
     topic_frequencies: Dict[str, int] = field(default_factory=dict)
     
+    # Metriche Evolutive (Lifelong Learning)
+    first_interaction_timestamp: float = field(default_factory=time.time)
+    last_interaction_timestamp: float = field(default_factory=time.time)
+    synergy_score: float = 0.0
+    evolution_stage: str = "Analisi Iniziale"
+    
     def update_from_interaction(self, interaction_data: Dict[str, Any]):
         """Aggiorna le metriche basandosi su una nuova interazione"""
         self.total_interactions += 1
+        self.last_interaction_timestamp = time.time()
         
         # Aggiorna risposte positive/negative basate sul sentiment
         if interaction_data.get('sentiment', 0) > 0:
@@ -95,6 +102,8 @@ class InteractionMetrics:
 class UserProfile:
     """Profilo utente con preferenze e metriche di interazione"""
     user_id: str
+    name: Optional[str] = None
+    age: Optional[int] = None
     creation_time: float = field(default_factory=time.time)
     last_update: float = field(default_factory=time.time)
     preferences: CommunicationPreference = field(default_factory=CommunicationPreference)
@@ -154,6 +163,8 @@ class UserProfile:
         """Salva il profilo su file"""
         data = {
             'user_id': self.user_id,
+            'name': self.name,
+            'age': self.age,
             'creation_time': self.creation_time,
             'last_update': self.last_update,
             'preferences': self.preferences.to_dict(),
@@ -170,6 +181,8 @@ class UserProfile:
             data = json.load(f)
         
         profile = cls(data['user_id'])
+        profile.name = data.get('name')
+        profile.age = data.get('age')
         profile.creation_time = data['creation_time']
         profile.last_update = data['last_update']
         

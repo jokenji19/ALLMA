@@ -1,9 +1,17 @@
 import os
 import json
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    import torch.optim as optim
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    F = None
+    optim = None
+    TORCH_AVAILABLE = False
 import numpy as np
 import random
 from typing import Dict, List, Optional, Tuple, Any
@@ -218,7 +226,7 @@ class ALLMA(nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(self.device)
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: 'torch.Tensor') -> 'torch.Tensor':
         """
         Forward pass del modello
         
@@ -1114,7 +1122,7 @@ class ALLMA(nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(self.device)
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: 'torch.Tensor') -> 'torch.Tensor':
         """
         Forward pass del modello
         

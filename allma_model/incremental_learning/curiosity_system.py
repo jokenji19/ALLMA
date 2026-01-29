@@ -3,9 +3,23 @@ from typing import Dict, List, Optional, Any, Set
 from datetime import datetime
 import time
 import math
-import torch
-import spacy
-from transformers import AutoTokenizer, AutoModel
+import re
+# import spacy # Removed for ALLMA Neural-Light Architecture
+    
+try:
+    from transformers import AutoTokenizer, AutoModel
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    AutoTokenizer = None
+    AutoModel = None
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 
 class CuriosityDrive:
     """Sistema principale di gestione della curiosità"""
@@ -366,38 +380,67 @@ class EmotionalCuriosity:
 class UnknownConceptDetector:
     """Sistema per il rilevamento di concetti sconosciuti"""
     
-    def __init__(self, threshold: float = 0.7):
-        self.nlp = spacy.load("it_core_news_lg")
-        self.known_concepts: Dict[str, ConceptKnowledge] = {}
+    def __init__(self, knowledge_memory=None, threshold: float = 0.7):
+        self.knowledge_memory = knowledge_memory
         self.confidence_threshold = threshold
-        self.tokenizer = AutoTokenizer.from_pretrained("dbmdz/bert-base-italian-xxl-uncased")
-        self.model = AutoModel.from_pretrained("dbmdz/bert-base-italian-xxl-uncased")
+        
+        # Lista parole comuni (Stopwords estese + vocabolario base)
+        # In produzione, caricarla da file json
+        self.common_words = {
+            "il", "lo", "la", "i", "gli", "le", "un", "uno", "una",
+            "di", "a", "da", "in", "con", "su", "per", "tra", "fra",
+            "io", "tu", "lui", "lei", "noi", "voi", "loro",
+            "essere", "avere", "fare", "dire", "potere", "volere", "sapere",
+            "stare", "dovere", "vedere", "andare", "venire", "dare", "parlare",
+            "trovare", "sentire", "lasciare", "prendere", "guardare", "mettere",
+            "pensare", "passare", "credere", "portare", "parere", "tornare",
+            "sembrare", "tenere", "capire", "morire", "chiamare", "conoscere",
+            "rimanere", "chiedere", "cercare", "entrare", "vivere", "aprire",
+            "uscire", "ricordare", "bisognare", "cominciare", "rispondere",
+            "spettare", "correre", "scrivere", "diventare", "restare", "seguire",
+            "bastare", "perdere", "rendere", "salire", "piacere", "continuare",
+            "partire", "servire", "giungere", "fermare", "apparire", "amare",
+            "esistere", "ricevere", "ridere", "cambiare"
+        }
         
     def detect_unknown_concepts(self, text: str) -> Set[str]:
         """
-        Identifica concetti potenzialmente sconosciuti nel testo
-        
-        Args:
-            text: Testo da analizzare
-            
-        Returns:
-            Set di concetti sconosciuti
+        Rileva concetti sconosciuti nel testo (Logic-Heavy method)
         """
-        doc = self.nlp(text)
         unknown_concepts = set()
         
-        # Estrai sostantivi, entità nominate e concetti chiave
-        for token in doc:
-            if self._is_potential_concept(token):
-                concept = token.text.lower()
-                if not self._is_known_concept(concept):
-                    unknown_concepts.add(concept)
-                    
-        for ent in doc.ents:
-            if ent.label_ in ["MISC", "ORG", "PERSON", "GPE", "LOC"]:
-                concept = ent.text.lower()
-                if not self._is_known_concept(concept):
-                    unknown_concepts.add(concept)
+        # 1. Pulisci testo
+        text_clean = re.sub(r'[^\w\s]', '', text)
+        words = text_clean.split()
+        
+        # 2. Euristica: Parole con Maiuscola (non a inizio frase) sono potenziali Entità espresse
+        #    Parole rare (non in common_words e non conosciute) sono concetti
+        
+        for i, word in enumerate(words):
+            w_lower = word.lower()
+            
+            # Skip common words
+            if w_lower in self.common_words:
+                continue
+                
+            # Skip numbers
+            if w_lower.isdigit():
+                continue
+                
+            # Check knowledge memory
+            if self._is_known_concept(w_lower):
+                continue
+            
+            # Se siamo qui, è una parola "rara" per il sistema
+            
+            # Aggiungi se è Maiuscola (e non è la prima parola assoluta, o lo è ma non è comune)
+            if word[0].isupper():
+                if i > 0 or w_lower not in self.common_words:
+                     unknown_concepts.add(w_lower)
+            
+            # Aggiungi se è lunga e complessa (euristica semplice)
+            elif len(word) > 8:
+                 unknown_concepts.add(w_lower)
         
         return unknown_concepts
     
@@ -424,6 +467,9 @@ class UnknownConceptDetector:
             concept: Concetto da apprendere
             context: Contesto in cui appare il concetto
         """
+        if self.tokenizer is None or self.model is None or not TORCH_AVAILABLE:
+            return # Skip if no model available
+            
         # Codifica il contesto
         inputs = self.tokenizer(context, return_tensors="pt", padding=True, truncation=True)
         with torch.no_grad():
@@ -483,7 +529,7 @@ class UnknownConceptDetector:
 
 class ConceptKnowledge:
     """Rappresenta la conoscenza di un concetto"""
-    def __init__(self, name: str, confidence: float = 0.0, occurrences: int = 0, last_seen: Optional[float] = None, related_concepts: Dict[str, float] = {}, context_embeddings: List[torch.Tensor] = []):
+    def __init__(self, name: str, confidence: float = 0.0, occurrences: int = 0, last_seen: Optional[float] = None, related_concepts: Dict[str, float] = {}, context_embeddings: List['torch.Tensor'] = []):
         self.name = name
         self.confidence = confidence
         self.occurrences = occurrences

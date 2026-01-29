@@ -3,12 +3,12 @@ Sistema per il riconoscimento di pattern nel testo con apprendimento incremental
 """
 from collections import defaultdict, Counter
 from dataclasses import dataclass, field
-from typing import List, Set, Dict, Any, Optional, Union
-import nltk
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from nltk.stem import SnowballStemmer
-from nltk.util import ngrams
+from typing import List, Set, Dict, Any, Optional, Union, Tuple
+# import nltk
+# from nltk.tokenize import word_tokenize
+# from nltk.corpus import stopwords
+# from nltk.stem import SnowballStemmer
+# from nltk.util import ngrams
 import numpy as np
 import logging
 from datetime import datetime
@@ -18,10 +18,10 @@ import numpy as np
 def cosine_similarity(v1, v2):
     norm1 = np.linalg.norm(v1)
     norm2 = np.linalg.norm(v2)
-    if norm1 == 0 or norm2 == 0:
-        return np.array([[0.0]])
-    return np.array([[np.dot(v1, v2.T) / (norm1 * norm2)]])
-import spacy
+    if norm1 == 0 or norm2 == 0: return 0.0
+    return np.dot(v1, v2) / (norm1 * norm2)
+
+# import spacy # Removed for ALLMA Neural-Light Architecture
 import re
 import uuid
 
@@ -62,13 +62,28 @@ class Subtopic:
     keywords: Set[str] = field(default_factory=set)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+class SimpleStemmer:
+    """Semplice stemmer per l'italiano basato su regole base"""
+    def stem(self, word):
+        word = word.lower()
+        if len(word) > 4:
+            if word.endswith('are') or word.endswith('ere') or word.endswith('ire'):
+                return word[:-3]
+            if word.endswith('zione') or word.endswith('zioni'):
+                return word[:-5]
+            if word.endswith('mente'):
+                return word[:-5]
+            if word.endswith('a') or word.endswith('e') or word.endswith('i') or word.endswith('o'):
+                return word[:-1]
+        return word
+
 class PatternRecognitionSystem:
     """Sistema di riconoscimento pattern basato su regole e apprendimento incrementale."""
     
     def __init__(self):
         """Inizializza il sistema di riconoscimento pattern."""
-        # Inizializza lo stemmer italiano
-        self.stemmer = SnowballStemmer('italian')
+        # Inizializza lo stemmer italiano (custom)
+        self.stemmer = SimpleStemmer()
         
         # Inizializza le strutture dati
         self.observers = []
@@ -77,8 +92,15 @@ class PatternRecognitionSystem:
         self.learned_keywords = defaultdict(set)
         self.keyword_counts = defaultdict(Counter)
         
-        # Carica le stopwords italiane
-        self.stop_words = set(stopwords.words('italian'))
+        # Carica le stopwords italiane (Hardcoded list)
+        self.stop_words = {
+            'ad', 'al', 'allo', 'ai', 'agli', 'all', 'agl', 'alla', 'alle', 'con', 'col', 'coi', 'da', 'dal', 
+            'dallo', 'dai', 'dagli', 'dall', 'dagl', 'dalla', 'dalle', 'di', 'del', 'dello', 'dei', 'degli', 
+            'dell', 'degl', 'della', 'delle', 'in', 'nel', 'nello', 'nei', 'negli', 'nell', 'negl', 'nella', 
+            'nelle', 'su', 'sul', 'sullo', 'sui', 'sugli', 'sull', 'sugl', 'sulla', 'sulle', 'per', 'tra', 
+            'fra', 'e', 'o', 'se', 'che', 'non', 'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'uno', 'una', 
+            'ma', 'ed', 'ti', 'mi', 'ci', 'vi', 'si', 'ne'
+        }
         
         # Inizializza le categorie e le parole chiave
         self.categories = {
@@ -127,15 +149,23 @@ class PatternRecognitionSystem:
         # Stemming delle parole per sentiment
         self.stemmed_positive = {self.stemmer.stem(word) for word in self.positive_keywords}
         self.stemmed_negative = {self.stemmer.stem(word) for word in self.negative_keywords}
-        
-        # Carica il modello spaCy per l'italiano
-        try:
-            self.nlp = spacy.load('it_core_news_sm')
-        except OSError:
-            # Se il modello non è installato, scaricalo
-            import subprocess
-            subprocess.run(['python', '-m', 'spacy', 'download', 'it_core_news_sm'])
-            self.nlp = spacy.load('it_core_news_sm')
+
+    def _tokenize(self, text: str) -> List[str]:
+        """Semplice tokenizer basato su regex"""
+        if not isinstance(text, str):
+            return []
+        text = text.lower()
+        # Rimuovi punteggiatura semplice e dividi
+        return re.findall(r'\b\w+\b', text)
+    
+    def _ngrams(self, tokens: List[str], n: int) -> List[Tuple[str, ...]]:
+        """Generatore di n-grams"""
+        if len(tokens) < n:
+            return []
+        return list(zip(*[tokens[i:] for i in range(n)]))
+            
+        # Carica il modello spaCy per l'italiano - REMOVED for NLA
+        self.nlp = None
             
         # Tasso di apprendimento per l'aggiornamento dei pattern
         self.learning_rate = 0.1
@@ -176,22 +206,25 @@ class PatternRecognitionSystem:
         for observer in self.observers:
             observer.update(event_type, data)
             
-    def preprocess_text(self, text: Union[str, spacy.tokens.doc.Doc]) -> str:
+    def preprocess_text(self, text: Union[str, Any]) -> str:
         """
-        Preprocessa il testo per l'analisi
+        Preprocessa il testo per l'analisi (Pure Python + Regex)
         Args:
-            text: Testo da preprocessare o documento spaCy
+            text: Testo da preprocessare
         Returns:
             str: Testo preprocessato
         """
-        # Se l'input è un documento spaCy, estrai il testo
-        if hasattr(text, 'text'):
-            text = text.text
+        # Se l'input è un oggetto non stringa (es. vecchio doc spacy), estrai text se possibile
+        if not isinstance(text, str):
+            if hasattr(text, 'text'):
+                text = text.text
+            else:
+                text = str(text)
             
         # Converti in minuscolo
         text = text.lower()
         
-        # Rimuovi caratteri speciali e numeri
+        # Rimuovi caratteri speciali e numeri (ma mantieni lettere accentate)
         text = re.sub(r'[^a-zA-ZàèéìòùÀÈÉÌÒÙ\s]', ' ', text)
         
         # Rimuovi spazi multipli
@@ -212,7 +245,7 @@ class PatternRecognitionSystem:
             
         # Preprocessa il testo
         preprocessed = self.preprocess_text(text)
-        tokens = word_tokenize(preprocessed)
+        tokens = self._tokenize(preprocessed)
         stemmed = [self.stemmer.stem(token) for token in tokens]
         
         # Cerca parole chiave per ogni categoria
@@ -314,7 +347,7 @@ class PatternRecognitionSystem:
             pattern.confidence = min(0.95, base_confidence + coverage_boost + sentiment_boost + similarity_boost + learning_boost)
             
             # Aggiorna le parole chiave apprese
-            tokens = word_tokenize(self.preprocess_text(text))
+            tokens = self._tokenize(self.preprocess_text(text))
             stemmed_tokens = [self.stemmer.stem(token) for token in tokens]
             
             if category not in self.learned_keywords:
@@ -437,7 +470,7 @@ class PatternRecognitionSystem:
         """
         # Preprocessa il testo
         preprocessed = self.preprocess_text(text)
-        tokens = word_tokenize(preprocessed)
+        tokens = self._tokenize(preprocessed)
         stemmed = [self.stemmer.stem(token) for token in tokens]
         
         # Inizializza contatori
@@ -596,7 +629,7 @@ class PatternRecognitionSystem:
         for text in texts:
             # Preprocessa il testo
             preprocessed = self.preprocess_text(text)
-            tokens = word_tokenize(preprocessed)
+            tokens = self._tokenize(preprocessed)
             stemmed = [self.stemmer.stem(token) for token in tokens]
             
             # Cerca parole chiave per ogni categoria
@@ -629,7 +662,7 @@ class PatternRecognitionSystem:
                 # 2. Copertura nei testi
                 texts_with_category = sum(1 for text in texts if any(
                     self.stemmer.stem(token) in self.stemmed_keywords.get(category, set()) 
-                    for token in word_tokenize(self.preprocess_text(text))
+                    for token in self._tokenize(self.preprocess_text(text))
                 ))
                 coverage_score = texts_with_category / len(texts)
                 
@@ -729,7 +762,7 @@ class PatternRecognitionSystem:
             pattern.confidence = min(0.95, base_confidence + coverage_boost + sentiment_boost + similarity_boost + learning_boost)
             
             # Aggiorna le parole chiave apprese
-            tokens = word_tokenize(self.preprocess_text(text))
+            tokens = self._tokenize(self.preprocess_text(text))
             stemmed_tokens = [self.stemmer.stem(token) for token in tokens]
             
             if category not in self.learned_keywords:
@@ -757,6 +790,29 @@ class PatternRecognitionSystem:
                 self.pattern_categories[pattern.category].add(pattern.id)
                 
         return pattern
+
+    def _extract_pattern_features(self, text: Union[str, List[float]]) -> Dict[str, float]:
+        """Estrae feature dal pattern (Pure Python)"""
+        if not isinstance(text, str):
+            return {}
+            
+        features = {}
+        text_lower = text.lower()
+        words = re.findall(r'\w+', text_lower)
+        total_words = len(words) if words else 1
+        
+        # 1. Sentiment Score (Simple)
+        features['sentiment_score'] = self._calculate_sentiment_score(words)
+        
+        # 2. Avg word length
+        features['avg_word_len'] = sum(len(w) for w in words) / total_words
+        
+        # 3. Category coverage
+        for cat, keywords in self.keywords.items():
+             match_count = sum(1 for w in words if w in keywords or self.stemmer.stem(w) in self.stemmed_keywords.get(cat, set()))
+             features[f'{cat}_coverage'] = match_count / total_words
+             
+        return features
 
     def _find_similar_patterns(self, pattern: Union[Pattern, List[float]], features: Optional[Dict[str, float]] = None, threshold: float = 0.5) -> List[Pattern]:
         """
@@ -846,8 +902,8 @@ class PatternRecognitionSystem:
         processed_text2 = self.preprocess_text(text2)
         
         # Tokenizza
-        tokens1 = word_tokenize(processed_text1)
-        tokens2 = word_tokenize(processed_text2)
+        tokens1 = self._tokenize(processed_text1)
+        tokens2 = self._tokenize(processed_text2)
         
         # Rimuovi stop words e applica stemming
         tokens1 = [self.stemmer.stem(token) for token in tokens1 if token not in self.stop_words]
@@ -884,7 +940,7 @@ class PatternRecognitionSystem:
         combined_text = " ".join(processed_texts)
         
         # Tokenizza il testo combinato
-        tokens = word_tokenize(combined_text)
+        tokens = self._tokenize(combined_text)
         stemmed_tokens = [self.stemmer.stem(token) for token in tokens]
         
         # Estrai feature linguistiche
@@ -943,23 +999,22 @@ class PatternRecognitionSystem:
 
     def _calculate_embedding(self, text: str) -> List[float]:
         """
-        Calcola un embedding semplice per il testo
+        Calcola un embedding semplice per il testo (Simulato senza Spacy)
         Args:
             text: Testo da analizzare
         Returns:
             List[float]: Vettore embedding
         """
-        # Preprocessa il testo
-        doc = self.nlp(text)
-        
-        # Usa i vettori delle parole per creare un embedding medio
-        if doc.vector_norm:
-            return doc.vector.tolist()
-            
-        # Se non ci sono vettori, restituisci un vettore di zeri
-        return [0.0] * 300  # spaCy usa vettori di dimensione 300
+        # Hash semplice del testo per generare un vettore pseudo-casuale ma deterministico
+        # Questo serve solo per mantenere la struttura dei dati, non ha significato semantico profondo senza un modello
+        import hashlib
+        hash_obj = hashlib.md5(text.encode())
+        # Usa l'hash per generare 300 float deterministici
+        seed = int(hash_obj.hexdigest(), 16)
+        np.random.seed(seed % (2**32)) 
+        return np.random.rand(300).tolist()
 
-    def _extract_linguistic_features(self, text: Union[str, spacy.tokens.doc.Doc]) -> Dict[str, float]:
+    def _extract_linguistic_features(self, text: Union[str, Any]) -> Dict[str, float]:
         """
         Estrae feature linguistiche dal testo
         Args:
@@ -973,7 +1028,7 @@ class PatternRecognitionSystem:
             
         # Preprocessa il testo
         preprocessed = self.preprocess_text(text)
-        tokens = word_tokenize(preprocessed)
+        tokens = self._tokenize(preprocessed)
         stemmed = [self.stemmer.stem(token) for token in tokens]
         
         # Inizializza il dizionario delle feature
@@ -1000,7 +1055,8 @@ class PatternRecognitionSystem:
         Returns:
             dict: Dizionario con le feature estratte
         """
-        tokens = self.preprocess_text(text)
+        preprocessed = self.preprocess_text(text)
+        tokens = self._tokenize(preprocessed)
         stemmed_tokens = [self.stemmer.stem(token) for token in tokens]
         
         features = {

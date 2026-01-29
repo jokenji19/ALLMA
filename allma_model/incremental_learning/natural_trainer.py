@@ -4,10 +4,19 @@ import logging
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from pathlib import Path
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import Dataset, DataLoader
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    Dataset = object
+    DataLoader = None
+    F = None
+    TORCH_AVAILABLE = False
 
 from .metrics import Metrics
 from .emotional_system import EmotionalSystem
@@ -172,7 +181,7 @@ class NaturalTrainer:
         
         return loss.item()
 
-    def _calculate_loss(self, output: str, target: str, emotion: str, context: Dict) -> torch.Tensor:
+    def _calculate_loss(self, output: str, target: str, emotion: str, context: Dict) -> 'torch.Tensor':
         """Calcola la loss considerando l'output, il target e il contesto emotivo"""
         # Tokenizza output e target
         output_tokens = self.tokenize(output)

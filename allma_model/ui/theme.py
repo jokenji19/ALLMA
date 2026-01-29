@@ -9,7 +9,7 @@ class Theme:
     # Names are semantic
 
     # Background Gradient (Vertical: Top -> Bottom)
-    # Light Blue/Periwinkle to White
+    # Light Blue/Periwinkle to White (Restored)
     bg_start = get_color_from_hex('#E3F2FD') 
     bg_end = get_color_from_hex('#FFFFFF')
 
@@ -27,8 +27,12 @@ class Theme:
     bubble_bot_bg = get_color_from_hex('#F3F4F6')  # Very light grey/white
     
     # Input field
-    input_bg = get_color_from_hex('#FFFFFF')
+    input_bg = get_color_from_hex('#FFFFFF') # White Capsule
     input_border = get_color_from_hex('#E5E7EB')
+    
+    # Restoring unused but safe attributes to prevent crashes
+    glow_end = primary 
+    capsule_bg = input_bg
 
     @staticmethod
     def get_vertical_gradient_texture(color_top, color_bottom):

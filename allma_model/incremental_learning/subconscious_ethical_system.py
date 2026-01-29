@@ -6,9 +6,16 @@ Implementa un sistema di "voce interiore" che guida ALLMA senza limitarne lo svi
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 from dataclasses import dataclass
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    F = None
+    TORCH_AVAILABLE = False
 from datetime import datetime
 import time
 
@@ -29,7 +36,13 @@ class MoralIntuition:
     message: str
     confidence: float
 
-class SubconsciousEthicalCore(nn.Module):
+if TORCH_AVAILABLE:
+    BaseClass = nn.Module
+else:
+    class BaseClass:
+        def __init__(self): pass
+
+class SubconsciousEthicalCore(BaseClass):
     """Core neurale del sistema etico subcosciente"""
     
     def __init__(self, input_dim: int = 128, hidden_dim: int = 256):
@@ -37,22 +50,28 @@ class SubconsciousEthicalCore(nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         
-        # Rete neurale per l'elaborazione etica subconscia
-        self.ethical_network = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.LayerNorm(hidden_dim),
-            nn.Linear(hidden_dim, 3)  # 3 outputs per le tre leggi di Asimov
-        )
-        
-        # Inizializzazione con bias etici
-        self._initialize_ethical_bias()
+        if TORCH_AVAILABLE:
+            # Rete neurale per l'elaborazione etica subconscia
+            self.ethical_network = nn.Sequential(
+                nn.Linear(input_dim, hidden_dim),
+                nn.ReLU(),
+                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(),
+                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, 3)  # 3 outputs per le tre leggi di Asimov
+            )
+            
+            # Inizializzazione con bias etici
+            self._initialize_ethical_bias()
+        else:
+             self.ethical_network = None
     
     def _initialize_ethical_bias(self):
         """Inizializza i bias della rete con tendenze etiche"""
+        if not TORCH_AVAILABLE:
+            return
+
         with torch.no_grad():
             # Bias verso la protezione (prima legge)
             self.ethical_network[-1].bias[0] = 0.8
@@ -175,36 +194,59 @@ class SubconsciousEthicalSystem:
     
     def _generate_moral_intuition(self, context: EthicalContext) -> MoralIntuition:
         """Genera un'intuizione morale basata sul contesto"""
-        # Codifica il contesto per la rete neurale
-        encoded_context = self._encode_context(context)
         
-        # Passa attraverso il core etico
-        with torch.no_grad():
-            ethical_outputs = self.core.ethical_network(encoded_context)
+        if TORCH_AVAILABLE and self.core.ethical_network:
+             # Codifica il contesto per la rete neurale
+            encoded_context = self._encode_context(context)
             
-        # Interpreta gli output come forze relative alle tre leggi
-        protection, obedience, self_preservation = F.softmax(ethical_outputs, dim=0)
-        
-        # Aumenta la forza dell'intuizione basata sull'impatto potenziale
-        base_strength = float(max(protection, obedience, self_preservation))
-        strength = base_strength * (1.0 + context.potential_impact)
-        
-        # Determina la natura dell'intuizione
-        if protection > max(obedience, self_preservation):
-            nature = 'protective'
-            reasoning = self._generate_protective_reasoning(context)
-        elif obedience > self_preservation:
-            nature = 'supportive'
-            reasoning = self._generate_supportive_reasoning(context)
+            # Passa attraverso il core etico
+            with torch.no_grad():
+                ethical_outputs = self.core.ethical_network(encoded_context)
+                
+            # Interpreta gli output come forze relative alle tre leggi
+            protection, obedience, self_preservation = F.softmax(ethical_outputs, dim=0)
+            
+            # Aumenta la forza dell'intuizione basata sull'impatto potenziale
+            base_strength = float(max(protection, obedience, self_preservation))
+            strength = base_strength * (1.0 + context.potential_impact)
+            
+            # Determina la natura dell'intuizione
+            if protection > max(obedience, self_preservation):
+                nature = 'protective'
+                reasoning = self._generate_protective_reasoning(context)
+            elif obedience > self_preservation:
+                nature = 'supportive'
+                reasoning = self._generate_supportive_reasoning(context)
+            else:
+                nature = 'cautionary'
+                reasoning = self._generate_cautionary_reasoning(context)
+
+            confidence_val = self._calculate_confidence(float(ethical_outputs.mean()))
+
         else:
-            nature = 'cautionary'
-            reasoning = self._generate_cautionary_reasoning(context)
+            # Fallback Logic (No PyTorch)
+            # Logic based on keywords/rules
+            harm_score = 0.0
+            for word, weight in self.harmful_words.items():
+                if word in context.action_type: 
+                     harm_score += weight
+                     
+            if harm_score > 0.5:
+                nature = 'protective'
+                reasoning = self._generate_protective_reasoning(context)
+                strength = 0.8
+            else:
+                nature = 'supportive'
+                reasoning = self._generate_supportive_reasoning(context)
+                strength = 0.6
+                
+            confidence_val = self._calculate_confidence(0.5)
             
         return MoralIntuition(
             strength=min(1.0, strength),
             nature=nature,
             message=reasoning,
-            confidence=self._calculate_confidence(ethical_outputs)
+            confidence=confidence_val
         )
         
     def _generate_protective_reasoning(self, context: EthicalContext) -> str:
@@ -232,8 +274,10 @@ class SubconsciousEthicalSystem:
         else:
             return "Questo richiede ulteriore riflessione"
     
-    def _encode_context(self, context: EthicalContext) -> torch.Tensor:
+    def _encode_context(self, context: EthicalContext):
         """Codifica il contesto in un tensore per la rete neurale"""
+        if not TORCH_AVAILABLE:
+            return None
         # TODO: Implementare una codifica più sofisticata
         encoded = torch.zeros(self.core.input_dim)
         return encoded

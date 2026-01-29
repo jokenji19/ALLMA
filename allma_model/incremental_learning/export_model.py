@@ -1,55 +1,69 @@
-import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch.nn as nn
 import os
 import shutil
-from torch.utils.mobile_optimizer import optimize_for_mobile
+try:
+    import torch
+    import torch.nn as nn
+    from torch.utils.mobile_optimizer import optimize_for_mobile
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    optimize_for_mobile = None
+    TORCH_AVAILABLE = False
 from pathlib import Path
 
-class CustomAttention(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.num_attention_heads = config.n_head
-        self.hidden_size = config.n_embd
-        self.head_dim = self.hidden_size // self.num_attention_heads
-        self.scale = self.head_dim ** -0.5
-        
-    def forward(self, query, key, value, attention_mask=None):
-        batch_size = query.size(0)
-        
-        # Reshape for multi-head attention
-        query = query.view(batch_size, -1, self.num_attention_heads, self.head_dim).transpose(1, 2)
-        key = key.view(batch_size, -1, self.num_attention_heads, self.head_dim).transpose(1, 2)
-        value = value.view(batch_size, -1, self.num_attention_heads, self.head_dim).transpose(1, 2)
-        
-        # Calculate attention scores
-        attention_scores = torch.matmul(query, key.transpose(-2, -1)) * self.scale
-        
-        if attention_mask is not None:
-            attention_scores = attention_scores.masked_fill(attention_mask == 0, float('-inf'))
-        
-        attention_probs = torch.softmax(attention_scores, dim=-1)
-        context = torch.matmul(attention_probs, value)
-        
-        # Reshape back
-        context = context.transpose(1, 2).contiguous()
-        context = context.view(batch_size, -1, self.hidden_size)
-        
-        return context
+if TORCH_AVAILABLE:
+    class CustomAttention(nn.Module):
+        def __init__(self, config):
+            super().__init__()
+            self.num_attention_heads = config.n_head
+            self.hidden_size = config.n_embd
+            self.head_dim = self.hidden_size // self.num_attention_heads
+            self.scale = self.head_dim ** -0.5
+            
+        def forward(self, query, key, value, attention_mask=None):
+            batch_size = query.size(0)
+            
+            # Reshape for multi-head attention
+            query = query.view(batch_size, -1, self.num_attention_heads, self.head_dim).transpose(1, 2)
+            key = key.view(batch_size, -1, self.num_attention_heads, self.head_dim).transpose(1, 2)
+            value = value.view(batch_size, -1, self.num_attention_heads, self.head_dim).transpose(1, 2)
+            
+            # Calculate attention scores
+            attention_scores = torch.matmul(query, key.transpose(-2, -1)) * self.scale
+            
+            if attention_mask is not None:
+                attention_scores = attention_scores.masked_fill(attention_mask == 0, float('-inf'))
+            
+            attention_probs = torch.softmax(attention_scores, dim=-1)
+            context = torch.matmul(attention_probs, value)
+            
+            # Reshape back
+            context = context.transpose(1, 2).contiguous()
+            context = context.view(batch_size, -1, self.hidden_size)
+            
+            return context
 
-class SimplifiedDialoGPT(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
-        self.tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
+    class SimplifiedDialoGPT(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
+            self.tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
+            
+            # Replace attention layers with custom implementation
+            for layer in self.model.transformer.h:
+                layer.attn.attention = CustomAttention(self.model.config)
+            
+        def forward(self, input_ids):
+            outputs = self.model(input_ids)
+            return outputs.logits
+else:
+    class CustomAttention:
+        pass
         
-        # Replace attention layers with custom implementation
-        for layer in self.model.transformer.h:
-            layer.attn.attention = CustomAttention(self.model.config)
-        
-    def forward(self, input_ids):
-        outputs = self.model(input_ids)
-        return outputs.logits
+    class SimplifiedDialoGPT:
+        pass
 
 def export_model():
     print("Starting model export...")

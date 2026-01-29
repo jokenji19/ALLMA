@@ -1,4 +1,14 @@
-import torch
+try:
+    import torch
+    import torch.nn as nn
+    from torch.utils.mobile_optimizer import optimize_for_mobile
+    TORCH_AVAILABLE = True
+except ImportError:
+    print("Torch non disponibile, impossibile convertire per mobile")
+    torch = None
+    nn = None
+    TORCH_AVAILABLE = False
+    exit(0)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
 import shutil

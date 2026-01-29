@@ -147,8 +147,14 @@ Gestisce l'ottimizzazione automatica delle prestazioni del sistema
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
-import torch
-import torch.nn as nn
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    TORCH_AVAILABLE = False
 # from sklearn.metrics import mean_squared_error
 import numpy as np
 

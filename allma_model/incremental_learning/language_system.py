@@ -18,7 +18,9 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, List, Set, Any
 import locale
 import json
-import spacy
+import re
+import math
+# import spacy # Removed for ALLMA Neural-Light Architecture
 
 class ResponseStyle(Enum):
     FORMAL = 1
@@ -100,7 +102,9 @@ class LanguageContext:
 
 class LanguageSystem:
     def __init__(self):
-        self.nlp = spacy.load("it_core_news_sm")
+        # NO SPACY - Using internal tokenizer
+        self.nlp = None
+            
         self.initialize_language()
         
         # Inizializza il contesto
@@ -144,55 +148,41 @@ class LanguageSystem:
 
     def process_input(self, text: str) -> GeneratedResponse:
         """Elabora l'input dell'utente e genera una risposta."""
-        doc = self.nlp(text)
         
-        # Debug spaCy dettagliato
-        print("\nAnalisi spaCy dettagliata:")
-        for token in doc:
-            print(f"\nToken: {token.text}")
-            print(f"  POS: {token.pos_}")
-            print(f"  DEP: {token.dep_}")
-            print(f"  HEAD: {token.head.text}")
-            print(f"  LEMMA: {token.lemma_}")
-            print(f"  SHAPE: {token.shape_}")
-            print(f"  TAG: {token.tag_}")
-            print(f"  IS_STOP: {token.is_stop}")
-            print(f"  IS_PUNCT: {token.is_punct}")
-            print(f"  IS_SPACE: {token.is_space}")
-            print(f"  IS_ALPHA: {token.is_alpha}")
-            print(f"  IS_DIGIT: {token.is_digit}")
-            print(f"  LIKE_NUM: {token.like_num}")
-            print(f"  LIKE_URL: {token.like_url}")
-            print(f"  LIKE_EMAIL: {token.like_email}")
-            print(f"  IS_OOV: {token.is_oov}")
-            print(f"  CHILDREN: {[child.text for child in token.children]}")
-            print(f"  Role assegnato: {self._get_grammatical_role(token)}")
+        # --- NEW ARCHITECTURE: Fast Logic + LLM ---
+        # 1. Tier 1: Analisi Rapida (Grammatica Regex)
         
-        # Analisi della frase
+        # Tokenizzazione semplice
+        words = re.findall(r'\w+|[^\w\s]', text, re.UNICODE)
+        
+        # Analisi rudimentale dei componenti
         components = []
-        for token in doc:
-            role = self._get_grammatical_role(token)
+        for i, word in enumerate(words):
+            # Eauristica base per i ruoli (molto approssimativa, va bene per Tier 1)
+            role = "altro"
+            if i == 0: role = "soggetto_probabile" # In italiano spesso inizia soggetto
+            
             comp = GrammaticalComponent(
-                text=token.text,
+                text=word,
                 role=role,
-                type=token.pos_,
-                position=token.i
+                type="unknown",
+                position=i
             )
             components.append(comp)
         
-        # Rileva l'intento
-        intent = self._detect_intent(doc)
+        # Rileva l'intento (Enhanced Rule Based)
+        intent = self._detect_intent_fast(text)
         
-        # Analizza il sentiment
-        sentiment = self._analyze_sentiment(doc)
+        # Analizza il sentiment (Keyword Based)
+        sentiment = self._analyze_sentiment_fast(text)
         
         # Crea l'oggetto Understanding
         understanding = Understanding(
             components=components,
             intent=intent,
             sentiment=sentiment,
-            entities=self._extract_entities(doc),
-            confidence=0.8
+            entities=self._extract_entities_fast(text),
+            confidence=0.7 # Confidence più bassa senza LLM deep analysis
         )
         
         # Aggiorna il contesto
@@ -202,7 +192,7 @@ class LanguageSystem:
         response_text, style = self._generate_response(understanding)
         
         # Identifica i punti di apprendimento
-        learning_points = self._identify_learning_points(understanding)
+        learning_points = [] # Learning is handled by LLM core mostly now
         
         # Crea e restituisci la risposta
         return GeneratedResponse(
@@ -211,10 +201,43 @@ class LanguageSystem:
             context=self.context,
             learning_points=learning_points,
             style=style,
-            confidence=0.8,
+            confidence=0.7,
             alternatives=[],
             context_updates={}
         )
+
+    def _detect_intent_fast(self, text: str) -> str:
+        text_lower = text.lower()
+        if "?" in text or any(w in text_lower for w in ["come", "dove", "quando", "perché", "chi"]):
+            return "question"
+        elif any(w in text_lower for w in ["ciao", "salve", "buongiorno", "buonasera", "hey"]):
+            return "greeting"
+        elif any(w in text_lower for w in ["grazie", "gentile"]):
+            return "gratitude"
+        elif "mi chiamo" in text_lower or "sono" in text_lower:
+             return "introduction"
+        return "statement"
+
+    def _analyze_sentiment_fast(self, text: str) -> float:
+        # Simple weighted word list
+        pos_words = {"bene", "felice", "bello", "ottimo", "piace", "grazie", "vittoria"}
+        neg_words = {"male", "triste", "brutto", "pessimo", "odio", "rabbia", "errore"}
+        
+        score = 0
+        words = text.lower().split()
+        for w in words:
+            if w in pos_words: score += 1
+            if w in neg_words: score -= 1
+            
+        # Normalize to 0-1
+        return 0.5 + (score * 0.1) # Center at 0.5, cap at logic boundaries elsewhere
+
+    def _extract_entities_fast(self, text: str) -> Dict:
+        # Regex per trovare parole maiuscole non a inizio frase (Nomi propri potenziali)
+        entities = {}
+        # Semplicistica: trova parole che iniziano con maiuscola dentro la frase
+        # Note: Tier 1 extraction is weak, rely on LLM for real NER
+        return entities
 
     def _get_grammatical_role(self, token) -> str:
         """Determina il ruolo grammaticale di un token"""

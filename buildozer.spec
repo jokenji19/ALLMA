@@ -13,7 +13,7 @@ package.domain = org.allma
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin
+source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin,html,css,js
 
 # (list) List of inclusions using pattern matching
 # Build 148: Explicit Code Blob Include
@@ -30,7 +30,7 @@ source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .githu
 source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md
 
 # (str) Application versioning (method 1)
-version = 0.1
+version = 0.54
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
@@ -69,7 +69,7 @@ orientation = portrait
 fullscreen = 0
 
 # (str) SoftInputMode (adjustResize: standard behavior, backed by manual padding if needed)
-android.softinput_mode = adjustResize
+android.softinput_mode = adjustPan
 
 # (string) Presplash background color (for android)
 # Supported formats are: #RRGGBB #AARRGGBB or one of the following names:

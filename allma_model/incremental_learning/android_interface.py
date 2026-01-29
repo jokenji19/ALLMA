@@ -1,4 +1,9 @@
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 import json
 from typing import Dict, Any, Optional
 from .allma_core import ALLMA

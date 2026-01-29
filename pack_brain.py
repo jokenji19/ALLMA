@@ -11,8 +11,8 @@ def pack_and_update():
     # Create in-memory zip
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        # 1. Walk allma_model
         for root, dirs, files in os.walk('allma_model'):
-            # clean unwanted
             dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', '.DS_Store']]
             for file in files:
                 if file in ['.DS_Store', '.gitignore', 'allma_diary.json']: 
@@ -21,8 +21,22 @@ def pack_and_update():
                 
                 abs_path = os.path.join(root, file)
                 rel_path = os.path.relpath(abs_path, '.')
-                print(f"Adding {rel_path}", flush=True)
+                print(f"Adding (Model) {rel_path}", flush=True)
                 zf.write(abs_path, rel_path)
+
+        # 2. Walk assets
+        if os.path.exists('assets'):
+            for root, dirs, files in os.walk('assets'):
+                dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', '.DS_Store']]
+                for file in files:
+                    if file in ['.DS_Store']: continue
+                    
+                    abs_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(abs_path, '.')
+                    print(f"Adding (Assets) {rel_path}", flush=True)
+                    zf.write(abs_path, rel_path)
+        else:
+            print("WARNING: assets directory not found!", flush=True)
     
     encoded = base64.b64encode(buffer.getvalue()).decode('utf-8')
     print(f"Blob size: {len(encoded)} chars", flush=True)

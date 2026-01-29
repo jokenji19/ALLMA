@@ -17,12 +17,9 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple, Any
 from enum import Enum
 from datetime import datetime
-import time
-import numpy as np
-from collections import defaultdict
-import logging
-import spacy
 import re
+import json
+import math
 
 class EmotionType(Enum):
     """Tipi di emozioni supportate con maggiore granularità"""
@@ -212,7 +209,9 @@ class EmotionalSystem:
     
     def __init__(self):
         """Inizializza il sistema emotivo"""
-        self.nlp = spacy.load("it_core_news_lg")
+        # NO SPACY - Architecture upgraded to LLM-Hybrid
+        self.nlp = None 
+            
         self.emotional_memory = []
         self.context_window = []
         self._load_emotional_lexicon()
@@ -370,28 +369,39 @@ class EmotionalSystem:
         if text is None:
             raise ValueError("Il testo non può essere None")
             
-        # Analizza il testo con spaCy
-        doc = self.nlp(text)
+        if text is None:
+            raise ValueError("Il testo non può essere None")
+            
+        # --- NEW ARCHITECTURE: LLM-Ready Pattern Matching ---
+        # 1. Analisi Superficiale (Fast Tier) - Pattern Matching locale
+        triggers = self._extract_emotional_triggers_fast(text)
+        emotion_scores = self._analyze_emotional_content_text(text)
         
-        # Estrai informazioni rilevanti
-        triggers = self._extract_emotional_triggers(doc)
-        time_ref = self._extract_time_reference(doc)
-        social_context = self._extract_social_context(doc)
-        intensity_mods = self._extract_intensity_modifiers(doc)
+        # 2. Analisi Profonda (Deep Tier) - LLM Hook
+        # In un sistema connesso, qui passeremmo il testo all'LLM se l'analisi superficiale è incerta.
+        # Per ora, usiamo l'analisi pattern avanzata come proxy robusto.
         
-        # Analizza il contenuto emotivo
-        emotion_scores = self._analyze_emotional_content(doc)
+        # Estrai informazioni ausiliarie con regex
+        time_ref = self._extract_time_reference_text(text)
+        intensity_mods = self._extract_intensity_modifiers_text(text)
         
-        # Determina l'emozione primaria
+        # Determina l'emozione primaria dai punteggi
         primary_emotion = self._determine_primary_emotion(emotion_scores)
         
         # Trova emozioni secondarie
         secondary_emotions = self._find_secondary_emotions(emotion_scores, primary_emotion)
         
-        # Calcola intensità e valenza
+        # Calcola intensità
         base_intensity = primary_emotion.intensity
-        intensity = base_intensity * sum(intensity_mods.values()) if intensity_mods else base_intensity
-        valence = 0.5  # Valore neutro di default
+        
+        # Applica modificatori di intensità
+        multiplier = 1.0
+        for mod, val in intensity_mods.items():
+            if mod in text.lower():
+                multiplier *= val
+        
+        intensity = min(1.0, base_intensity * multiplier)
+        valence = 0.5  # Neutral default, refined by primary emotion logic if needed
         
         # Crea l'oggetto Emotion
         emotion = Emotion(
@@ -403,10 +413,7 @@ class EmotionalSystem:
         
         # Aggiorna la memoria emotiva
         if context:
-            if isinstance(context, dict):
-                context_key = str(context)
-            else:
-                context_key = str(context)
+            context_key = str(context)
             self.context_emotions[context_key].append(emotion)
             
             # Mantieni solo le ultime 10 emozioni per contesto
@@ -421,43 +428,41 @@ class EmotionalSystem:
         
         return emotion
 
-    def _extract_emotional_triggers(self, doc) -> List[str]:
-        """Estrae i trigger emotivi dal testo"""
-        triggers = []
+
         
-        # Cerca eventi o situazioni che causano l'emozione
-        for sent in doc.sents:
-            for token in sent:
-                if token.dep_ in ["nsubj", "dobj"] and not token.is_stop:
-                    triggers.append(token.text)
+    def _extract_emotional_triggers_fast(self, text: str) -> List[str]:
+        """Estrae i trigger emotivi dal testo (Regex/Keyword fast method)"""
+        triggers = []
+        text_lower = text.lower()
+        
+        # Basic trigger patterns (causality)
+        causal_markers = ["perché", "causa", "dovuto a", "colpa di", "grazie a"]
+        for marker in causal_markers:
+            if marker in text_lower:
+                # Extract context around marker (simple approximation)
+                parts = text_lower.split(marker)
+                if len(parts) > 1:
+                    triggers.append(parts[1].strip().split('.')[0]) # Take clause after marker
                     
         return triggers
-        
-    def _extract_time_reference(self, doc) -> str:
-        """Estrae riferimenti temporali"""
+
+    def _extract_time_reference_text(self, text: str) -> str:
+        """Estrae riferimenti temporali dal testo"""
         time_indicators = {
-            "presente": ["ora", "adesso", "oggi"],
-            "passato": ["ieri", "prima", "scorso"],
-            "futuro": ["domani", "dopo", "prossimo"]
+            "presente": ["ora", "adesso", "oggi", "momento"],
+            "passato": ["ieri", "prima", "scorso", "passato", "ero", "stavo"],
+            "futuro": ["domani", "dopo", "prossimo", "futuro", "sarò", "farò"]
         }
         
-        text_lower = doc.text.lower()
+        text_lower = text.lower()
         for timeframe, indicators in time_indicators.items():
             if any(ind in text_lower for ind in indicators):
                 return timeframe
                 
         return "presente"
         
-    def _extract_social_context(self, doc) -> Dict[str, Any]:
-        """Estrae il contesto sociale"""
-        return {
-            "personal": any(word in doc.text.lower() for word in ["io", "mi", "il", "la", "che", "di"]),
-            "interpersonal": any(word in doc.text.lower() for word in ["tu", "ti", "te", "noi", "ci"]),
-            "formal": any(word in doc.text.lower() for word in ["lei", "voi", "loro"])
-        }
-        
-    def _extract_intensity_modifiers(self, doc) -> Dict[str, float]:
-        """Estrae modificatori di intensità"""
+    def _extract_intensity_modifiers_text(self, text: str) -> Dict[str, float]:
+        """Estrae modificatori di intensità dal testo"""
         intensity_modifiers = {
             "molto": 1.5,
             "poco": 0.5,
@@ -478,12 +483,14 @@ class EmotionalSystem:
         }
         
         modifiers = {}
-        for token in doc:
-            if token.text.lower() in intensity_modifiers:
-                modifiers[token.text.lower()] = intensity_modifiers[token.text.lower()]
+        # Simple tokenization by splitting on non-alphanumeric
+        tokens = re.findall(r'\w+', text.lower())
+        for token in tokens:
+            if token in intensity_modifiers:
+                modifiers[token] = intensity_modifiers[token]
                 
         return modifiers
-        
+
     def _load_emotional_lexicon(self):
         """Carica il lessico emotivo"""
         self.emotional_lexicon = {
@@ -552,6 +559,35 @@ class EmotionalSystem:
                                     if pattern in part:
                                         emotion_scores[emotion] = max(emotion_scores[emotion], weight)
                                         
+        # Normalizza i punteggi
+        max_score = max(emotion_scores.values(), default=0.0)
+        if max_score > 0:
+            for emotion in emotion_scores:
+                emotion_scores[emotion] = float(emotion_scores[emotion] / max_score)
+                
+        return emotion_scores
+
+    def _analyze_emotional_content_text(self, text: str) -> Dict[EmotionType, float]:
+        """Analizza il contenuto emotivo del testo (Fallback senza spaCy)"""
+        emotion_scores = {emotion: 0.0 for emotion in EmotionType}
+        text = text.lower()
+        
+        # Determina la lingua
+        language = "it" if any(word in text for word in ["sono", "mi", "il", "la", "che", "di"]) else "en"
+        
+        # Analizza il testo per ogni emozione
+        for emotion, patterns in self.emotion_patterns[language].items():
+            for pattern_list, weight in patterns:
+                for pattern in pattern_list:
+                    if pattern in text:
+                        emotion_scores[emotion] = max(emotion_scores[emotion], weight)
+                        
+        # Analizza parole chiave specifiche
+        for emotion, keywords in self.emotional_lexicon[language].items():
+            for keyword in keywords:
+                if keyword in text:
+                    emotion_scores[emotion] = max(emotion_scores[emotion], 0.8)
+                    
         # Normalizza i punteggi
         max_score = max(emotion_scores.values(), default=0.0)
         if max_score > 0:

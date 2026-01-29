@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <!-- REMOVED interactive-widget to rely on standard adjustResize behavior -->
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ALLMA AI</title>
+    <!-- Use v24 assets -->
+    <link rel="stylesheet" href="style_v24.css">
+</head>
+
+<body>
+
+    <!-- Sidebar Backdrop -->
+    <div id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar Drawer -->
+    <aside id="sidebar">
+        <div class="sidebar-header">
+            <div class="brand">
+                <span class="logo-text">ALLMA</span>
+                <span class="version-tag">v0.47</span>
+            </div>
+        </div>
+
+        <div class="sidebar-content">
+            <!-- 1. Pannello Conversazioni (Default) -->
+            <div class="nav-section">
+                <div class="nav-label">CONVERSAZIONI</div>
+                <button class="nav-item new-chat" onclick="startNewChat()">
+                    <span class="icon">✨</span>
+                    <span>Nuova Chat</span>
+                </button>
+                <div class="history-list" id="history-list">
+                    <!-- History items will be populated dynamically -->
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- 2. Pannello ALLMA Memoria -->
+            <button class="nav-item" onclick="openPanel('memory')">
+                <span class="icon">🧠</span>
+                <span>ALLMA Memoria</span>
+            </button>
+
+            <!-- 3. Pannello Chat Vocale -->
+            <button class="nav-item" onclick="openPanel('voice')">
+                <span class="icon">🎙️</span>
+                <span>Chat Vocale</span>
+            </button>
+
+            <!-- 4. Impostazioni & Memoria -->
+            <button class="nav-item" onclick="openPanel('settings')">
+                <span class="icon">⚙️</span>
+                <span>Impostazioni</span>
+            </button>
+
+            <!-- Dark Mode Toggle -->
+            <button class="nav-item" onclick="toggleTheme()">
+                <span class="icon" id="theme-icon">🌙</span>
+                <span id="theme-text">Dark Mode</span>
+            </button>
+
+            <div class="divider"></div>
+
+            <!-- 5. Profilo (Backup) -->
+            <button class="nav-item" onclick="openUserModal()">
+                <span class="icon">👤</span>
+                <span>Profilo & Dati</span>
+            </button>
+        </div>
+
+        <!-- Allma Connection Panel -->
+        <div class="connection-panel">
+            <div class="connection-header">
+                <span class="pulse-dot"></span> Connessione Allma
+            </div>
+            <div class="connection-content">
+                <div class="circular-chart" id="synergy-chart-container" style="--percentage: 0">
+                    <svg viewBox="0 0 36 36" class="circular-chart-svg">
+                        <path class="circle-bg"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        <path class="circle" id="synergy-circle-path" stroke-dasharray="0, 100"
+                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    </svg>
+                    <div class="percentage-text" id="synergy-percent">0%</div>
+                </div>
+            </div>
+            <div class="connection-label" id="synergy-status">Simbiosi Attiva</div>
+        </div>
+
+        <div class="sidebar-footer" onclick="openUserModal(); console.log('Footer clicked')">
+            <div class="user-profile">
+                <!-- Add onclick here too for redundancy -->
+                <div class="avatar" id="user-avatar" onclick="openUserModal(); event.stopPropagation()">?</div>
+                <div class="user-info" onclick="openUserModal(); event.stopPropagation()">
+                    <div class="username" id="user-name-display">Ospite</div>
+                    <div class="status" id="user-time-display">--:--</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- User Info Modal -->
+    <div id="user-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <h3>Il tuo Profilo</h3>
+            <p>Racconta ad ALLMA chi sei.</p>
+
+            <div class="input-group">
+                <label>Nome</label>
+                <input type="text" id="input-name" placeholder="Es. Erik">
+            </div>
+
+            <div class="input-group">
+                <label>Età</label>
+                <input type="number" id="input-age" placeholder="Es. 25">
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeUserModal()">Annulla</button>
+                <button class="btn-save" onclick="saveUserProfile()">Salva</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Floating Header (Menu Button) -->
+    <div id="top-header">
+        <button id="menu-btn" onclick="toggleSidebar()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Main Chat Container (Flex Item 1) -->
+    <div id="chat-container">
+        <!-- Messages here -->
+        <div class="spacer-top"></div>
+    </div>
+
+    <!-- Input Area - Redesigned Layout -->
+    <div id="input-area">
+        <div class="capsule">
+            <input type="text" id="message-input" placeholder="Message" autocomplete="off"
+                onkeypress="handleInputKey(event)">
+        </div>
+
+        <button id="voice-mode-btn" onclick="openVoiceMode()">
+            <!-- Soundwave Icon -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round">
+                <line x1="12" y1="20" x2="12" y2="10"></line>
+                <line x1="18" y1="20" x2="18" y2="4"></line>
+                <line x1="6" y1="20" x2="6" y2="16"></line>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Templates -->
+    <template id="tmpl-user">
+        <div class="message-wrapper user">
+            <div class="message-bubble user">
+                <span class="content"></span>
+            </div>
+        </div>
+    </template>
+
+    <template id="tmpl-bot">
+        <div class="message-wrapper bot">
+            <div class="reasoning-container hidden">
+                <div class="reasoning-header" onclick="toggleReasoning(this)">
+                    <span>💡 Pensiero</span>
+                </div>
+                <div class="reasoning-content"></div>
+            </div>
+            <div class="message-bubble bot">
+                <span class="content"></span>
+            </div>
+        </div>
+    </template>
+
+    <!-- Voice Overlay -->
+    <div id="voice-overlay">
+        <div class="voice-header">
+            <div class="voice-title">Modalità Vocale</div>
+        </div>
+
+        <div class="voice-visualizer">
+            <div class="voice-circle" id="voice-circle"></div>
+        </div>
+
+        <div class="voice-text-container">
+            <div class="voice-text" id="voice-text">In ascolto...</div>
+        </div>
+
+        <div class="voice-controls">
+            <button class="voice-btn close" onclick="closeVoiceMode()">❌</button>
+            <!-- Maybe a toggle mic button here too later -->
+        </div>
+    </div>
+
+    <script src="script_v24.js"></script>
+</body>
+
+</html>

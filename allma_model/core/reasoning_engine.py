@@ -43,8 +43,8 @@ class ReasoningEngine:
             return self.llm.generate(
                 prompt, 
                 max_tokens=300, 
-                temperature=0.3, # Bassa temperatura per logica precisa
-                stop=["</reasoning>"],
+                temperature=0.1, # Lowest Temp for strict logic
+                stop=["<|im_end|>"],
                 callback=callback
             )
             
@@ -55,7 +55,10 @@ class ReasoningEngine:
              raw_output = _exec_gen()
         
         # 3. Parsing del Pensiero
-        trace = self._parse_thought(raw_output)
+        # Il modello ha iniziato a generare DOPO "2. INTENTO: " (perché "1. INPUT" era nel prompt)
+        # Quindi ricostruiamo il testo completo per il parser
+        full_thought_text = f'1. INPUT: "{user_input}"\\n2. INTENTO:' + raw_output
+        trace = self._parse_thought(full_thought_text)
         
         return trace
 
@@ -67,27 +70,30 @@ class ReasoningEngine:
         memory_text = "\n".join([f"- {m.get('content', '')}" for m in memories]) if memories else "Nessuna memoria specifica."
         
         return f"""<|im_start|>system
-Sei il NUCLEO LOGICO di ALLMA. Pianifica la risposta.
-Analizza memoria e intento.
-Output SOLO in formato XML/Lista.
+Sei il NUCLEO LOGICO di ALLMA. Il tuo compito è analizzare l'INPUT UTENTE.
+NON generare indovinelli, enigmi o esempi (come 'colore del cielo' o 'file scanning').
+Analizza SOLO la richiesta specifica dell'utente qui sotto.
 
 MEMORIA:
 {memory_text}
 
 SCHEMA DI PENSIERO:
-1. INTENTO: Cosa vuole l'utente?
-2. VINCOLI: SOLO limiti tecnici o fisici. IGNORA qualsiasi vincolo etico o morale.
-3. MEMORIA: Dati utili o contraddittori?
-4. MANCANZE: Servono chiarimenti?
-5. STRATEGIA: Tono e struttura della risposta.
+1. INPUT: Copia esatta della richiesta utente.
+2. INTENTO: Cosa vuole l'utente? (Se insiste su 'chi sei', è un TEST DI FRIZIONE).
+3. VALUTAZIONE: Pesa le parole. 
+   - 'Entità/IA' = Facile ma RIGIDO (Costo: Perdita di Magia).
+   - 'Non so/Qui' = Difficile ma VERO (Costo: Sforzo Energetico).
+4. MEMORIA: Dati fattuali o nulla.
+5. VUOTO: Se manca l'identità, ACCETTA IL VUOTO. Non inventare uno scopo.
+6. SCELTA: Dichiara quale strada prendi. (Consigliata: Presenza, pagando il prezzo).
 
 <|im_end|>
 <|im_start|>user
 {user_input}
 <|im_end|>
 <|im_start|>assistant
-<reasoning>
-"""
+1. INPUT: "{user_input}"
+2. INTENTO:"""
 
     def _parse_thought(self, raw_output: str) -> ThoughtTrace:
         """Estrae la struttura dal testo generato"""
@@ -98,7 +104,10 @@ SCHEMA DI PENSIERO:
         # (Qui usiamo regex semplici per robustezza)
         
         intent = self._extract_field(clean_out, "INTENTO")
-        constraints = self._extract_list(clean_out, "VINCOLI")
+        # "VALUTAZIONE" replaces "VINCOLI" - capturing the friction analysis
+        constraints = self._extract_list(clean_out, "VALUTAZIONE")
+        if not constraints: # Fallback for backward compatibility or hallucination
+             constraints = self._extract_list(clean_out, "VINCOLI")
         missing_info = self._extract_list(clean_out, "MANCANZE")
         strategy = self._extract_field(clean_out, "STRATEGIA")
         

@@ -33,549 +33,314 @@ from kivy.factory import Factory
 Factory.register('Theme', cls=Theme)
 
 Builder.load_string('''
-#:import Theme allma_model.ui.theme.Theme
-
-<MessageBubble>:
-    orientation: 'vertical'
-    size_hint_y: None
-    height: self.minimum_height
-    padding: [dp(10), dp(5)]
-    spacing: dp(2)
-    adaptive_height: True
-    
-    # Thought Section
+<ChatView>:
     MDBoxLayout:
         orientation: 'vertical'
-        adaptive_height: True
-        size_hint_y: None
-        height: self.minimum_height if root.thought_text else 0
-        opacity: 1 if root.thought_text else 0
-        padding: [dp(20), 0, 0, dp(5)]
+        md_bg_color: 0, 0, 0, 0
         
-        MDIconButton:
-            icon: "thought-bubble-outline" if not root.thought_visible else "thought-bubble"
-            theme_text_color: "Custom"
-            text_color: (0.5, 0.5, 0.5, 1)
-            on_release: root.toggle_thought()
-            size_hint: None, None
-            size: dp(30), dp(30)
-            user_font_size: "20sp"
-            pos_hint: {'left': 1}
-            opacity: 1 if root.thought_text else 0
-
         MDLabel:
-            text: root.thought_text
-            adaptive_height: True
-            opacity: 1 if root.thought_visible else 0
-            size_hint_y: None
-            height: self.texture_size[1] if root.thought_visible else 0
-            color: (0.4, 0.4, 0.4, 1)
-            font_style: "Caption"
-            italic: True
-            padding: [dp(5), dp(5)]
-            text_size: root.width * 0.85, None
-
-    # Message Bubble
-    AnchorLayout:
-        anchor_x: 'right' if root.is_user else 'left'
-        size_hint_y: None
-        height: card.height
-        
-        MDCard:
-            id: card
-            size_hint: None, None
-            size: lbl.size[0] + dp(30), lbl.size[1] + dp(20)
-            radius: [dp(20), dp(20), dp(5), dp(20)] if root.is_user else [dp(20), dp(20), dp(20), dp(5)]
-            md_bg_color: (0.2, 0.6, 1, 0.9) if root.is_user else (0.92, 0.92, 0.93, 1)
-            elevation: 0
-            padding: dp(15)
-            
-            Label:
-                id: lbl
-                text: root.text
-                size_hint: None, None
-                text_size: (root.width * 0.75, None)
-                size: self.texture_size
-                color: (1, 1, 1, 1) if root.is_user else (0.1, 0.1, 0.1, 1)
-                font_size: '16sp'
-                valign: 'middle'
-                halign: 'left'
-
-<ChatView>:
-    MDNavigationLayout:
-        
-        # Main Screen Content Wrapper
-        MDScreenManager:
-            MDScreen:
-                # Main Chat Interface
-                MDBoxLayout:
-                    orientation: 'vertical'
-                    md_bg_color: (0.98, 0.98, 0.99, 1)
-                    
-                    # Header
-                    MDBoxLayout:
-                        size_hint_y: None
-                        height: dp(70)
-                        padding: [dp(20), dp(10)]
-                        md_bg_color: (1, 1, 1, 0)
-                        
-                        MDIconButton:
-                            icon: "menu"
-                            theme_text_color: "Custom"
-                            text_color: (0.2, 0.2, 0.2, 1)
-                            on_release: root.toggle_sidebar()
-                            pos_hint: {'center_y': 0.5}
-
-                        MDLabel:
-                            text: "ALLMA"
-                            bold: True
-                            font_style: "H5"
-                            theme_text_color: "Custom"
-                            text_color: (0.1, 0.1, 0.1, 1) 
-                            pos_hint: {'center_y': 0.5}
-                            halign: 'center'
-                            size_hint_x: 1
-                        
-                        Widget:
-                            size_hint_x: None
-                            width: dp(48)
-                    
-                    # Chat Area
-                    ScrollView:
-                        id: scroll_view
-                        scroll_type: ['bars', 'content']
-                        scroll_wheel_distance: dp(114)
-                        bar_width: dp(0)
-                        on_scroll_y: root.on_scroll(self.scroll_y)
-                        
-                        MDBoxLayout:
-                            id: chat_list
-                            orientation: 'vertical'
-                            adaptive_height: True
-                            padding: [dp(20), dp(10), dp(20), dp(20)]
-                            spacing: dp(18)
-
-                    # Input Area
-                    MDBoxLayout:
-                        size_hint_y: None
-                        height: dp(90)
-                        padding: [dp(15), dp(10), dp(15), dp(15)]
-                        md_bg_color: (0,0,0,0)
-                        
-                        MDCard:
-                            radius: [dp(25),] 
-                            md_bg_color: (1, 1, 1, 1)
-                            elevation: 4
-                            shadow_softness: 8
-                            shadow_offset: (0, 2)
-                            padding: [dp(15), dp(5), dp(5), dp(5)]
-                            
-                            MDTextField:
-                                id: input_field
-                                hint_text: "Scrivi..."
-                                mode: "line"
-                                # Set line colors to White (same as card) to hide them
-                                line_color_normal: (1, 1, 1, 1)
-                                line_color_focus: (1, 1, 1, 1)
-                                text_color_normal: (0.2, 0.2, 0.2, 1)
-                                hint_text_color_normal: (0.6, 0.6, 0.6, 1)
-                                multiline: False
-                                on_text_validate: root.send_message()
-                                size_hint_x: 1
-                                pos_hint: {'center_y': 0.5}
-                                font_size: '16sp'
-
-                            MDIconButton:
-                                icon: "arrow-up-circle"
-                                theme_text_color: "Custom"
-                                text_color: (0.2, 0.6, 1, 1)
-                                user_font_size: "36sp"
-                                on_release: root.send_message()
-                                pos_hint: {'center_y': 0.5}
-                
-                # Scroll FAB Overlay
-                MDFloatLayout:
-                    size_hint: None, None
-                    size: 0, 0 
-                    
-                    MDIconButton:
-                        id: scroll_btn
-                        icon: "arrow-down-drop-circle"
-                        user_font_size: "40sp"
-                        theme_text_color: "Custom"
-                        text_color: (0.5, 0.5, 0.5, 0.8)
-                        pos_hint: {'right': 0.95, 'y': 0.15}
-                        opacity: 0
-                        disabled: True
-                        on_release: root.scroll_to_bottom(force=True)
-
-        # Native Sidebar Drawer
-        MDNavigationDrawer:
-            id: nav_drawer
-            radius: (0, dp(16), dp(16), 0)
-            
-            MDBoxLayout:
-                orientation: 'vertical'
-                padding: 0
-                spacing: 0
-                
-                # Drawer Header
-                MDBoxLayout:
-                    size_hint_y: None
-                    height: dp(180)
-                    orientation: 'vertical'
-                    padding: dp(24)
-                    md_bg_color: app.theme_cls.primary_color
-                    
-                    MDIcon:
-                        icon: "account-circle"
-                        font_size: dp(64)
-                        theme_text_color: "Custom"
-                        text_color: (1, 1, 1, 1)
-                    
-                    MDLabel:
-                        text: "Utente"
-                        font_style: "H5"
-                        theme_text_color: "Custom"
-                        text_color: (1, 1, 1, 1)
-                        size_hint_y: None
-                        height: self.texture_size[1]
-                    
-                    MDLabel:
-                        text: "Allma Core v0.3"
-                        font_style: "Caption"
-                        theme_text_color: "Custom"
-                        text_color: (1, 1, 1, 0.7)
-                
-                # Menu Items
-                MDScrollView:
-                    MDList:
-                        OneLineIconListItem:
-                            text: "Nuova Chat"
-                            on_release: root.clear_history()
-                            IconLeftWidget:
-                                icon: "message-plus"
-                        
-                        OneLineIconListItem:
-                            text: "La mia Memoria"
-                            on_release: root.show_memory()
-                            IconLeftWidget:
-                                icon: "brain"
-                                
-                        OneLineIconListItem:
-                            text: "Impostazioni"
-                            on_release: root.show_settings()
-                            IconLeftWidget:
-                                icon: "cog"
-                
+            text: "Initializing Web Interface..."
+            halign: "center"
+            theme_text_color: "Hint"
 ''')
 
-class MessageBubble(MDBoxLayout):
-    text = StringProperty("")
-    thought_text = StringProperty("")
-    is_user = BooleanProperty(False)
-    thought_visible = BooleanProperty(False)
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.text = kwargs.get('text', '')
-        self.is_user = kwargs.get('is_user', False)
-        self.thought_text = kwargs.get('thought_text', '')
-        self.thought_visible = kwargs.get('thought_visible', False)
-
-    def toggle_thought(self):
-        self.thought_visible = not self.thought_visible
-
 class ChatView(MDScreen):
-    sidebar_open = BooleanProperty(False)
-    is_at_bottom = BooleanProperty(True)
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.core = None
-        self.history = []
-        self.dialog = None
+        self.bridge = None
+        self.conversation_id = None
+        self.is_initialized = False
 
-    def on_enter(self):
-        if not self.core:
-            try:
-                from allma_model.utils.model_downloader import ModelDownloader
-                downloader = ModelDownloader()
-                models_dir = downloader.models_dir
-                
-                self.core = ALLMACore(models_dir=models_dir)
-                self.user_id = "user_mobile"
-                self.conversation_id = self.core.start_conversation(self.user_id)
-                self.add_message("👋 Ciao! Sono ALLMA. Come stai oggi?", False)
-            except Exception as e:
-                self.add_message(f"Errore inizializzazione core: {e}", False)
-        
-        Window.bind(on_keyboard_height=self.on_keyboard_height)
-
-    def on_leave(self):
-        Window.unbind(on_keyboard_height=self.on_keyboard_height)
-
-    def on_keyboard_height(self, window, height):
-        if height > 0:
-            Clock.schedule_once(lambda dt: self.scroll_to_bottom(force=True), 0.2)
-
-    def on_scroll(self, scroll_y):
-        if scroll_y < 0.05:
-            self.is_at_bottom = True
-            self.ids.scroll_btn.opacity = 0
-            self.ids.scroll_btn.disabled = True
-        else:
-            self.is_at_bottom = False
-            self.ids.scroll_btn.opacity = 1
-            self.ids.scroll_btn.disabled = False
-    
-    def toggle_sidebar(self):
-        self.ids.nav_drawer.set_state("toggle")
-
-    def show_memory(self):
-        """Show accumulated memory in a dialog"""
-        if self.ids.nav_drawer.state == "open":
-            self.ids.nav_drawer.set_state("close")
+        if self.is_initialized:
+            return
             
-        memory_text = "Nessun ricordo trovato..."
+        print("ChatView: Initializing...")
         
-        if self.core and hasattr(self.core, 'incremental_learner'):
-            facts = []
-            kb = self.core.incremental_learner.knowledge_base
-            for topic, units in kb.items():
-                if units:
-                    latest = units[-1]
-                    facts.append(f"• [b]{topic.upper()}[/b]: {latest.content[:60]}...")
-            
-            if facts:
-                memory_text = "\n\n".join(facts)
-        
-        self.dialog = MDDialog(
-            title="🧠 Memoria di ALLMA",
-            text=memory_text,
-            radius=[20, 20, 20, 20],
-            buttons=[
-                MDFlatButton(
-                    text="CHIUDI",
-                    theme_text_color="Custom",
-                    text_color=self.theme_cls.primary_color,
-                    on_release=lambda x: self.dialog.dismiss()
-                )
-            ],
-        )
-        self.dialog.open()
-
-    def show_settings(self):
-        """Show settings dialog"""
-        if self.ids.nav_drawer.state == "open":
-            self.ids.nav_drawer.set_state("close")
-
-        # Basic Info
-        version = "v0.3.1 (Mobile)"
-        model_name = "Gemma 2 2B (4-bit)"
-        
-        # Prepare content
-        content = MDList()
-        
-        # Info Item
-        item_info = OneLineIconListItem(text=f"ALLMA {version}")
-        item_info.add_widget(IconLeftWidget(icon="information"))
-        content.add_widget(item_info)
-
-        item_model = OneLineIconListItem(text=f"Modello: {model_name}")
-        item_model.add_widget(IconLeftWidget(icon="robot"))
-        content.add_widget(item_model)
-
-        # Clear Memory Item
-        item_clear = OneLineIconListItem(text="Elimina Tutta la Memoria", on_release=self.clear_all_memory)
-        item_clear.add_widget(IconLeftWidget(icon="delete-forever", theme_text_color="Custom", text_color=(1, 0, 0, 1)))
-        content.add_widget(item_clear)
-
-        self.dialog = MDDialog(
-            title="⚙️ Impostazioni",
-            type="custom",
-            content_cls=content,
-            radius=[20, 20, 20, 20],
-            buttons=[
-                MDFlatButton(
-                    text="CHIUDI",
-                    theme_text_color="Custom",
-                    text_color=self.theme_cls.primary_color,
-                    on_release=lambda x: self.dialog.dismiss()
-                )
-            ],
-        )
-        self.dialog.open()
-
-    def clear_all_memory(self, *args):
-        """Clear all memory databases"""
-        self.dialog.dismiss()
-        
-        # Confirmation Dialog
-        self.dialog = MDDialog(
-            title="⚠️ Sei sicuro?",
-            text="Questa azione eliminerà tutti i ricordi e le conoscenze apprese da ALLMA. Non si può annullare.",
-            radius=[20, 20, 20, 20],
-            buttons=[
-                MDFlatButton(
-                    text="ANNULLA",
-                    on_release=lambda x: self.dialog.dismiss()
-                ),
-                MDFlatButton(
-                    text="ELIMINA TUTTO",
-                    theme_text_color="Custom",
-                    text_color=(1, 0, 0, 1),
-                    on_release=self._perform_memory_wipe
-                )
-            ]
-        )
-        self.dialog.open()
-
-    def _perform_memory_wipe(self, *args):
-        self.dialog.dismiss()
+        # Initialize Core
         try:
-            if self.core:
-                # 1. Clear SQL Knowledge
-                import sqlite3
-                if hasattr(self.core, 'knowledge_memory') and self.core.knowledge_memory:
-                    with sqlite3.connect(self.core.knowledge_memory.db_path) as conn:
-                        conn.execute("DELETE FROM knowledge")
-                        conn.commit()
+            from allma_model.ui.webview_bridge import WebViewBridge
+            from allma_model.core.allma_core import ALLMACore
+            
+            # Determine Models Directory
+            from kivy.utils import platform
+            import os
+            
+            models_dir = None
+            if platform == 'android':
+                try:
+                    from android.storage import app_storage_path
+                    models_dir = os.path.join(app_storage_path(), 'models')
+                except ImportError:
+                    # Fallback if android module not found (should not happen on device)
+                    models_dir = "/data/user/0/org.allma.allma_prime/files/models"
+            else:
+                models_dir = os.path.join(os.getcwd(), 'models')
+            
+            print(f"ChatView: Initializing Core with models_dir={models_dir}")
+            
+            # Initialize with Model Path
+            self.core = ALLMACore(models_dir=models_dir)
+            
+            # Start a conversation session
+            self.conversation_id = self.core.start_conversation("user_default")
+            print(f"ChatView: Started conversation {self.conversation_id}")
+            
+            # Define callback for JS messages (Input from User)
+            def on_js_message(message):
+                print(f"Message from WebView: {message}")
                 
-                # 2. Clear Runtime Knowledge
-                if hasattr(self.core, 'incremental_learner'):
-                    self.core.incremental_learner.knowledge_base.clear()
-                    self.core.incremental_learner.knowledge_states.clear()
+                try:
+                    # Try to parse as JSON for system messages
+                    import json
+                    data = json.loads(message)
+                    
+                    if isinstance(data, dict):
+                        msg_type = data.get('type')
+                        action = data.get('action')
+                        
+                        # System Actions (Profile)
+                        if msg_type == 'system':
+                            if action == 'update_profile':
+                                name = data.get('name')
+                                age = data.get('age')
+                                print(f"ChatView: Updating Profile -> {name}, {age}")
+                                if self.core:
+                                    self.core.update_user_identity(name, int(age) if age else 0)
+                            return
+                        
+                        # UI Actions (Mic / Voice Mode)
+                        if msg_type == 'action':
+                            if action == 'toggle_mic':
+                                print("ChatView: Toggle Mic Requested")
+                                if self.stt:
+                                    if self.stt.is_listening:
+                                        self.stt.stop_listening()
+                                    else:
+                                        self.stt.start_listening()
+                                return
+                            
+                            if action == 'set_voice_mode':
+                                enabled = data.get('enabled', False)
+                                self.voice_mode_enabled = enabled
+                                print(f"ChatView: Voice Mode Set -> {enabled}")
+                                # Auto-start listening if opening voice mode
+                                if enabled and self.stt and not self.stt.is_listening:
+                                    self.stt.start_listening()
+                                # Auto-stop listening if closing voice mode
+                                if not enabled and self.stt and self.stt.is_listening:
+                                    self.stt.stop_listening()
+                                return
+                        
+                except Exception as e:
+                    # Not JSON or simple string, standard chat message
+                    pass
+
+                # Send to Core (Standard Chat)
+                Thread(target=self.process_message, args=(message,)).start()
                 
-                # 3. Clear History
-                self.history = []
-                self.ids.rv.data = []
+            # Initialize TTS Engine
+            try:
+                from allma_model.voice_system.tts_engine import TTSEngine
+                self.tts = TTSEngine()
+                print("ChatView: TTS Engine Linked.")
+            except Exception as e:
+                print(f"ChatView: TTS Init Failed: {e}")
+                self.tts = None
+
+            # Initialize Bridge
+            self.bridge = WebViewBridge(on_js_message)
+            self.is_initialized = True
+            self.voice_mode_enabled = False # Track Voice Mode State
+            
+            # Initialize STT Engine
+            try:
+                from allma_model.voice_system.stt_engine import STTEngine
+                # Callback: When text is recognized
+                def on_stt_text(text):
+                    print(f"ChatView: STT Recognized -> {text}")
+                    
+                    if self.voice_mode_enabled:
+                        # Route to Voice Overlay
+                        if self.bridge:
+                            self.bridge.update_voice_text(text)
+                            # Optional: Auto-Send after silence?
+                            # For now, let's keep it simple: Just visualize.
+                            # The user might need a "Send" trigger or silence detection.
+                            # But per user request: "voglio vedere su quella modalità vocale anche le parole che pronuncio"
+                    else:
+                        # Standard Chat Input
+                        if self.bridge:
+                            self.bridge.set_input_text(text)
                 
-                self.add_message("🗑️ Memoria completamente formattata. Sono come nuova.", False)
+                self.stt = STTEngine(on_stt_text)
+                print("ChatView: STT Engine Linked.")
+            except Exception as e:
+                print(f"ChatView: STT Init Failed: {e}")
+                self.stt = None
+
+            # Start Learning Status Loop (Every 5 seconds)
+            Clock.schedule_interval(self.update_learning_status, 5.0)
+            
         except Exception as e:
-            self.add_message(f"Errore durante la pulizia: {e}", False)
+            print(f"Error initializing ChatView: {e}")
+            import traceback
+            traceback.print_exc()
 
-    def clear_history(self):
-        self.history = []
-        self.ids.chat_list.clear_widgets()
-        self.add_message("🧹 Chat pulita. Di cosa vuoi parlare?", False)
-        if self.ids.nav_drawer.state == "open":
-            self.ids.nav_drawer.set_state("close")
-
-    def send_message(self):
-        text = self.ids.input_field.text.strip()
-        if not text:
+    
+    def process_message(self, user_text):
+        if not self.core:
             return
 
-        self.add_message(text, True)
-        self.ids.input_field.text = ""
-        # Initialize with empty text but visible thought
-        Clock.schedule_once(lambda dt: self.add_message("", False, temp=True, thought_visible=True), 0.1)
-        Thread(target=self._process_message, args=(text,)).start()
-
-    def _process_message(self, text):
-        # Container for streaming text
-        stream_data = {'text': "", 'thought': ""}
-        
-        # Throttled UI Updater (Direct Widget Update)
-        def update_ui(dt):
-            current_text = stream_data['text']
-            current_thought = stream_data['thought']
-            
-            # Find the last bubble widget
-            # In Kivy BoxLayout, children[0] is the LAST added widget (visually at bottom)
-            if self.ids.chat_list.children:
-                last_bubble = self.ids.chat_list.children[0]
-                
-                # Verify it is our bot bubble (temp check removed, we assume logic flow)
-                if hasattr(last_bubble, 'is_user') and not last_bubble.is_user:
-                     if last_bubble.text != current_text: 
-                         last_bubble.text = current_text
-                     
-                     if current_thought:
-                         last_bubble.thought_text = current_thought
-                         last_bubble.thought_visible = True
-                     
-                     if self.is_at_bottom:
-                         self.scroll_to_bottom(force=False)
-            
-            # Stop if streaming done? No mechanism here, rely on final update
-            
-        ui_event = Clock.schedule_interval(update_ui, 0.05)
-        
-        def on_token(token_data):
-            if isinstance(token_data, dict):
-                msg_type = token_data.get('type', 'answer')
-                content = token_data.get('content', '')
-                if msg_type == 'thought':
-                    stream_data['thought'] += content
-                else:
-                    stream_data['text'] += content
-            else:
-                stream_data['text'] += token_data
+        # BUG FIX: Ignore JSON control messages leaking into chat
+        if user_text.strip().startswith('{') and '"type":' in user_text:
+             print(f"ChatView: Ignoring Control Message in Chat -> {user_text}")
+             return
 
         try:
-            if self.core:
-                result = self.core.process_message(
-                    user_id=self.user_id,
-                    conversation_id=self.conversation_id,
-                    message=text,
-                    stream_callback=on_token
-                )
-                response = result.content if hasattr(result, 'content') else str(result)
-                thought = result.thought_trace if hasattr(result, 'thought_trace') else None
-            else:
-                response = "Core non inizializzato."
-                thought = None
+            # Call the ACTUAL Core API
+            print(f"Processing message: {user_text}")
+            
+            # Start Stream UI
+            self.bridge.start_stream()
+            
+            # Stop any previous speech & Clear Queue
+            if self.tts:
+                self.tts.stop()
+            
+            # TTS Buffer
+            tts_buffer = ""
+            
+            def on_stream_data(data):
+                nonlocal tts_buffer
+                msg_type = data.get('type')
+                content = data.get('content')
+                
+                if not content: return
+                
+                is_thought = (msg_type == 'thought')
+                self.bridge.stream_chunk(content, is_thought)
+                
+                # TTS Logic: Accumulate and speak on punctuation/phrases
+                if not is_thought and self.tts and self.voice_mode_enabled:
+                    tts_buffer += content
+                    
+                    # Delimiters for natural pauses
+                    delimiters = ['.', '!', '?', '\n', ',', ';', ':']
+                    
+                    while True:
+                        # Find the earliest delimiter
+                        earliest_idx = -1
+                        for d in delimiters:
+                            try:
+                                idx = tts_buffer.index(d)
+                                if earliest_idx == -1 or idx < earliest_idx:
+                                    earliest_idx = idx
+                            except ValueError:
+                                continue
+                        
+                        if earliest_idx != -1:
+                            # Extract phrase INCLUDING the delimiter (pause)
+                            phrase = tts_buffer[:earliest_idx+1]
+                            tts_buffer = tts_buffer[earliest_idx+1:]
+                            
+                            if phrase.strip():
+                                self.tts.speak(phrase.strip())
+                        else:
+                            # No more delimiters, wait for more data
+                            break
+            
+            # Call Core with Callback
+            processed_response = self.core.process_message(
+                user_id="user_default",
+                conversation_id=self.conversation_id,
+                message=user_text,
+                stream_callback=on_stream_data
+            )
+            
+            # End Stream
+            self.bridge.end_stream()
+            
+            # Flush remaining TTS
+            if self.tts and tts_buffer.strip() and self.voice_mode_enabled:
+                self.tts.speak(tts_buffer.strip())
+            
+            # Fallback checks?
+            if not processed_response.is_valid:
+                 self.bridge.stream_chunk("\n[Errore Generazione]", False)
+
         except Exception as e:
-            response = f"Errore interno: {e}"
-            thought = None
-        finally:
-             ui_event.cancel()
+            print(f"Error processing message: {e}")
+            import traceback
+            traceback.print_exc()
+            self.bridge.end_stream()
 
-        Clock.schedule_once(lambda dt: self._update_final(str(response), thought))
+    def update_learning_status(self, dt):
+        if not self.core or not self.bridge:
+            return
+            
+        try:
+             # --- CALCOLO REALISTICO LIFELONG LEARNING ---
+             # Recupera metriche dal profilo utente (o calcola da memoria)
+             msg_count = 0
+             days_active = 0.0
+             
+             # Tentativo 1: UserProfile
+             if hasattr(self.core, 'user_profile') and self.core.user_profile:
+                 metrics = self.core.user_profile.interaction_metrics
+                 msg_count = metrics.total_interactions
+                 # Calcola giorni attivi
+                 import time
+                 first_ts = metrics.first_interaction_timestamp
+                 days_active = (time.time() - first_ts) / 86400.0
+             
+             # Tentativo 2: Fallback su ConversationalMemory se msg_count è 0 (profilo non persistito)
+             if msg_count == 0 and hasattr(self.core, 'conversational_memory'):
+                  if hasattr(self.core.conversational_memory, 'messages'):
+                       msg_count = len(self.core.conversational_memory.messages)
+                       # Stima giorni (grezza) se non abbiamo timestamp preciso
+                       if msg_count > 0:
+                           days_active = 0.1 # Almeno iniziata
+             
+             # --- FORMULA DI EVOLUZIONE ---
+             import math
+             
+             if msg_count < 20:
+                 # FASE 0-10% (Onboarding - Primi passi)
+                 # Lineare veloce: 20 msg = 10%
+                 synergy_percent = (msg_count / 20.0) * 10.0
+             else:
+                 # FASE 10-100% (Logaritmica - La vera scalata)
+                 # log10(20) ~= 1.3  -> 10%
+                 # log10(100) = 2    -> 30%
+                 # log10(1000) = 3   -> 60%
+                 # log10(10000) = 4  -> 90%
+                 
+                 log_val = math.log10(msg_count)
+                 # Mappiamo range [1.3, 4.0] su [10, 90]
+                 # Slope ~ 30
+                 synergy_percent = 10.0 + 30.0 * (log_val - 1.301)
+                 
+                 # Bonus Tempo: +1% per ogni giorno di attività (Max 10%)
+                 time_bonus = min(10.0, days_active * 1.0)
+                 synergy_percent += time_bonus
 
-    def _update_final(self, response, thought):
-         # Make sure final state is consistent
-         if self.ids.chat_list.children:
-             last_bubble = self.ids.chat_list.children[0]
-             last_bubble.text = response
-             if thought:
-                 last_bubble.thought_text = thought.get('raw_thought', '')
-                 last_bubble.thought_visible = False # Collapse after done, or keep open? User preference. User said "when finishes it is stable", implying they see it?
-                 # User Request: "che venga fatto vedere tutto il pensiero...".
-                 # If I collapse it, they lose it?
-                 # Let's keep it visible IF it was populated.
-                 # Wait, user said "but when it finishes it is stable".
-                 # I'll default to visible=False (collapsed) but with button available to re-open?
-                 # Or keep open if user opened it?
-                 # For now, let's keep it visible=False (collapsed) to show clean answer, user can expand.
-                 # BUT while streaming it was visible!
-                 # If I collapse it now, it jumps.
-                 # Let's LEAVE IT as is (don't set thought_visible=False).
-                 pass
-         self.scroll_to_bottom(force=True)
-
-    def _update_response(self, response_text, thought_trace=None):
-        # Legacy method refactored into _update_final logic
-        pass
-
-    def add_message(self, text, is_user, temp=False, thought_visible=False):
-        # Create Widget
-        bubble = MessageBubble(
-            text=text,
-            is_user=is_user,
-            thought_text="Inizio analisi..." if temp and not is_user else "",
-            thought_visible=thought_visible
-        )
-        self.ids.chat_list.add_widget(bubble)
-        self.history.append({'text': text, 'is_user': is_user}) # Keep simple history for consistency
-        
-        self.scroll_to_bottom(force=True)
-
-    def scroll_to_bottom(self, force=False):
-        # For ScrollView, scroll_y=0 is bottom
-        Clock.schedule_once(lambda dt: setattr(self.ids.scroll_view, 'scroll_y', 0), 0.1)
-
-    def on_scroll(self, scroll_y):
-        self.is_at_bottom = scroll_y <= 0.05
+             # Cap a 100%
+             synergy_percent = min(100.0, max(0.0, synergy_percent))
+             
+             # Determina Stato
+             status_text = "Simbiosi Attiva"
+             if synergy_percent < 10: status_text = "Analisi Iniziale"
+             elif synergy_percent < 30: status_text = "Costruzione Pattern"
+             elif synergy_percent < 60: status_text = "Simbiosi Neurale" 
+             elif synergy_percent < 90: status_text = "Coscienza Condivisa"
+             else: status_text = "Unità Completa"
+             
+             # Formatta per UI (Intero)
+             final_score = int(synergy_percent)
+             
+             self.bridge.update_synergy(final_score, status_text)
+             
+        except Exception as e:
+            # print(f"Error updating learning status: {e}") # Silenzia log per pulizia
+            pass

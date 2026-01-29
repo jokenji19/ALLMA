@@ -1,6 +1,11 @@
 import os
 import json
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 import shutil
 from datetime import datetime
 from typing import Dict, Any, Optional

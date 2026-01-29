@@ -6,8 +6,14 @@ Patent Pending
 
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
-import torch
-import torch.nn as nn
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    TORCH_AVAILABLE = False
 from datetime import datetime
 from ..memory_system import MemorySystem
 from ..emotional_system import EmotionalSystem
@@ -56,7 +62,7 @@ class BasicIncrementalModel(nn.Module):
         self.hidden_state = None
         self.cell_state = None
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: 'torch.Tensor') -> 'torch.Tensor':
         """Forward pass del modello"""
         # Encoding
         encoded = self.encoder(x)
@@ -85,7 +91,7 @@ class BasicIncrementalModel(nn.Module):
         self.hidden_state = None
         self.cell_state = None
         
-    def update_incrementally(self, x: torch.Tensor, y: torch.Tensor,
+    def update_incrementally(self, x: 'torch.Tensor', y: 'torch.Tensor',
                            learning_rate: float = 0.01):
         """Aggiorna il modello in modo incrementale"""
         # Forward pass
@@ -227,7 +233,7 @@ class ALLMA(nn.Module):
         except Exception as e:
             return f"Mi dispiace, ho avuto un problema: {str(e)}"
             
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: 'torch.Tensor') -> 'torch.Tensor':
         """Forward pass del modello neurale"""
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)

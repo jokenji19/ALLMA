@@ -1,7 +1,12 @@
 from typing import List, Dict, Any, Set
 import re
 import logging
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    TORCH_AVAILABLE = False
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # Configura il logging

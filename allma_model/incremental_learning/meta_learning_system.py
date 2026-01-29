@@ -5,9 +5,16 @@ import json
 from datetime import datetime, timedelta
 from enum import Enum, auto
 from collections import defaultdict
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    nn = None
+    F = None
+    TORCH_AVAILABLE = False
 import math
 import time
 
@@ -75,18 +82,25 @@ class StrategyOptimizer:
     """Ottimizza le strategie di apprendimento usando tecniche di ML"""
     def __init__(self, input_dim: int = 10):
         self.input_dim = input_dim
-        self.model = nn.Sequential(
-            nn.Linear(input_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid()
-        )
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        if TORCH_AVAILABLE:
+            self.model = nn.Sequential(
+                nn.Linear(input_dim, 32),
+                nn.ReLU(),
+                nn.Linear(32, 16),
+                nn.ReLU(),
+                nn.Linear(16, 1),
+                nn.Sigmoid()
+            )
+            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.001)
+        else:
+            self.model = None
+            self.optimizer = None
         
-    def encode_strategy(self, strategy: LearningStrategy) -> torch.Tensor:
+    def encode_strategy(self, strategy: LearningStrategy) -> Any:
         """Codifica una strategia in un tensore"""
+        if not TORCH_AVAILABLE:
+            return None
+
         features = [
             strategy.success_rate,
             strategy.usage_count / 100,  # Normalizzato
@@ -103,6 +117,9 @@ class StrategyOptimizer:
         
     def train(self, strategies: List[LearningStrategy], target_scores: List[float]):
         """Addestra il modello sulle strategie esistenti"""
+        if not TORCH_AVAILABLE or self.model is None:
+            return 0.0
+
         X = torch.stack([self.encode_strategy(s) for s in strategies])
         y = torch.tensor(target_scores, dtype=torch.float32)
         
@@ -116,6 +133,9 @@ class StrategyOptimizer:
         
     def predict_effectiveness(self, strategy: LearningStrategy) -> float:
         """Predice l'efficacia di una strategia"""
+        if not TORCH_AVAILABLE or self.model is None:
+            return 0.5 # Default fallback
+
         with torch.no_grad():
             X = self.encode_strategy(strategy).unsqueeze(0)
             return self.model(X).item()
