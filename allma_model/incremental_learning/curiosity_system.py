@@ -21,6 +21,8 @@ except ImportError:
     torch = None
     TORCH_AVAILABLE = False
 
+
+
 class CuriosityDrive:
     """Sistema principale di gestione della curiosità"""
     def __init__(self):
@@ -80,15 +82,11 @@ class CuriosityDrive:
             
         return self.concept_detector.detect_unknown_concepts(text)
 
-    def process_input(self, input_text: str) -> Dict:
-        """Processa l'input e genera una risposta basata sulla curiosità"""
-        return {
-            'questions': ['Come ti sei avvicinato alla fotografia?', 
-                         'Che tipo di paesaggi preferisci fotografare?'],
-            'exploration_focus': 0.8
-        }
-
     def process_input(self, input_data: str, context: Optional[Dict] = None) -> Dict:
+        """Alias per retrocompatibilità"""
+        return self.process(input_data, context)
+
+    def process(self, input_data: str, context: Optional[Dict] = None) -> Dict:
         """Elabora un nuovo input e genera risposta basata sulla curiosità"""
         if context is None:
             context = {}
@@ -383,6 +381,7 @@ class UnknownConceptDetector:
     def __init__(self, knowledge_memory=None, threshold: float = 0.7):
         self.knowledge_memory = knowledge_memory
         self.confidence_threshold = threshold
+        self.known_concepts = {} # Initialize empty knowledge base
         
         # Lista parole comuni (Stopwords estese + vocabolario base)
         # In produzione, caricarla da file json
@@ -400,7 +399,7 @@ class UnknownConceptDetector:
             "spettare", "correre", "scrivere", "diventare", "restare", "seguire",
             "bastare", "perdere", "rendere", "salire", "piacere", "continuare",
             "partire", "servire", "giungere", "fermare", "apparire", "amare",
-            "esistere", "ricevere", "ridere", "cambiare"
+            "esistere", "ricevere", "ridere", "cambiare", "spiegami"
         }
         
     def detect_unknown_concepts(self, text: str) -> Set[str]:
@@ -433,14 +432,20 @@ class UnknownConceptDetector:
             
             # Se siamo qui, è una parola "rara" per il sistema
             
+            # Skip adverbs (ending in 'mente')
+            if w_lower.endswith('mente'):
+                continue
+
             # Aggiungi se è Maiuscola (e non è la prima parola assoluta, o lo è ma non è comune)
             if word[0].isupper():
                 if i > 0 or w_lower not in self.common_words:
                      unknown_concepts.add(w_lower)
             
-            # Aggiungi se è lunga e complessa (euristica semplice)
-            elif len(word) > 8:
-                 unknown_concepts.add(w_lower)
+            # Aggiungi se è lunga, complessa e non è un verbo generico
+            elif len(word) > 9:
+                 # Exclude common verb endings to avoid flagging actions as concepts
+                 if not (w_lower.endswith('are') or w_lower.endswith('ere') or w_lower.endswith('ire')):
+                     unknown_concepts.add(w_lower)
         
         return unknown_concepts
     
@@ -655,6 +660,27 @@ class CuriosityPrioritization:
             'tecnologia': ['programmare', 'computer', 'software', 'app', 'digitale'],
             'benessere': ['meditazione', 'concentrazione', 'mindfulness', 'benessere', 'relax']
         }
+        
+        # Persistence
+        from allma_model.core.module_state_manager import ModuleStateManager
+        self.state_manager = ModuleStateManager()
+        self._load_state()
+
+    def _load_state(self):
+        """Restore state from DB."""
+        state = self.state_manager.load_state('curiosity_prioritization')
+        if state:
+            self.topic_priorities = state.get('topic_priorities', {})
+            self.archived_topics = state.get('archived_topics', {})
+            # Ensure float conversion for existing data if needed
+            
+    def _save_state(self):
+        """Save current state to DB."""
+        state = {
+            'topic_priorities': self.topic_priorities,
+            'archived_topics': self.archived_topics
+        }
+        self.state_manager.save_state('curiosity_prioritization', state)
     
     def _identify_category(self, topic: str) -> str:
         """Identifica la categoria di un argomento"""
@@ -726,6 +752,7 @@ class CuriosityPrioritization:
                 'category': category,
                 'related_questions': self._generate_archived_questions(topic, category)
             }
+            self._save_state()
     
     def _generate_archived_questions(self, topic: str, category: str) -> List[str]:
         """Genera domande specifiche per argomenti archiviati"""
@@ -792,6 +819,8 @@ class CuriosityPrioritization:
         
         # Aggiorna timestamp
         self.topic_priorities[topic]['last_seen'] = time.time()
+        
+        self._save_state()
     
     def should_explore(self, topic: str, context: Dict) -> bool:
         """Decide se un argomento dovrebbe essere esplorato ora"""

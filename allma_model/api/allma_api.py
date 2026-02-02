@@ -414,3 +414,49 @@ class AllmaAndroidBridge:
             
         except Exception as e:
             raise Exception(f"Errore nel recuperare la cronologia: {str(e)}")
+
+    def get_memory_data(self, user_id: str) -> Dict[str, Any]:
+        """
+        Ottiene i dati completi della memoria per il pannello di debug UI.
+        
+        Args:
+            user_id: ID dell'utente
+            
+        Returns:
+            Dict con 'facts' (user_data) e 'logs' (conversazioni recenti)
+        """
+        if not user_id:
+            return {"facts": {}, "logs": []}
+            
+        try:
+            # 1. Recupera i "Fatti Cognitivi" (Persistente)
+            # Accessing internal memory structure safely
+            if hasattr(self.allma, 'memory') and hasattr(self.allma.memory, 'user_data'):
+                facts = self.allma.memory.user_data.get(user_id, {})
+            else:
+                facts = {}
+
+            # 2. Recupera i Log recenti (Pensieri + Risposte)
+            # Utilizziamo get_conversation_history ma arricchito se possibile
+            logs = []
+            try:
+                raw_history = self.allma.memory.get_conversation_history(user_id)
+                # Prendiamo gli ultimi 10 scambi
+                for msg in raw_history[-10:]:
+                    logs.append({
+                        "role": msg.role,
+                        "content": msg.content,
+                        "timestamp": msg.timestamp.isoformat() if msg.timestamp else "",
+                        "is_thought": "[[TH:" in msg.content # Flag per UI
+                    })
+            except:
+                pass
+
+            return {
+                "facts": facts,
+                "logs": logs
+            }
+            
+        except Exception as e:
+            print(f"API ERROR (get_memory_data): {e}")
+            return {"facts": {}, "logs": [], "error": str(e)}

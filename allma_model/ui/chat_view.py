@@ -109,6 +109,45 @@ class ChatView(MDScreen):
                                     self.core.update_user_identity(name, int(age) if age else 0)
                             return
                         
+                        # System Actions (Memory Debug)
+                        if msg_type == 'system':
+                            if action == 'get_memory_debug':
+                                user_id = data.get('user_id', 'user_default')
+                                print(f"ChatView: Memory Debug Requested for {user_id}")
+                                
+                                try:
+                                    # Access memory data from core
+                                    memory_data = {"facts": {}, "logs": []}
+                                    
+                                    if self.core and hasattr(self.core, 'memory'):
+                                        # Get user facts
+                                        if hasattr(self.core.memory, 'user_data'):
+                                            memory_data["facts"] = self.core.memory.user_data.get(user_id, {})
+                                        
+                                        # Get recent conversation logs
+                                        try:
+                                            history = self.core.memory.get_conversation_history(user_id)
+                                            for msg in history[-10:]:  # Last 10 messages
+                                                memory_data["logs"].append({
+                                                    "role": msg.role,
+                                                    "content": msg.content,
+                                                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else "",
+                                                    "is_thought": "[[TH:" in msg.content
+                                                })
+                                        except Exception as e:
+                                            print(f"Memory Log Error: {e}")
+                                    
+                                    # Send back to JS
+                                    import json
+                                    self.bridge.execute_js(f"window.renderMemoryData({json.dumps(json.dumps(memory_data))})")
+                                    
+                                except Exception as e:
+                                    print(f"Memory Debug Error: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+                                
+                                return
+                        
                         # UI Actions (Mic / Voice Mode)
                         if msg_type == 'action':
                             if action == 'toggle_mic':
@@ -135,6 +174,13 @@ class ChatView(MDScreen):
                 except Exception as e:
                     # Not JSON or simple string, standard chat message
                     pass
+                
+                # Check for special commands
+                if message == "__REQUEST_TEMPERATURE_UPDATE__":
+                    # Temperature monitoring request from JS
+                    if self.bridge:
+                        self.bridge.inject_temperature_to_js()
+                    return
 
                 # Send to Core (Standard Chat)
                 Thread(target=self.process_message, args=(message,)).start()
@@ -161,19 +207,34 @@ class ChatView(MDScreen):
                     print(f"ChatView: STT Recognized -> {text}")
                     
                     if self.voice_mode_enabled:
-                        # Route to Voice Overlay
+                         # 1. Update Visual Feedback (Final)
                         if self.bridge:
                             self.bridge.update_voice_text(text)
-                            # Optional: Auto-Send after silence?
-                            # For now, let's keep it simple: Just visualize.
-                            # The user might need a "Send" trigger or silence detection.
-                            # But per user request: "voglio vedere su quella modalità vocale anche le parole che pronuncio"
+                        
+                        # 2. SEND TO LLM (Critical Fix!)
+                        # User wants it treated "As if written"
+                        if text and len(text.strip()) > 1:
+                            # Inject into chat UI to show user what was heard
+                            if self.bridge:
+                                self.bridge.send_message_to_js(text, 'user')
+                            
+                            # Process Request
+                            Thread(target=self.process_message, args=(text,)).start()
+                            
+                            # Restart Listening after processing? 
+                            # Usually LLM speaking stops listening. 
+                            # We'll rely on user to tap again or implement auto-listen logic later.
                     else:
                         # Standard Chat Input
                         if self.bridge:
                             self.bridge.set_input_text(text)
                 
-                self.stt = STTEngine(on_stt_text)
+                def on_stt_partial(text):
+                    # Visual Feedback during speech
+                    if self.voice_mode_enabled and self.bridge:
+                        self.bridge.update_voice_text(text)
+
+                self.stt = STTEngine(on_stt_text, on_stt_partial)
                 print("ChatView: STT Engine Linked.")
             except Exception as e:
                 print(f"ChatView: STT Init Failed: {e}")
@@ -193,8 +254,11 @@ class ChatView(MDScreen):
             return
 
         # BUG FIX: Ignore JSON control messages leaking into chat
-        if user_text.strip().startswith('{') and '"type":' in user_text:
-             print(f"ChatView: Ignoring Control Message in Chat -> {user_text}")
+        # BUG FIX: Ignore JSON control messages leaking into chat
+        # Checks for standard JSON object start OR escaped JSON string start
+        stripped = user_text.strip()
+        if (stripped.startswith('{') or stripped.startswith('"{') or stripped.startswith(r'{\"')) and ('"type":' in user_text or r'\"type\":' in user_text):
+             print(f"ChatView: Ignoring Control Message in Chat -> {user_text[:50]}...")
              return
 
         try:

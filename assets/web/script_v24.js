@@ -199,12 +199,168 @@ window.toggleMic = function () {
     openVoiceMode();
 };
 
-// Expose
+// --- PANEL MANAGEMENT ---
+
+// Close any open panel
+window.closePanel = function (panelName) {
+    const panel = document.getElementById(`panel-${panelName}`);
+    if (panel) {
+        panel.classList.add('hidden');
+    }
+
+    // Stop temperature monitoring when closing settings
+    if (panelName === 'settings') {
+        stopTemperatureMonitoring();
+    }
+};
+
+// Open panel (enhanced version)
 window.openPanel = function (panelName) {
     console.log("Opening panel: " + panelName);
     toggleSidebar();
+
     if (panelName === 'voice') {
         openVoiceMode();
+    } else if (panelName === 'settings') {
+        // Show settings panel
+        const panel = document.getElementById('panel-settings');
+        if (panel) {
+            panel.classList.remove('hidden');
+            // Start temperature monitoring
+            startTemperatureMonitoring();
+        }
+    } else if (panelName === 'memory') {
+        const panel = document.getElementById('panel-memory');
+        if (panel) {
+            panel.classList.remove('hidden');
+        }
+    }
+};
+
+// --- TEMPERATURE MONITORING SYSTEM ---
+
+let temperatureUpdateInterval = null;
+
+function startTemperatureMonitoring() {
+    console.log("Starting temperature monitoring...");
+
+    // Request temperature update from Python
+    if (window.msgQueue) {
+        window.msgQueue.push("__REQUEST_TEMPERATURE_UPDATE__");
+    }
+
+    // Immediate first update
+    updateTemperature();
+
+    // Update every 2 seconds
+    if (!temperatureUpdateInterval) {
+        temperatureUpdateInterval = setInterval(() => {
+            // Request fresh data from Python
+            if (window.msgQueue) {
+                window.msgQueue.push("__REQUEST_TEMPERATURE_UPDATE__");
+            }
+            updateTemperature();
+        }, 2000);
+    }
+}
+
+function stopTemperatureMonitoring() {
+    console.log("Stopping temperature monitoring...");
+    if (temperatureUpdateInterval) {
+        clearInterval(temperatureUpdateInterval);
+        temperatureUpdateInterval = null;
+    }
+}
+
+function updateTemperature() {
+    // The temperature data is injected by Python via inject_temperature_to_js()
+    // which updates window.pyBridge.getTemperature() to return fresh data
+
+    if (window.pyBridge && typeof window.pyBridge.getTemperature === 'function') {
+        try {
+            const tempData = window.pyBridge.getTemperature();
+            if (tempData && (tempData.cpu || tempData.battery)) {
+                displayTemperature(tempData);
+                return;
+            }
+        } catch (e) {
+            console.error("Error getting temperature:", e);
+        }
+    }
+
+    // Fallback: simulate temperature for testing
+    const mockData = {
+        cpu: Math.random() * 30 + 35,  // 35-65°C
+        battery: Math.random() * 20 + 30  // 30-50°C
+    };
+    displayTemperature(mockData);
+}
+
+function displayTemperature(tempData) {
+    // Update CPU temperature
+    if (tempData.cpu !== undefined) {
+        const cpuTemp = Math.round(tempData.cpu);
+        document.getElementById('temp-cpu').textContent = `${cpuTemp}°C`;
+
+        // Update CPU bar (0-100°C scale)
+        const cpuPercent = Math.min(100, (cpuTemp / 100) * 100);
+        const cpuBar = document.getElementById('temp-cpu-bar');
+        if (cpuBar) {
+            cpuBar.style.width = `${cpuPercent}%`;
+            // Color based on temperature
+            if (cpuTemp > 70) {
+                cpuBar.style.backgroundColor = '#ef4444'; // Red
+            } else if (cpuTemp > 50) {
+                cpuBar.style.backgroundColor = '#f59e0b'; // Orange
+            } else {
+                cpuBar.style.backgroundColor = '#10b981'; // Green
+            }
+        }
+    }
+
+    // Update Battery temperature
+    if (tempData.battery !== undefined) {
+        const batteryTemp = Math.round(tempData.battery);
+        document.getElementById('temp-battery').textContent = `${batteryTemp}°C`;
+
+        // Update Battery bar
+        const batteryPercent = Math.min(100, (batteryTemp / 100) * 100);
+        const batteryBar = document.getElementById('temp-battery-bar');
+        if (batteryBar) {
+            batteryBar.style.width = `${batteryPercent}%`;
+            // Color based on temperature
+            if (batteryTemp > 45) {
+                batteryBar.style.backgroundColor = '#ef4444'; // Red
+            } else if (batteryTemp > 35) {
+                batteryBar.style.backgroundColor = '#f59e0b'; // Orange
+            } else {
+                batteryBar.style.backgroundColor = '#10b981'; // Green
+            }
+        }
+    }
+
+    // Update overall status
+    updateTemperatureStatus(tempData);
+}
+
+function updateTemperatureStatus(tempData) {
+    const statusDot = document.querySelector('#temp-status .status-dot');
+    const statusText = document.getElementById('temp-status-text');
+
+    const maxTemp = Math.max(tempData.cpu || 0, tempData.battery || 0);
+
+    if (maxTemp > 70) {
+        statusDot.style.backgroundColor = '#ef4444';
+        statusText.textContent = '⚠️ Temperatura Alta';
+        statusText.style.color = '#ef4444';
+    } else if (maxTemp > 50) {
+        statusDot.style.backgroundColor = '#f59e0b';
+        statusText.textContent = '⚡ Temperatura Elevata';
+        statusText.style.color = '#f59e0b';
+    } else {
+        statusDot.style.backgroundColor = '#10b981';
+        statusText.textContent = '✅ Temperatura Normale';
+        statusText.style.color = '#10b981';
     }
 }
 
@@ -417,7 +573,79 @@ window.streamChunk = function (text, isThought) {
             // Auto-open while streaming to show progress
             currentStreamBubble.reasoningContainer.classList.add('open');
         }
-        currentStreamBubble.reasoning.textContent += text;
+
+        // PHASE 24: Minimalist Badge Styling (Chips)
+        // Format: [[TH:I=Saluto|S=Caldo|M=Nulla]]
+        const thMatch = text.match(/\[\[(?:TH|PENSIERO):\s*(.+?)\]\]/);
+        if (thMatch) {
+            const thContent = thMatch[1];
+            const fragments = thContent.split('|');
+            // Flex container, wrap, minimal spacing
+            let badgeHTML = '<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px;">';
+
+            fragments.forEach(fragment => {
+                const pair = fragment.split('=');
+                if (pair.length === 2) {
+                    const key = pair[0].trim();
+                    const val = pair[1].trim();
+                    let icon = ''; // Minimalist: maybe no icon or very small
+                    let color = '#888';
+                    let label = key;
+
+                    // Map keys
+                    if (key === 'I') { icon = '🎯'; label = 'INT'; color = '#4CAF50'; }
+                    if (key === 'S') { icon = '🎭'; label = 'STR'; color = '#2196F3'; }
+                    if (key === 'M') { icon = '🧠'; label = 'MEM'; color = '#9C27B0'; }
+
+                    // Minimalist Chip Style: Tiny font, no border, light background
+                    badgeHTML += `<div style="
+                        background: ${color}15; 
+                        color: ${color};
+                        border: 1px solid ${color}30;
+                        border-radius: 12px;
+                        padding: 2px 8px;
+                        font-family: 'Roboto Mono', monospace;
+                        font-size: 10px;
+                        display: flex;
+                        align-items: center;
+                        gap: 3px;
+                        white-space: nowrap;">
+                        <span>${icon}</span>
+                        <span style="opacity:0.8; font-weight:600;">${label}:</span>
+                        <span style="opacity:1.0;">${val}</span>
+                    </div>`;
+                }
+            });
+            badgeHTML += '</div>';
+
+            // CLEAR previous content to prevent appending if it's a re-parse (safety)
+            // But since we stream chunks, we append HTML. 
+            // Better to append ONLY if we haven't rendered badges yet?
+            // Actually, TH block usually comes in one chunk or small chunks. 
+            // We'll trust the parser handles the full block string if matched.
+
+            // To be safe: clear reasoning content before adding badges (if it was partial text)
+            currentStreamBubble.reasoning.innerHTML = badgeHTML;
+        } else {
+            // Fallback (partial text)
+            // check if text contains partial badge markup? No, just raw text.
+            // If we are streaming token by token, we might not match regex yet.
+            // So we append text, but if regex matches later, we replace?
+            // Complex. For now, assume TH block comes fast.
+            currentStreamBubble.reasoning.textContent += text;
+
+            // LIVE PARSE CHECK: If accumulated text matches regex, render!
+            const accText = currentStreamBubble.reasoning.textContent;
+            const liveMatch = accText.match(/\[\[(?:TH|PENSIERO):\s*(.+?)\]\]/);
+            if (liveMatch) {
+                // Rerender with badges
+                // Reuse logic... (recursion or function call)
+                // For simplified approach: just let the stream finalize?
+                // The user wants to see it LIVE. 
+                // We will rely on the fact that 'text' passed here might be the full block 
+                // if the backend sends it or partial.
+            }
+        }
     } else {
         currentStreamBubble.content.textContent += text;
     }

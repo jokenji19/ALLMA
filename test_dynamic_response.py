@@ -1,72 +1,109 @@
-#!/usr/bin/env python3
-"""
-Test Dynamic Response Engine
-============================
-Verifica che le risposte di sistema siano varie e non ripetitive.
-"""
-
 import sys
 import os
 import logging
+from typing import Dict, Any
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Add this dir to path
+sys.path.append(os.getcwd())
 
-from Model.response_system.dynamic_response_engine import DynamicResponseEngine
+from allma_model.core.allma_core import ALLMACore
 
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-
-def test_dynamic_responses():
-    print("=" * 70)
-    print("🚫 TEST DYNAMIC RESPONSE ENGINE (NO TEMPLATES)")
-    print("=" * 70)
-    
-    engine = DynamicResponseEngine()
-    
-    # Test 1: Fallback Procedurale (Errori)
-    print("\n1️⃣  Test Fallback Procedurale (Errori)")
-    print("Generazione di 5 messaggi di errore consecutivi (devono variare):")
-    responses = set()
-    for i in range(5):
-        msg = engine.generate_system_response('error', {'error': 'Test Error'})
-        print(f"  Attempt {i+1}: {msg}")
-        responses.add(msg)
+# Mock persistence and model to avoid loading heavy weights
+class MockCore(ALLMACore):
+    def __init__(self):
+        # Skip heavy init
+        self.coalescence_processor = MockCoalescence()
+        self.conversation_history = []
         
-    if len(responses) > 1:
-        print("✅ SUCCESS: I messaggi variano.")
-    else:
-        print("❌ FAIL: I messaggi sono identici.")
-
-    # Test 2: Fallback Procedurale (Saluti)
-    print("\n2️⃣  Test Fallback Procedurale (Saluti)")
-    print("Generazione di 5 saluti per 'Marco':")
-    responses = set()
-    for i in range(5):
-        msg = engine.generate_system_response('greeting', {'user': 'Marco'})
-        print(f"  Attempt {i+1}: {msg}")
-        responses.add(msg)
+    def _load_model_weights(self): 
+        pass 
         
-    if len(responses) > 1:
-        print("✅ SUCCESS: I saluti variano.")
-    else:
-        print("❌ FAIL: I saluti sono identici.")
+    def _init_memory(self):
+        pass
 
-    # Test 3: Generazione LLM (Mock)
-    print("\n3️⃣  Test Generazione LLM (Creatività)")
+class MockCoalescence:
+    def get_current_personality_state(self):
+        return {'personality_traits': {'tone': 'naturale', 'warmth': 0.8}}
+
+def test_dynamic_performance():
+    print("--- 🚀 TESTING DYNAMIC RESPONSE OPTIMIZATION ---")
     
-    def mock_llm(prompt, **kwargs):
-        return {'choices': [{'text': "Oh no! Un glitch nel matrix... ma sono ancora qui!"}]}
+    core = MockCore()
+    
+    # Setup simulated history
+    history = [
+        {'role': 'user', 'content': 'Ciao'},
+        {'role': 'assistant', 'content': 'Ciao! Come va?'},
+        {'role': 'user', 'content': 'Tutto bene grazie'},
+        {'role': 'assistant', 'content': 'Mi fa piacere!'}
+    ]
+    # We are now at Turn 4 (history len 4). 
+    # Previous logic: len(history) > 1 -> Force FULL -> Slow
+    # New logic: Should check message complexity.
+    
+    print(f"\n[Scenario] Conversation History Length: {len(history)} (Active conversation)")
+    
+    # Test 1: Simple Message (Third Turn)
+    msg_simple = "Ok perfetto"
+    print(f"Test 1: Query='{msg_simple}'")
+    
+    is_simple = core._is_simple_query(msg_simple, history)
+    
+    if is_simple:
+        print("✅ Correct: Classified as SIMPLE despite long history.")
         
-    msg = engine.generate_system_response(
-        'error', 
-        {'error': 'Connection Lost'}, 
-        llm_callback=mock_llm
-    )
-    print(f"  LLM Response: {msg}")
-    
-    if "glitch nel matrix" in msg:
-        print("✅ SUCCESS: LLM invocato correttamente.")
+        # Verify Context Injection
+        minimal_prompt = core._build_minimal_prompt(
+            msg_simple, 
+            {'tone': 'naturale'},
+            recent_history=history[-2:] # Pass last 2
+        )
+        
+        if "CONTESTO RECENTE:" in minimal_prompt:
+            print("✅ Correct: Minimal prompt contains context.")
+            if "User: Tutto bene grazie" in minimal_prompt:
+                print("   -> Context content correct.")
+            else:
+                print("   ❌ Context content MISSING previous turns.")
+                return False
+        else:
+            print("❌ Correct: Minimal prompt MISSING context section.")
+            return False
+            
     else:
-        print("❌ FAIL: LLM non usato.")
+        print("❌ FAILED: Classified as COMPLEX (Regression not fixed).")
+        return False
+
+    # Test 2: Complex Message
+    msg_complex = "Spiegami perché il cielo è blu"
+    print(f"\nTest 2: Query='{msg_complex}'")
+    
+    is_simple_complex = core._is_simple_query(msg_complex, history)
+    
+    if not is_simple_complex:
+        print("✅ Correct: Classified as COMPLEX (Veko keyword 'spiegami').")
+    else:
+        print("❌ FAILED: Classified as SIMPLE (Should be complex).")
+        return False
+
+    # Test 3: Intent-based Short Circuit
+    # "Mi piace la pizza" -> Not in whitelist, but intent="affermazione"
+    msg_intent = "Mi piace la pizza"
+    print(f"\nTest 3: Query='{msg_intent}' with INTENT='affermazione'")
+    
+    is_simple_intent = core._is_simple_query(msg_intent, history, intent="affermazione")
+    
+    if is_simple_intent:
+        print("✅ Correct: Classified as SIMPLE via Intent (Fixes 'Mi piace la pizza').")
+    else:
+        print("❌ FAILED: Classified as COMPLEX (Intent logic failed).")
+        return False
+
+    print("\n🎉 PERFORMANCE FIX VERIFIED 🎉")
+    return True
 
 if __name__ == "__main__":
-    test_dynamic_responses()
+    if test_dynamic_performance():
+        sys.exit(0)
+    else:
+        sys.exit(1)

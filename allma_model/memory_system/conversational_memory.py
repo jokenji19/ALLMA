@@ -29,6 +29,7 @@ class Message:
     content: str
     timestamp: datetime
     metadata: Dict
+    user_id: Optional[str] = None
 
 class ConversationalMemory:
     """Sistema di memoria conversazionale."""
@@ -39,6 +40,9 @@ class ConversationalMemory:
         self.vectorizer = SimpleTfidf()
         self.conversation_vectors = {}
         self.messages: List[Message] = []
+        
+        # Load persistent memory
+        self.load_memory()
         
     def store_conversation(
         self,
@@ -88,9 +92,11 @@ class ConversationalMemory:
             role="user",
             content=content,
             timestamp=conversation.timestamp,
-            metadata=metadata
+            metadata=metadata,
+            user_id=user_id
         )
         self.messages.append(message)
+        self.save_memory()
         
         # Aggiorna vettori conversazione
         if conversation.embeddings is not None:
@@ -115,18 +121,34 @@ class ConversationalMemory:
         Returns:
             Lista di tuple (score, conversazione) ordinate per rilevanza
         """
+        results = []
+        
+        # 1. FACT CHECK (Priority High)
+        # Search in extracted User Data first
+        if user_id and hasattr(self, 'user_data') and user_id in self.user_data:
+            user_facts = self.user_data[user_id]
+            for key, value in user_facts.items():
+                if key in current_topic.lower() or value in current_topic.lower():
+                    # Create a synthetic conversation for the fact
+                    fact_conv = Conversation(
+                        id=f"fact_{key}",
+                        user_id=user_id,
+                        timestamp=datetime.now(),
+                        content=f"FACT: Il tuo {key} è {value}.",
+                        metadata={'type': 'fact'}
+                    )
+                    results.append((1.0, fact_conv)) # Max score for facts
+
         if not current_topic.strip():
-            return []
+            return results
             
         # Calcola embedding del topic
         try:
             topic_vector = self.vectorizer.transform([current_topic]).toarray()[0]
         except Exception as e:
             print(f"Errore nel calcolo embedding topic: {e}")
-            return []
+            return results
             
-        results = []
-        
         # Filtra conversazioni per utente se specificato
         conversations = (
             self.conversations[user_id] if user_id
@@ -304,6 +326,72 @@ class ConversationalMemory:
             metadata=metadata
         )
         self.messages.append(message)
+        self.save_memory()
+
+    def save_interaction(self, user_id: str, message: str, role: str):
+        """Salva una interazione nella memoria."""
+        if user_id not in self.conversations:
+            self.conversations[user_id] = []
+            
+        self.user_data = getattr(self, 'user_data', {})
+        if user_id not in self.user_data: self.user_data[user_id] = {}
+
+        # NAME CAPTURE PATTERN
+        if role == "user":
+            import re
+            # Name
+            name_pattern = re.search(r"(?:mi chiamo|sono|il mio nome è) (\w+)", message, re.IGNORECASE)
+            if name_pattern:
+                extracted_name = name_pattern.group(1)
+                self.user_data[user_id]['name'] = extracted_name
+                print(f"🧠 MEMORY: Name captured '{extracted_name}'")
+            
+            # GENERIC PREFERENCE PATTERN: "Il mio [KEY] preferito è [VALUE]"
+            # e.g. "Il mio colore preferito è il blu" -> key=colore, value=blu
+            pref_pattern = re.search(r"(?:il mio|la mia) (\w+) preferit[oa] è (?:il |lo |la |i |le )?([\w\s]+)", message, re.IGNORECASE)
+            if pref_pattern:
+                key = pref_pattern.group(1).lower() # colore
+                value = pref_pattern.group(2).strip() # blu
+                if value.endswith('.'): value = value[:-1]
+                self.user_data[user_id][key] = value
+                print(f"🧠 MEMORY: Fact captured '{key}' = '{value}'")
+        
+        # --- PHASE 18: COGNITIVE MEMORY (LLM-DRIVEN) ---
+        # Parse "MEM=" commands from the Assistant's own thought process
+        if role == "assistant":
+            # Search for [[TH:...]] block
+            import re
+            th_block = re.search(r"\[\[TH:(.*?)\]\]", message, re.DOTALL)
+            if th_block:
+                content_inside = th_block.group(1)
+                print(f"🧠 [DEBUG] TH Block trovato: {content_inside[:150]}...")  # PHASE 20: Debug logging
+                
+                # PHASE 20 FIX: More flexible regex to handle underscores, Italian chars, spaces
+                # Pattern: MEM=key:value where key can have letters/numbers/underscores/spaces
+                # and value can have letters/numbers/spaces/dots/commas/Italian accents
+                mem_cmd = re.search(r"MEM=([a-zA-Z0-9_\s]+):([a-zA-Z0-9_\s\.\,àèéìòùÀÈÉÌÒÙ]+)", content_inside)
+                
+                if mem_cmd:
+                    key = mem_cmd.group(1).strip().replace(' ', '_')  # Replace spaces with underscores
+                    value = mem_cmd.group(2).strip()
+                    self.user_data[user_id][key.lower()] = value
+                    print(f"🧠 COGNITIVE MEMORY: Analizzato & Salvato Fatto '{key}' = '{value}'")
+                else:
+                    print(f"🧠 [DEBUG] Nessun comando MEM= trovato nel blocco TH")  # PHASE 20: Debug logging
+            else:
+                print(f"🧠 [DEBUG] Nessun blocco [[TH:...]] trovato nel messaggio")  # PHASE 20: Debug logging
+
+
+        msg = Message(
+            role=role,
+            content=message,
+            timestamp=datetime.now(),
+            user_id=user_id,
+            conversation_id="default", # Simplification for mobile
+            metadata={} 
+        )
+        self.messages.append(msg) # Assuming self.messages is where interactions are stored
+        self.save_memory()
 
     def get_recent_interactions(self, user_id: str, limit: int = 10) -> List[Message]:
         """
@@ -350,3 +438,95 @@ class ConversationalMemory:
             )
         )
         return conversation_id
+        return conversation_id
+
+    def _json_serial(self, obj):
+        """JSON serializer for objects not serializable by default json code"""
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        raise TypeError (f"Type {type(obj)} not serializable")
+
+    def save_memory(self):
+        """Salva lo stato della memoria su file JSON."""
+        data = {
+            "conversations": {
+                uid: [
+                    {
+                        "id": c.id, 
+                        "user_id": c.user_id, 
+                        "timestamp": c.timestamp, 
+                        "content": c.content, 
+                        "metadata": c.metadata
+                    } for c in convs
+                ] 
+                for uid, convs in self.conversations.items()
+            },
+            "messages": [
+                {
+                    "conversation_id": m.conversation_id,
+                    "role": m.role,
+                    "content": m.content,
+                    "timestamp": m.timestamp,
+                    "metadata": m.metadata,
+                    "user_id": getattr(m, 'user_id', None)
+                } for m in self.messages
+            ],
+            "user_data": getattr(self, 'user_data', {})
+        }
+        
+        try:
+            import os
+            # Use internal storage path or current dir
+            file_path = os.path.join(os.getcwd(), 'allma_memory.json')
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, default=self._json_serial, ensure_ascii=False, indent=2)
+            print(f"💾 MEMORY SAVED to {file_path}")
+        except Exception as e:
+            print(f"❌ MEMORY SAVE FAILED: {e}")
+
+    def load_memory(self):
+        """Carica lo stato della memoria da file JSON."""
+        try:
+            import os
+            file_path = os.path.join(os.getcwd(), 'allma_memory.json')
+            if not os.path.exists(file_path):
+                print("No memory file found. Starting fresh.")
+                return
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Restore Conversations
+            self.conversations = defaultdict(list)
+            for uid, convs_data in data.get("conversations", {}).items():
+                for c_data in convs_data:
+                    c = Conversation(
+                        id=c_data["id"],
+                        user_id=c_data["user_id"],
+                        timestamp=datetime.fromisoformat(c_data["timestamp"]),
+                        content=c_data["content"],
+                        metadata=c_data["metadata"]
+                    )
+                    # Re-calculate embedding on load if needed, or skip for speed
+                    self.conversations[uid].append(c)
+
+            # Restore Messages
+            self.messages = []
+            for m_data in data.get("messages", []):
+                m = Message(
+                    conversation_id=m_data["conversation_id"],
+                    role=m_data["role"],
+                    content=m_data["content"],
+                    timestamp=datetime.fromisoformat(m_data["timestamp"]),
+                    metadata=m_data["metadata"]
+                )
+                if "user_id" in m_data:
+                    m.user_id = m_data["user_id"]
+                self.messages.append(m)
+
+            # Restore User Data
+            self.user_data = data.get("user_data", {})
+            print(f"📂 MEMORY LOADED: {len(self.messages)} messages restored.")
+
+        except Exception as e:
+            print(f"❌ MEMORY LOAD FAILED: {e}")

@@ -87,3 +87,24 @@
 ### Lesson 14: Network-Dependent Icons (v0.18)
 **Issue:** `ion-icon` failed to load in offline/cached scenarios, leaving the generation timer invisible.
 **Lesson:** For critical UI elements (like loading spinners), use **Inline SVGs** or pure text/CSS solutions. Do not rely on external scripts (CDN) or even complex local asset loading if the element's presence is vital for UX. Text-based fallbacks (e.g., "⚡") are bulletproof.
+
+---
+### Lesson 15: The Lamp Logic (Speed + Aesthetics) (Build 180+)
+**Goal:** Maintain instantaneous streaming speed while visually separating "Think" (Lamp UI) from "Say" (Chat Bubble).
+**Failed Approach:** Wait for full thought generation before streaming, or using distinct API calls. Result: Too slow.
+**Winning Solution:** **Single Stream with Client-Side Parsing**.
+1.  **Python:** Force-inject `[[PENSIERO:` at the start of the stream.
+2.  **JS:** `window.streamChunk` detects the tag. If found, it flips a switch (`isThinking = true`) and routes subsequent text to `.reasoning-container`.
+3.  **Completion:** When `]]` arrives, the switch flips back, and text routes to `.chat-bubble`.
+**Outcome:** User perceives 0ms latency in "starting to think", and the separation is purely visual. No backend orchestration delay.
+**Key Fixing Point:** Duplicates of `[[PENSIERO:` must be aggressively stripped in JS to prevent recursion if the model retries.
+
+### Lesson 16: Symbiotic Prompt Leaks (The "Silent Answer")
+**Issue:** When falling back to the Symbiotic/Legacy path, the user saw either system instructions ("Stato emotivo...") or nothing at all.
+**Root Cause:**
+1.  **Leak:** The prompt lacked clean separators (`\n\n`) between the injected context block and the user instruction.
+2.  **Silence:** The fallback generator (`response_generator.py`) created a static string but the `stream_callback` was never invoked, so the UI (expecting a stream) showed nothing.
+**Solution:**
+1.  **Separation:** Enforce strict double-newline separation in prompt assembly.
+2.  **Manual Stream:** If falling back to static generation, **manually invoke** `stream_callback` chunk-by-chunk in a loop to simulate streaming. This ensures the UI state machine (Thinking -> Speaking) completes correctly.
+

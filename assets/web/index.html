@@ -26,70 +26,47 @@
         </div>
 
         <div class="sidebar-content">
-            <!-- 1. Pannello Conversazioni (Default) -->
+            <!-- 1. CHAT SECTION -->
             <div class="nav-section">
-                <div class="nav-label">CONVERSAZIONI</div>
-                <button class="nav-item new-chat" onclick="startNewChat()">
+                <div class="nav-label">MAIN</div>
+                <button class="nav-item primary-action" onclick="startNewChat()">
                     <span class="icon">✨</span>
-                    <span>Nuova Chat</span>
+                    <span class="nav-text">Nuova Chat</span>
                 </button>
                 <div class="history-list" id="history-list">
-                    <!-- History items will be populated dynamically -->
+                    <!-- History items populated dynamically -->
                 </div>
             </div>
 
-            <div class="divider"></div>
+            <!-- 2. INTELLIGENCE SECTION -->
+            <div class="nav-section">
+                <div class="nav-label">INTELLIGENCE</div>
 
-            <!-- 2. Pannello ALLMA Memoria -->
-            <button class="nav-item" onclick="openPanel('memory')">
-                <span class="icon">🧠</span>
-                <span>ALLMA Memoria</span>
-            </button>
+                <button class="nav-item" onclick="openPanel('memory')">
+                    <span class="icon icon-purple">🧠</span>
+                    <span class="nav-text">Memoria</span>
+                </button>
 
-            <!-- 3. Pannello Chat Vocale -->
-            <button class="nav-item" onclick="openPanel('voice')">
-                <span class="icon">🎙️</span>
-                <span>Chat Vocale</span>
-            </button>
-
-            <!-- 4. Impostazioni & Memoria -->
-            <button class="nav-item" onclick="openPanel('settings')">
-                <span class="icon">⚙️</span>
-                <span>Impostazioni</span>
-            </button>
-
-            <!-- Dark Mode Toggle -->
-            <button class="nav-item" onclick="toggleTheme()">
-                <span class="icon" id="theme-icon">🌙</span>
-                <span id="theme-text">Dark Mode</span>
-            </button>
-
-            <div class="divider"></div>
-
-            <!-- 5. Profilo (Backup) -->
-            <button class="nav-item" onclick="openUserModal()">
-                <span class="icon">👤</span>
-                <span>Profilo & Dati</span>
-            </button>
-        </div>
-
-        <!-- Allma Connection Panel -->
-        <div class="connection-panel">
-            <div class="connection-header">
-                <span class="pulse-dot"></span> Connessione Allma
+                <button class="nav-item" onclick="openPanel('voice')">
+                    <span class="icon icon-rose">🎙️</span>
+                    <span class="nav-text">Voce</span>
+                </button>
             </div>
-            <div class="connection-content">
-                <div class="circular-chart" id="synergy-chart-container" style="--percentage: 0">
-                    <svg viewBox="0 0 36 36" class="circular-chart-svg">
-                        <path class="circle-bg"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                        <path class="circle" id="synergy-circle-path" stroke-dasharray="0, 100"
-                            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-                    </svg>
-                    <div class="percentage-text" id="synergy-percent">0%</div>
-                </div>
+
+            <!-- 3. SYSTEM SECTION -->
+            <div class="nav-section">
+                <div class="nav-label">SYSTEM</div>
+
+                <button class="nav-item" onclick="openPanel('settings')">
+                    <span class="icon icon-slate">⚙️</span>
+                    <span class="nav-text">Impostazioni</span>
+                </button>
+
+                <button class="nav-item" onclick="toggleTheme()">
+                    <span class="icon icon-blue" id="theme-icon">🌙</span>
+                    <span class="nav-text" id="theme-text">Dark Mode</span>
+                </button>
             </div>
-            <div class="connection-label" id="synergy-status">Simbiosi Attiva</div>
         </div>
 
         <div class="sidebar-footer" onclick="openUserModal(); console.log('Footer clicked')">
@@ -103,6 +80,90 @@
             </div>
         </div>
     </aside>
+
+    <!-- 6. Memory Panel (Overlay Modal) -->
+    <div id="panel-memory" class="sidebar-panel hidden">
+        <div class="panel-header">
+            <h3>Memoria Cognitiva</h3>
+            <button class="close-panel-btn" onclick="closePanel('memory')">×</button>
+        </div>
+        <div class="panel-body">
+            <div class="memory-section">
+                <h4>👤 Profilo Utente</h4>
+                <div id="memory-user-facts" class="memory-grid">
+                    <!-- Facts here -->
+                </div>
+            </div>
+            <div class="memory-section">
+                <h4>💭 Flusso Pensieri</h4>
+                <div id="memory-logs" class="log-list">
+                    <!-- Logs here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Settings Panel (Overlay Modal) -->
+    <div id="panel-settings" class="sidebar-panel hidden">
+        <div class="panel-header">
+            <h3>⚙️ Impostazioni</h3>
+            <button class="close-panel-btn" onclick="closePanel('settings')">×</button>
+        </div>
+        <div class="panel-body">
+            <!-- Device Temperature Monitor -->
+            <div class="settings-section">
+                <h4>🌡️ Temperatura Dispositivo</h4>
+                <p class="section-desc">Monitora il carico termico dell'app ALLMA</p>
+
+                <div class="temp-monitor-grid">
+                    <!-- CPU Temperature -->
+                    <div class="temp-card">
+                        <div class="temp-icon">🔥</div>
+                        <div class="temp-info">
+                            <div class="temp-label">CPU</div>
+                            <div class="temp-value" id="temp-cpu">--°C</div>
+                        </div>
+                        <div class="temp-bar">
+                            <div class="temp-fill" id="temp-cpu-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Battery Temperature -->
+                    <div class="temp-card">
+                        <div class="temp-icon">🔋</div>
+                        <div class="temp-info">
+                            <div class="temp-label">Batteria</div>
+                            <div class="temp-value" id="temp-battery">--°C</div>
+                        </div>
+                        <div class="temp-bar">
+                            <div class="temp-fill" id="temp-battery-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="temp-status" id="temp-status">
+                    <span class="status-dot"></span>
+                    <span id="temp-status-text">Normale</span>
+                </div>
+            </div>
+
+            <!-- Placeholder for future settings -->
+            <div class="settings-section">
+                <h4>💬 Preferenze Chat</h4>
+                <p class="section-desc">Personalizza l'esperienza conversazione</p>
+                <div class="setting-item">
+                    <span>Streaming risposte</span>
+                    <span class="setting-value">✅ Attivo</span>
+                </div>
+                <div class="setting-item">
+                    <span>Mostra pensieri</span>
+                    <span class="setting-value">✅ Attivo</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
 
     <!-- User Info Modal -->
     <div id="user-modal" class="modal-backdrop">
@@ -190,7 +251,16 @@
         </div>
 
         <div class="voice-visualizer">
-            <div class="voice-circle" id="voice-circle"></div>
+            <!-- Core Neural Sphere (Container) -->
+            <div class="neural-sphere">
+                <!-- Particles (Top Layer) -->
+                <canvas id="neural-canvas" width="400" height="400"></canvas>
+
+                <!-- Internal Liquid Waves (Background Layer) -->
+                <div class="wave-blob w-1"></div>
+                <div class="wave-blob w-2"></div>
+                <div class="wave-blob w-3"></div>
+            </div>
         </div>
 
         <div class="voice-text-container">

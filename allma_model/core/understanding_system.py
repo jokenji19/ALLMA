@@ -273,10 +273,29 @@ class EmotionAnalyzer:
 
 class IntentClassifier:
     def classify(self, text: str, components: List[SentenceComponent]) -> IntentType:
-        if "?" in text:
+        """Classifica l'intento basandosi su componenti e parole chiave."""
+        
+        # PHASE 20 FIX: Check for interrogative components, not just "?"
+        has_interrogative = any(c.type == 'interrogativo' for c in components)
+        has_question_mark = "?" in text
+        
+        # Se c'è un interrogativo o un punto interrogativo, è una domanda
+        if has_interrogative or has_question_mark:
             return IntentType.QUESTION
-        elif any(word in text.lower() for word in ["per favore", "potresti", "puoi"]):
+        
+        # Controlla per richieste esplicite
+        elif any(word in text.lower() for word in ["per favore", "potresti", "puoi", "vorrei", "mi aiuti"]):
             return IntentType.REQUEST
+        
+        # Controlla per saluti
+        elif any(word in text.lower() for word in ["ciao", "salve", "buongiorno", "buonasera", "hey"]):
+            return IntentType.GREETING
+        
+        # Controlla per opinioni
+        elif any(word in text.lower() for word in ["penso", "credo", "secondo me", "mi sembra", "direi"]):
+            return IntentType.OPINION
+        
+        # Default: affermazione
         return IntentType.STATEMENT
 
 class SyntaxAnalyzer:
@@ -288,71 +307,141 @@ class SyntaxAnalyzer:
         words = text.split()
         components = []
         
-        # Dizionario di articoli
+        # ===== DIZIONARI ESPANSI (PHASE 20 FIX) =====
+        
+        # Articoli
         articles = {'il', 'lo', 'la', 'i', 'gli', 'le', 'un', 'uno', 'una'}
         
-        # Dizionario di preposizioni
-        prepositions = {'di', 'a', 'da', 'in', 'con', 'su', 'per', 'tra', 'fra'}
+        # Preposizioni (espanse)
+        prepositions = {'di', 'a', 'da', 'in', 'con', 'su', 'per', 'tra', 'fra', 'del', 'della', 'dei', 'degli', 'delle', 'al', 'alla', 'ai', 'agli', 'alle'}
         
-        # Dizionario di pronomi
-        pronouns = {'io', 'tu', 'egli', 'ella', 'noi', 'voi', 'essi', 'mi', 'ti', 'si', 'ci', 'vi'}
+        # Pronomi personali
+        pronouns = {'io', 'tu', 'egli', 'ella', 'noi', 'voi', 'essi', 'esse', 'mi', 'ti', 'si', 'ci', 'vi', 'gli', 'le', 'ne', 'lo', 'la', 'li'}
+        
+        # NUOVO: Pronomi/Aggettivi interrogativi
+        interrogatives = {
+            'qual', 'quale', 'quali',  # Which
+            'che', 'cosa',  # What
+            'chi',  # Who
+            'come',  # How
+            'quando',  # When
+            'dove',  # Where
+            'perché', 'perchè',  # Why
+            'quanto', 'quanta', 'quanti', 'quante'  # How much/many
+        }
+        
+        # NUOVO: Aggettivi possessivi
+        possessives = {
+            'mio', 'mia', 'miei', 'mie',
+            'tuo', 'tua', 'tuoi', 'tue',
+            'suo', 'sua', 'suoi', 'sue',
+            'nostro', 'nostra', 'nostri', 'nostre',
+            'vostro', 'vostra', 'vostri', 'vostre',
+            'loro'
+        }
 
-        # Dizionario di verbi comuni
-        common_verbs = {'chiamo', 'sono', 'ho', 'faccio', 'vado', 'vengo', 'dico', 'penso', 'credo', 'voglio', 'mangia', 'dorme'}
+        # Verbi comuni (espanso)
+        common_verbs = {
+            'chiamo', 'chiami', 'chiama', 'chiamiamo', 'chiamate', 'chiamano',
+            'sono', 'sei', 'è', 'siamo', 'siete',
+            'ho', 'hai', 'ha', 'abbiamo', 'avete', 'hanno',
+            'faccio', 'fai', 'fa', 'facciamo', 'fate', 'fanno',
+            'vado', 'vai', 'va', 'andiamo', 'andate', 'vanno',
+            'vengo', 'vieni', 'viene', 'veniamo', 'venite', 'vengono',
+            'dico', 'dici', 'dice', 'diciamo', 'dite', 'dicono',
+            'penso', 'pensi', 'pensa', 'pensiamo', 'pensate', 'pensano',
+            'credo', 'credi', 'crede', 'crediamo', 'credete', 'credono',
+            'voglio', 'vuoi', 'vuole', 'vogliamo', 'volete', 'vogliono',
+            'mangia', 'mangio', 'mangi', 'mangiamo', 'mangiate', 'mangiano',
+            'dorme', 'dormo', 'dormi', 'dormiamo', 'dormite', 'dormono',
+            'sta', 'sto', 'stai', 'stiamo', 'state', 'stanno'
+        }
         
-        # Dizionario di aggettivi comuni
-        common_adjectives = {'bello', 'brutto', 'grande', 'piccolo', 'alto', 'basso', 'buono', 'cattivo', 'nero', 'bianco', 'rosso', 'verde', 'blu', 'giallo', 'rossa', 'verde', 'blu', 'gialla'}
+        # Aggettivi comuni (espanso)
+        common_adjectives = {
+            'bello', 'bella', 'belli', 'belle',
+            'brutto', 'brutta', 'brutti', 'brutte',
+            'grande', 'grandi',
+            'piccolo', 'piccola', 'piccoli', 'piccole',
+            'alto', 'alta', 'alti', 'alte',
+            'basso', 'bassa', 'bassi', 'basse',
+            'buono', 'buona', 'buoni', 'buone',
+            'cattivo', 'cattiva', 'cattivi', 'cattive',
+            'nero', 'nera', 'neri', 'nere',
+            'bianco', 'bianca', 'bianchi', 'bianche',
+            'rosso', 'rossa', 'rossi', 'rosse',
+            'verde', 'verdi',
+            'blu',
+            'giallo', 'gialla', 'gialli', 'gialle',
+            'preferito', 'preferita', 'preferiti', 'preferite',
+            'nuovo', 'nuova', 'nuovi', 'nuove',
+            'vecchio', 'vecchia', 'vecchi', 'vecchie'
+        }
         
-        # Analizza ogni parola
+        # ===== ANALISI PAROLE (CON PRIORIT CORRETTA) =====
+        
         for i, word in enumerate(words):
-            original_word = word  # Mantieni la parola originale
+            original_word = word
             word_lower = word.lower()
             
-            print(f"DEBUG - Analisi parola: {word}")  
-            print(f"DEBUG - word_lower: {word_lower}")  
-            print(f"DEBUG - word_lower in articles: {word_lower in articles}")  
-            print(f"DEBUG - word_lower in prepositions: {word_lower in prepositions}")  
-            print(f"DEBUG - word_lower in pronouns: {word_lower in pronouns}")  
-            print(f"DEBUG - word_lower in common_verbs: {word_lower in common_verbs}")  
-            print(f"DEBUG - word[0].isupper(): {word[0].isupper()}")
+            # Rimuovi debug print per performance
+            # print(f"DEBUG - Analisi parola: {word}")
             
-            # Determina il tipo e il ruolo
-            if word_lower in articles:
+            # PRIORITY ORDER: Più specifico prima!
+            
+            # 1. Pronomi/Aggettivi INTERROGATIVI (massima priorità)
+            if word_lower in interrogatives:
+                type = 'interrogativo'
+                role = 'interrogativo'
+            
+            # 2. Aggettivi POSSESSIVI
+            elif word_lower in possessives:
+                type = 'aggettivo_possessivo'
+                role = 'possessivo'
+            
+            # 3. Articoli
+            elif word_lower in articles:
                 type = 'articolo'
                 role = 'articolo'
+            
+            # 4. Preposizioni
             elif word_lower in prepositions:
                 type = 'preposizione'
                 role = 'preposizione'
+            
+            # 5. Pronomi personali
             elif word_lower in pronouns:
                 type = 'pronome'
                 role = 'soggetto'
+            
+            # 6. Verbi
             elif word_lower in common_verbs:
                 type = 'verbo'
                 role = 'verbo'
+            
+            # 7. Aggettivi qualificativi
             elif word_lower in common_adjectives:
                 type = 'aggettivo'
-                role = 'aggettivo'
-            # Se la parola inizia con maiuscola, probabilmente è un nome proprio
-            elif original_word[0].isupper():
-                print(f"DEBUG - Parola: {word}, isupper: {original_word[0].isupper()}")
-                type = 'nome'
-                role = 'nome'
+                role = 'attributo'
+            
+            # 8. FALLBACK LOGIC (Migliorato)
             else:
-                # Se la parola precedente è un articolo, probabilmente è un nome
+                # Se segue un articolo, probabilmente è un nome
                 if i > 0 and components[-1].type == 'articolo':
                     type = 'nome'
                     role = 'oggetto'
-                # Se la parola successiva è un nome, potrebbe essere un aggettivo
-                elif i < len(words) - 1 and words[i+1].lower() not in articles:
-                    type = 'aggettivo'
-                    role = 'attributo'
-                # Se è seguita da un oggetto, potrebbe essere un verbo
-                elif i < len(words) - 1:
-                    type = 'verbo'
-                    role = 'azione'
-                else:
+                # Se segue un possessivo, probabilmente è un nome
+                elif i > 0 and components[-1].type == 'aggettivo_possessivo':
                     type = 'nome'
                     role = 'oggetto'
+                # Se segue un verbo essere/avere, potrebbe essere complemento
+                elif i > 0 and components[-1].text.lower() in ['è', 'sono', 'era', 'sei']:
+                    type = 'nome'
+                    role = 'complemento'
+                # Default: nome comune
+                else:
+                    type = 'nome'
+                    role = 'complemento'
             
             # Crea il componente
             component = SentenceComponent(
@@ -361,7 +450,8 @@ class SyntaxAnalyzer:
                 type=type,
                 position=i
             )
-            print(f"Componente creato: {component.text} -> tipo: {component.type}, ruolo: {component.role}")
+            # Rimuovi print per performance
+            # print(f"Componente creato: {component.text} -> tipo: {component.type}, ruolo: {component.role}")
             components.append(component)
         
         # Raffina i ruoli basandosi sul contesto

@@ -5,8 +5,7 @@ from kivy.clock import Clock
 class TTSEngine:
     """
     Handles Text-to-Speech generation.
-    Currently defaults to Native Android TTS for reliability, 
-    with stubs for future Neural (VyvoTTS) integration.
+    Uses Native Android TTS (Google Speech Services) for maximum reliability and zero-latency.
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
@@ -62,6 +61,17 @@ class TTSEngine:
         flush=False appends to queue (QUEUE_ADD) - DEFAULT for streaming.
         """
         print(f"TTSEngine: Speak request -> '{text[:20]}...' (flush={flush})")
+        
+        # --- THOUGHT FILTER ---
+        # Rimuovi i blocchi di pensiero [[...]] prima di parlare
+        import re
+        clean_speech = re.sub(r'\[\[.*?\]\]', '', text, flags=re.DOTALL).strip()
+        
+        if not clean_speech:
+             self.logger.info("TTSEngine: Skipped empty speech after thought filtering.")
+             return
+
+        text = clean_speech
         
         if platform == 'android':
             if self.native_tts and self.is_ready:

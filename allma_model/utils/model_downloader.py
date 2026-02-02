@@ -13,22 +13,16 @@ class ModelDownloader:
         self.logger = logging.getLogger(__name__)
         self.models_dir = self._get_models_dir()
         
-        # URL dei modelli (Gemma 3n E2B IT Quantizzato e Moondream2)
+        # URL dei modelli (GGUF quantizzati per mobile)
         # Nota: Usiamo link diretti a HuggingFace GGUF
         self.models = {
             "gemma": {
-                # Hermes 3 (Llama 3.2 3B) Q4_K_M - The "Rebel" AI (Uncensored/Creative)
-                "url": "https://huggingface.co/NousResearch/Hermes-3-Llama-3.2-3B-GGUF/resolve/main/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf",
-                "filename": "Hermes-3-Llama-3.2-3B.Q4_K_M.gguf",
-                "size_mb": 2000 
-            },
-            "vyvotts": {
-                "url": "https://huggingface.co/prithivMLmods/VyvoTTS-v0-Qwen3-0.6B-GGUF/resolve/main/VyvoTTS-v0-Qwen3-0.6B.Q4_K_M.gguf",
-                "filename": "VyvoTTS-v0-Qwen3-0.6B.Q4_K_M.gguf",
-                "size_mb": 402,
-                "description": "VyvoTTS (Voce)"
-            },
-
+                # Dolphin 3.0 (Qwen2.5 3B) Q4_K_M - Uncensored/Better Reasoning
+                # Upgraded 2026-02-02: From Hermes-3 to Dolphin 3.0
+                "url": "https://huggingface.co/bartowski/Dolphin3.0-Qwen2.5-3b-GGUF/resolve/main/Dolphin3.0-Qwen2.5-3b-Q4_K_M.gguf",
+                "filename": "Dolphin3.0-Qwen2.5-3b-Q4_K_M.gguf",
+                "size_mb": 1930  # 1.93GB
+            }
         }
 
     def _get_models_dir(self):
@@ -50,6 +44,9 @@ class ModelDownloader:
             self.logger.info(f"[DEBUG] Models dir does not exist.")
             return list(self.models.keys())
             
+        # HOUSEKEEPING: Rimuovi vecchi modelli non più usati
+        self.cleanup_old_models()
+        
         for key, info in self.models.items():
             path = os.path.join(self.models_dir, info['filename'])
             exists = os.path.exists(path)
@@ -73,6 +70,29 @@ class ModelDownloader:
                     self.logger.info(f"[DEBUG] File {key} seems complete.")
                     
         return missing
+
+    def cleanup_old_models(self):
+        """Rimuove i modelli non più in uso (es. vecchi Qwen/Vyvo/Kokoro) per liberare spazio."""
+        if not os.path.exists(self.models_dir):
+            return
+
+        # Lista dei file legittimi (quelli attuali)
+        allowed_files = {info['filename'] for info in self.models.values()}
+        
+        try:
+            for filename in os.listdir(self.models_dir):
+                file_path = os.path.join(self.models_dir, filename)
+                
+                # Se è un file e non è nella lista dei permessi (e non è un hidden file di sistema)
+                if os.path.isfile(file_path) and filename not in allowed_files and not filename.startswith('.'):
+                    self.logger.info(f"[CLEANUP] Trovato file obsoleto/sconosciuto: {filename}. Eliminazione...")
+                    try:
+                        os.remove(file_path)
+                        self.logger.info(f"[CLEANUP] {filename} eliminato con successo.")
+                    except Exception as e:
+                        self.logger.error(f"[CLEANUP] Errore eliminazione {filename}: {e}")
+        except Exception as e:
+            self.logger.error(f"[CLEANUP] Errore durante la scansione directory: {e}")
 
     def download_model(self, model_key, progress_callback=None):
         """

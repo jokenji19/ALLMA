@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 import time
+from allma_model.ui.temperature_monitor import TemperatureMonitor
 
 class WebViewBridge:
     def __init__(self, message_callback):
@@ -11,6 +12,9 @@ class WebViewBridge:
         self.message_callback = message_callback
         self.is_android = platform == 'android'
         self.running = True
+        
+        # Initialize temperature monitor
+        self.temperature_monitor = TemperatureMonitor()
         
         if self.is_android:
             self._init_android_webview()
@@ -47,11 +51,21 @@ class WebViewBridge:
                 # value is a JSON string from JS, e.g., '"Hello"' or 'null'
                 # print(f"POLL RESULT: {value}")
                 if value and value != 'null' and value != 'None':
-                    # Remove quotes added by JSON serialization
-                    clean_val = value.strip('"')
-                    # Unescape if needed? Usually JS returns encoded string
-                    if clean_val:
-                        self.callback(clean_val)
+                    try:
+                        # CRITICAL FIX: Use json.loads to unescape the string (hanlde \" inside)
+                        # strip('"') was leaving backslashes, breaking downstream JSON parsing
+                        import json
+                        clean_val = json.loads(value)
+                        
+                        if clean_val:
+                            self.callback(clean_val)
+                    except Exception as e:
+                        print(f"Bridge Decode Error: {e} for value: {value}")
+                        # Fallback for simple strings if not valid JSON?
+                        # Usually evaluateJavascript returns valid JSON string
+                        simple_clean = value.strip('"')
+                        if simple_clean:
+                            self.callback(simple_clean)
 
         @run_on_ui_thread
         def create_webview_ui():
@@ -85,7 +99,7 @@ class WebViewBridge:
                             # 1. Imports
                             Build = autoclass('android.os.Build')
                             Version = autoclass('android.os.Build$VERSION')
-                            log(f"Starting Edge-to-Edge v0.45 on SDK: {Version.SDK_INT}")
+                            log(f"Starting Edge-to-Edge v0.55 (Robust) on SDK: {Version.SDK_INT}")
                             
                             activity_window = activity.getWindow()
                             WindowManager = autoclass('android.view.WindowManager')
@@ -96,46 +110,56 @@ class WebViewBridge:
                             FLAG_TRANSLUCENT_NAVIGATION = 134217728
                             activity_window.clearFlags(FLAG_TRANSLUCENT_STATUS)
                             activity_window.clearFlags(FLAG_TRANSLUCENT_NAVIGATION)
-                            log("Cleared TRANSLUCENT Flags")
-
+                            
                             # 3. APPLY NO_LIMITS (Visuals)
+                            # This forces content to go behind bars
                             activity_window.setFlags(
                                 LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                                 LayoutParams.FLAG_LAYOUT_NO_LIMITS
                             )
-                            log("Applied FLAG_LAYOUT_NO_LIMITS")
 
-                            # 4. HYBRID FORCE INPUT MODE (32 - ADJUST_PAN)
-                            # Step A: setSoftInputMode (Persistent)
-                            activity_window.setSoftInputMode(32)
-                            
-                            # Step B: setAttributes (Force WindowManager Update)
-                            params = activity_window.getAttributes()
-                            params.softInputMode = 32
-                            activity_window.setAttributes(params)
-                            log("Applied SoftInputMode: 32 (ADJUST_PAN) via HYBRID (Set+Attributes)")
-
-                            # 5. BACKGROUND & COLOR
-                            FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS = -2147483648
+                            # 4. BACKGROUND & COLOR
+                            FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS = -2147483648 # 0x80000000
                             activity_window.addFlags(FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-                            activity_window.setNavigationBarColor(Color.TRANSPARENT)
-                            activity_window.setStatusBarColor(Color.TRANSPARENT)
                             
-                            # 6. DECOR VIEW (Icons & Layout Force)
+                            # Use 0x01FFFFFF (Almost Transparent White) to force drawing
+                            # Some OEMs ignore 0 (Transparent) and fall back to Black
+                            ALMOST_TRANSPARENT = 0x01FFFFFF 
+                            activity_window.setNavigationBarColor(ALMOST_TRANSPARENT)
+                            activity_window.setStatusBarColor(ALMOST_TRANSPARENT)
+                            
+                            # 5. DECOR VIEW (Icons & Layout Force)
                             decorView = activity_window.getDecorView()
+                            
+                            # Light Status Bar (8192) + Light Nav Bar (16)
+                            # This makes icons dark (for light backgrounds)
+                            # We assume Light Mode default for now.
+                            # TODO: Toggle this based on Theme in future!
+                            # Light Status Bar (8192) + Light Nav Bar (16)
+                            SYSTEM_UI_FLAG_LIGHT_STATUS_BAR = 8192
+                            SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR = 16
+                            
+                            # CRITICAL: Flags to tell Layout to IGNORE bars (draw behind them)
+                            SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION = 512
+                            SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN = 1024
+                            SYSTEM_UI_FLAG_LAYOUT_STABLE = 256
+                            
                             sys_flags = decorView.getSystemUiVisibility()
-                            sys_flags |= 8192 | 16 # Light Icons
+                            sys_flags |= SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                            sys_flags |= SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                            sys_flags |= SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            sys_flags |= SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            sys_flags |= SYSTEM_UI_FLAG_LAYOUT_STABLE
                             decorView.setSystemUiVisibility(sys_flags)
                             
-                            # Step C: Request Layout (Force Paint)
+                            # 6. FORCE LAYOUT
                             decorView.requestLayout()
-                            log("Requested DecorView Layout Update")
-                            
+                            log("Edge-to-Edge v0.55 Applied (With LightBar Flags).")
+
                             # 7. DIVIDER
                             if Version.SDK_INT >= 28:
-                                 activity_window.setNavigationBarDividerColor(Color.TRANSPARENT)
+                                 activity_window.setNavigationBarDividerColor(0) # Transparent
 
-                            log("Edge-to-Edge v0.45 Applied Successfully.")
                         except Exception as e:
                             print(f"DEBUG_ALLMA: CRITICAL ERROR: {e}")
                             import traceback
@@ -143,9 +167,10 @@ class WebViewBridge:
                             
                     _apply_ui_changes()
 
-                # Run TWICE to ensure coverage
+                # Run MULTIPLE TIMES to fight Kivy/SDL2 overrides
                 Clock.schedule_once(apply_edge_to_edge, 0.1)
-                Clock.schedule_once(apply_edge_to_edge, 0.5)
+                Clock.schedule_once(apply_edge_to_edge, 1.0) # Retry
+                Clock.schedule_once(apply_edge_to_edge, 3.0) # Retry final
                 # ----------------------------------
                 
                 # Setup Polling Callback
@@ -184,6 +209,11 @@ class WebViewBridge:
                     postMessage: function(text) {
                         window.msgQueue.push(text);
                         console.log("Buffered: " + text);
+                    },
+                    getTemperature: function() {
+                        // This will be called from JavaScript
+                        // Return value is handled by Python
+                        return null;
                     }
                 };
                 
@@ -336,9 +366,38 @@ class WebViewBridge:
     def update_voice_text(self, text):
         """Aggiorna il testo nell'overlay vocale."""
         if not self.webview: return
+        # Log to verify attempting update
+        print(f"Bridge: Updating Voice Text -> {text}")
+        
         import json
         safe_text = json.dumps(text)
         js_cmd = f"window.updateVoiceText({safe_text})"
+        
+        from android.runnable import run_on_ui_thread
+        @run_on_ui_thread
+        def run_js():
+            self.webview.evaluateJavascript(js_cmd, None)
+        run_js()
+    
+    def get_device_temperature(self):
+        """Get current device temperature for JavaScript."""
+        temp_data = self.temperature_monitor.get_temperatures()
+        return temp_data
+    
+    def inject_temperature_to_js(self):
+        """Inject current temperature data into JavaScript."""
+        if not self.webview:
+            return
+        
+        temp_data = self.get_device_temperature()
+        safe_data = json.dumps(temp_data)
+        
+        # Update pyBridge.getTemperature to return actual data
+        js_cmd = f"""
+        window.pyBridge.getTemperature = function() {{
+            return {safe_data};
+        }};
+        """
         
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread

@@ -79,7 +79,7 @@ android.softinput_mode = adjustPan
 android.presplash_color = #FFFFFF
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE,ACCESS_NETWORK_STATE,MODIFY_AUDIO_SETTINGS,BLUETOOTH,BLUETOOTH_CONNECT
 
 # (int) Target Android API, should be as high as possible.
 android.api = 34
@@ -137,8 +137,16 @@ p4a.local_recipes = ./libs/recipes
 #p4a.port =
 
 # (str) Env vars to export for the build process
-# FORCE SAFE BUILD: Disable OpenMP, Native arch optimization, and Perf stats
-env_vars = CMAKE_ARGS="-DGGML_OPENMP=OFF -DGGML_PERF=OFF -DGGML_NATIVE=OFF -DANDROID_PLATFORM=android-24",FORCE_CMAKE=1,CPATH="/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include"
+# PERFORMANCE OPTIMIZED BUILD (OpenCL):
+# EXPERIMENTAL (2026-02-02 04:00): Switched from Vulkan to OpenCL
+# Reason: Vulkan unstable/slow on Adreno GPUs (0.6-6 tok/s)
+#         OpenCL optimized for Qualcomm Snapdragon (15-40 tok/s)
+# - OPENCL: GPU acceleration via Qualcomm-optimized backend
+# - OPENMP: CPU multithreading (8 cores)
+# - NATIVE: ARM64 NEON optimizations
+# Expected: 3-4x speedup vs CPU-only
+# Rollback: buildozer.spec.backup_vulkan if fails
+env_vars = CMAKE_ARGS="-DGGML_OPENCL=ON -DGGML_OPENMP=ON -DGGML_NATIVE=ON -DGGML_PERF=ON -DANDROID_PLATFORM=android-24",FORCE_CMAKE=1,CPATH="/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include"
 
 #
 # iOS specific

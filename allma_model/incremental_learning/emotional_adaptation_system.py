@@ -38,8 +38,11 @@ class EmotionalAdaptationSystem:
         
     def adapt_to_emotion(self, pattern_features) -> EmotionalState:
         """Adatta il sistema allo stato emotivo corrente"""
+        # Extract primary emotion from features if available, else infer/default
+        emotion_type = getattr(pattern_features, 'primary_emotion', 'neutral')
+        
         # Calcola la valenza emotiva
-        valence = self._calculate_valence(pattern_features.intensity)
+        valence = self._calculate_valence(pattern_features.intensity, emotion_type)
         
         # Crea il nuovo stato emotivo
         emotional_state = EmotionalState(
@@ -60,11 +63,60 @@ class EmotionalAdaptationSystem:
         
         return emotional_state
         
-    def _calculate_valence(self, intensity: float) -> float:
-        """Calcola la valenza emotiva"""
-        # Per semplicità, usiamo una funzione sigmoidale
-        import numpy as np
-        return 1 / (1 + np.exp(-2 * (intensity - 0.5)))
+        return emotional_state
+        
+    def process(self, user_input: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Standard interface for ModuleOrchestrator"""
+        # 1. Analyze input
+        features_dict = self.analyze_emotion(user_input)
+        
+        # 2. Create a Mock object for features because adapt_to_emotion expects object access
+        class Features:
+            def __init__(self, d):
+                self.intensity = d.get('intensity', 0.5)
+                self.primary_emotion = d.get('primary_emotion', 'neutral')
+                self.complexity = 0.5
+        
+        features = Features(features_dict)
+        
+        # 3. Update State
+        new_state = self.adapt_to_emotion(features)
+        
+        # 4. Generate Response
+        response = self.generate_response(
+            {'primary_emotion': new_state.category.replace('simple_', '').replace('complex_', '')}
+        )
+        
+        return {
+            'response': response,
+            'valence': new_state.valence,
+            'intensity': new_state.intensity,
+            'category': new_state.category
+        }
+
+    def _calculate_valence(self, intensity: float, emotion_type: str = 'neutral') -> float:
+        """Calcola la valenza emotiva basata su tipo e intensità"""
+        # Base valences for different emotions
+        base_valence = {
+            'joy': 0.8,
+            'surprise': 0.6,
+            'neutral': 0.5,
+            'sadness': 0.3,
+            'fear': 0.2,
+            'anger': 0.2
+        }.get(emotion_type, 0.5)
+        
+        # Modulate by intensity
+        # Positive emotions: high intensity -> higher valence
+        # Negative emotions: high intensity -> lower valence
+        if base_valence > 0.5:
+            valence = base_valence + (intensity * 0.2)
+        elif base_valence < 0.5:
+            valence = base_valence - (intensity * 0.2)
+        else:
+            valence = 0.5
+            
+        return max(0.0, min(1.0, valence))
         
     def _determine_category(self, intensity: float, valence: float, complexity: float) -> str:
         """Determina la categoria emotiva"""
@@ -89,34 +141,76 @@ class EmotionalAdaptationSystem:
         """Genera una risposta basata sullo stato emotivo"""
         responses = {
             'joy': [
-                "Sono felice per te!",
-                "Che bella notizia!",
-                "Mi fa piacere sentirlo!"
+                "Sono davvero felice per te!",
+                "Che notizia fantastica!",
+                "È meraviglioso sentirlo!",
+                "La tua gioia è contagiosa.",
+                "Questo mi rallegra la giornata.",
+                "Ottimo risultato!",
+                "Continua così!",
+                "Splendido!",
+                "Che momento speciale!",
+                "Ti sento molto positivo oggi!"
             ],
             'sadness': [
-                "Mi dispiace sentirlo.",
-                "Sono qui per ascoltarti.",
-                "Capisco come ti senti."
+                "Mi dispiace molto che tu ti senta così.",
+                "Sono qui se hai bisogno di sfogarti.",
+                "A volte è giusto prendersi un momento per la tristezza.",
+                "Spero che le cose migliorino presto.",
+                "Ti sono vicino.",
+                "Posso fare qualcosa per aiutarti?",
+                "È un momento difficile, lo capisco.",
+                "Non sei solo in questo.",
+                "Prenditi il tempo che ti serve.",
+                "Vorrei poterti aiutare di più."
             ],
             'anger': [
                 "Capisco la tua frustrazione.",
-                "Parliamone insieme.",
-                "Come posso aiutarti?"
+                "Sembra una situazione davvero irritante.",
+                "Hai tutto il diritto di essere arrabbiato.",
+                "Cerchiamo di mantenere la calma e analizzare la situazione.",
+                "Vuoi parlarne più in dettaglio?",
+                "Sfogarsi può aiutare.",
+                "Cosa ti ha fatto arrabbiare di più?",
+                "Respiro profondo. Sono qui.",
+                "Non lasciare che la rabbia ti rovini la giornata.",
+                "Affrontiamo la cosa un passo alla volta."
             ],
             'fear': [
-                "È normale sentirsi così.",
-                "Sono qui per supportarti.",
-                "Affrontiamolo insieme."
+                "È normale avere paura in certe situazioni.",
+                "Affronteremo questa preoccupazione insieme.",
+                "Cosa ti spaventa di più esattamente?",
+                "Cerca di concentrarti sul presente.",
+                "Sono qui per supportarti in ogni modo.",
+                "La paura può essere utile se la ascoltiamo.",
+                "Non lasciare che l'ansia prenda il sopravvento.",
+                "Sei più forte di quanto pensi.",
+                "Tutto si risolverà.",
+                "Facciamo un passo alla volta."
             ],
             'surprise': [
-                "Wow! Che sorpresa!",
-                "Non me lo aspettavo!",
-                "Che notizia interessante!"
+                "Wow! Davvero inaspettato!",
+                "Non me lo sarei mai immaginato!",
+                "Che colpo di scena!",
+                "Incredibile!",
+                "Raccontami di più, sono curioso!",
+                "Questa sì che è una novità.",
+                "Davvero sorprendente.",
+                "Chi l'avrebbe mai detto!",
+                "Mi hai lasciato senza parole.",
+                "Che sorpresa piacevole (spero!)"
             ],
             'neutral': [
-                "Sono qui per ascoltarti.",
-                "Vuoi condividere i tuoi pensieri?",
-                "Come posso esserti d'aiuto?"
+                "Capisco.",
+                "Interessante.",
+                "Dimmi di più.",
+                "Continuo ad ascoltarti.",
+                "Cosa ne pensi?",
+                "Sono qui.",
+                "Procediamo.",
+                "Tutto chiaro.",
+                "Certo.",
+                "Ok, andiamo avanti."
             ]
         }
         
