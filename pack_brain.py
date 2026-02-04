@@ -18,6 +18,10 @@ def pack_and_update():
                 if file in ['.DS_Store', '.gitignore', 'allma_diary.json']: 
                     continue
                 if file.endswith('.pyc'): continue
+                if file.endswith('.log'): continue # Exclude logs
+                if file.endswith('.zip'): continue # Exclude zips (models should be downloaded)
+                if file.startswith('debug_') and file.endswith('.txt'): continue # Exclude heavy debug dumps
+                if file.startswith('crash_') and file.endswith('.log'): continue # Exclude crash dumps
                 
                 abs_path = os.path.join(root, file)
                 rel_path = os.path.relpath(abs_path, '.')
@@ -37,6 +41,24 @@ def pack_and_update():
                     zf.write(abs_path, rel_path)
         else:
             print("WARNING: assets directory not found!", flush=True)
+
+        # 3. Walk benchmarks
+        if os.path.exists('benchmarks'):
+            for root, dirs, files in os.walk('benchmarks'):
+                dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', '.DS_Store', 'reports']] # Skip reports
+                for file in files:
+                    if file in ['.DS_Store']: continue
+                    abs_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(abs_path, '.')
+                    print(f"Adding (Benchmarks) {rel_path}", flush=True)
+                    zf.write(abs_path, rel_path)
+
+        # 4. Add specific root scripts
+        root_scripts = ['benchmark_iq.py', 'reproduce_memory_fail.py', 'verify_soul.py']
+        for script in root_scripts:
+            if os.path.exists(script):
+                 print(f"Adding (Root Script) {script}", flush=True)
+                 zf.write(script, script)
     
     encoded = base64.b64encode(buffer.getvalue()).decode('utf-8')
     print(f"Blob size: {len(encoded)} chars", flush=True)

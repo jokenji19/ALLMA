@@ -19,11 +19,12 @@ class DreamManager:
     Funziona in background per non rallentare l'interazione utente.
     """
     
-    def __init__(self, memory_system, incremental_learner, reasoning_engine=None, coalescence_processor=None):
+    def __init__(self, memory_system, incremental_learner, reasoning_engine=None, coalescence_processor=None, system_monitor=None):
         self.memory_system = memory_system
         self.incremental_learner = incremental_learner
         self.reasoning_engine = reasoning_engine
         self.coalescence_processor = coalescence_processor
+        self.system_monitor = system_monitor # BRAIN V2
         self.logger = logging.getLogger(__name__)
         self.is_dreaming = False
         self.last_dream_timestamp = datetime.now()
@@ -56,30 +57,56 @@ class DreamManager:
         Il Ciclo del Sogno (Tree of Thoughts Lite).
         """
         self.is_dreaming = True
-        self.logger.info("🌙 Inizio Fase Onirica (Dream Cycle)...")
+        
+        # BRAIN V2: METABOLIC GATING
+        is_charging = False
+        if self.system_monitor:
+             is_charging = self.system_monitor.get_metabolic_state().is_charging
+        
+        mode = "REM (Active/Deep)" if is_charging else "NREM (Passive/Light)"
+        self.logger.info(f"🌙 Inizio Fase Onirica (Dream Cycle). Mode: {mode}")
         
         try:
             # 1. Recupero Memorie Recenti (Diurno)
             # Simula il consolidamento ippocampale
             recent_memories = self._fetch_unconsolidated_memories()
             
-            # --- CURIOSITY ENGINE ---
-            if not recent_memories:
-                self.logger.info("🌙 Nessuna memoria recente. Attivazione Motore di Curiosità...")
-                recent_memories = self._generate_curiosity_seeds()
-
-            if not recent_memories:
-                self.logger.info("🌙 Mente vuota. Sonno profondo senza sogni.")
+            # --- PASSIVE MODE (Always Check) ---
+            # Even in passive mode we could do light housekeeping, but for now we skip ToT
+            if not is_charging:
+                self.logger.info("🌙 Passive Sleep (Not Charging): Skipping Deep Analysis to save energy.")
+                # Future: Add light consolidation here (e.g. database vacuum, index reorg)
                 return
 
-            # 2. Tree of Thoughts (Deep Reflection)
-            insights = self._run_tree_of_thoughts(recent_memories)
-            
-            # 3. Consolidamento & Validazione
-            self._consolidate_insights(insights)
-            
-            self.last_dream_timestamp = datetime.now()
-            self.logger.info("☀️ Fase Onirica completata. ALLMA si è evoluta.")
+            # --- DEEP REM MODE (Charging Only) ---
+            # CRITICAL: Acquire WakeLock to keep CPU running if screen turns off
+            # This ensures "Tree of Thoughts" completes even in Doze mode.
+            if self.system_monitor:
+                self.system_monitor.acquire_wake_lock("ALLMA:Dream:REM")
+
+            try:
+                # --- CURIOSITY ENGINE ---
+                if not recent_memories:
+                    self.logger.info("🌙 Nessuna memoria recente. Attivazione Motore di Curiosità...")
+                    recent_memories = self._generate_curiosity_seeds()
+
+                if not recent_memories:
+                    self.logger.info("🌙 Mente vuota. Sonno profondo senza sogni.")
+                    return
+
+                # 2. Tree of Thoughts (Deep Reflection)
+                insights = self._run_tree_of_thoughts(recent_memories)
+                
+                # 3. Consolidamento & Validazione
+                self._consolidate_insights(insights)
+                
+                self.last_dream_timestamp = datetime.now()
+                self.logger.info("☀️ Fase Onirica completata. ALLMA si è evoluta.")
+                
+            finally:
+                # ALWAYS release lock
+                if self.system_monitor:
+                    self.system_monitor.release_wake_lock()
             
         except Exception as e:
             self.logger.error(f"Incubo (Errore nel sogno): {e}")
@@ -215,6 +242,75 @@ class DreamManager:
                     'tried_count': 0
                 })
 
+    # --- VISUALIZATION / DEBUGGING ---
+    def start_lucid_dream(self, user_id: str, webview_bridge):
+        """
+        Avvia un 'Sogno Lucido' visibile all'utente per debug/verifica.
+        Bypassa i controlli energetici e mostra il pensiero.
+        """
+        if self.is_dreaming:
+            return False
+            
+        self.current_user_id = user_id
+        self.webview_bridge = webview_bridge
+        
+        dream_thread = threading.Thread(target=self._lucid_dream_cycle)
+        dream_thread.daemon = True
+        dream_thread.start()
+        return True
+
+    def _lucid_dream_cycle(self):
+        """
+        Ciclo onirico visibile (streamed to UI).
+        """
+        self.is_dreaming = True
+        self.logger.info("👁️ Inizio Sogno Lucido (Visual Test).")
+        
+        try:
+            # 1. Notify Start
+            self._stream_to_ui("👁️ Attivazione Sogno Lucido...", is_thought=True)
+            time.sleep(1)
+            
+            # 2. Acquire Curiosity
+            self._stream_to_ui("🧠 Generazione curiosità sintetica...", is_thought=True)
+            seeds = self._generate_curiosity_seeds()
+            if not seeds:
+                self._stream_to_ui("❌ Mente vuota.", is_thought=True)
+                return
+                
+            seed_text = seeds[0]['content']
+            self._stream_to_ui(f"❓ Domanda: {seed_text}", is_thought=True)
+            time.sleep(1.5)
+            
+            # 3. Tree of Thoughts (Streamed)
+            self._stream_to_ui("🌳 Avvio Tree of Thoughts...", is_thought=True)
+            
+            # Mocking ToT steps visualization (since real ToT inside is atomic)
+            # In V3 we will make ToT streamable. For now, we wrap the result.
+            insights = self._run_tree_of_thoughts(seeds)
+            
+            for insight in insights:
+                self._stream_to_ui(f"💡 Insight: {insight}", is_thought=True)
+                time.sleep(1)
+
+            # 4. Consolidation
+            self._consolidate_insights(insights)
+            self._stream_to_ui("💾 Consolidamento memorie completato.", is_thought=True)
+            self._stream_to_ui("✅ Ciclo onirico terminato.", is_thought=True)
+
+        except Exception as e:
+            self.logger.error(f"Lucid Dream Error: {e}")
+            self._stream_to_ui(f"❌ Errore nel sogno: {e}", is_thought=True)
+        finally:
+            self.is_dreaming = False
+
+    def _stream_to_ui(self, text: str, is_thought: bool = False):
+        if hasattr(self, 'webview_bridge') and self.webview_bridge:
+            # Format as a system message or thought bubble
+            # We use '[THOUGHT]' prefix which script.js might style differently
+            formatted = f"💭 {text}" if is_thought else text
+            self.webview_bridge.send_message_to_js(formatted, sender='system')
+    
     def get_and_clear_pending_verification(self) -> Optional[Dict]:
         """
         Recupera un insight in attesa di validazione e lo rimuove dalla coda.

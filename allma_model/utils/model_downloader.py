@@ -18,7 +18,7 @@ class ModelDownloader:
         self.models = {
             "gemma": {
                 # Dolphin 3.0 (Qwen2.5 3B) Q4_K_M - Uncensored/Better Reasoning
-                # Upgraded 2026-02-02: From Hermes-3 to Dolphin 3.0
+                # Restoration: DeepSeek-R1 engine incompatibility fallback.
                 "url": "https://huggingface.co/bartowski/Dolphin3.0-Qwen2.5-3b-GGUF/resolve/main/Dolphin3.0-Qwen2.5-3b-Q4_K_M.gguf",
                 "filename": "Dolphin3.0-Qwen2.5-3b-Q4_K_M.gguf",
                 "size_mb": 1930  # 1.93GB

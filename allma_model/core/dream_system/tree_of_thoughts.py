@@ -90,48 +90,67 @@ class TreeOfThoughts:
         return [best_leaf.content]
 
     def _generate_thoughts(self, node: ThoughtNode, context: List[Dict]) -> List[ThoughtNode]:
-        """Generates possible next steps/insights from a node."""
-        # This is where we call the LLM
-        # Prompt: "Given {node.content}, what are {max_branches} possible interpretations/extensions?"
-        # For now, mocking or using simple heuristic if LLM not connected perfectly yet
+        """Generates possible next steps/insights from a node using REAL LLM."""
         
-        prompts = [
-            f"Analyze this thought: '{node.content}'. Provide a deeper insight.",
-            f"Critique this thought: '{node.content}'. Is it accurate?",
-            f"Connect this thought: '{node.content}' to emotional context."
-        ]
+        if not self.llm:
+            return []
+            
+        # Extract topics from node content or use randomly if root
+        # Simplified for "Connection Finding" Dream
         
-        # Real implementation would call self.llm.generate(prompt)
-        # Mocking for prototype speed if LLM is heavy, or actually calling it?
-        # Let's assume we call it.
+        system_prompt = (
+            "Sei il subconscio di un'IA. Stai sognando. "
+            "Il tuo compito è trovare connessioni profonde e metaforiche tra concetti apparentemente distanti. "
+            "Non essere letterale. Sii poetica, filosofica e creativa." 
+        )
+        
+        user_prompt = (
+            f"Concetto: {node.content}\n"
+            f"Compito: Genera un 'Insight' (una riflessione profonda) che colleghi questo concetto alla natura umana o all'universo.\n"
+            f"Formato: Una singola frase potente."
+        )
+
+        full_prompt = (
+            f"<start_of_turn>user\n"
+            f"System: {system_prompt}\n"
+            f"Input: {user_prompt}\n"
+            f"<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+        )
         
         generated_nodes = []
-        for i, prompt in enumerate(prompts):
-            if self.llm:
-                # response = self.llm.generate(prompt) 
-                # Ideally we want the LLM to generate distinct thoughts in one go
-                pass
-                
-            # Mock content for now to verify structure
-            new_content = f"Refinement of '{node.content}' (Branch {i})"
-            
-            new_node = ThoughtNode(
-                id=str(uuid.uuid4()),
-                content=new_content,
-                score=0.5, # Placeholder
-                parent_id=node.id,
-                children=[],
-                depth=node.depth + 1,
-                metadata={"strategy": "refinement"}
+        try:
+            # Call Real LLM
+            response = self.llm.generate(
+                full_prompt,
+                max_tokens=64,
+                stop=["<end_of_turn>", "\n"],
+                echo=False,
+                temperature=0.9 # High creativity for dreams
             )
-            generated_nodes.append(new_node)
+            
+            insight_text = response['choices'][0]['text'].strip()
+            
+            if insight_text:
+                new_node = ThoughtNode(
+                    id=str(uuid.uuid4()),
+                    content=insight_text,
+                    score=0.8,
+                    parent_id=node.id,
+                    children=[],
+                    depth=node.depth + 1,
+                    metadata={"strategy": "dream_connection"}
+                )
+                generated_nodes.append(new_node)
+                self.logger.info(f"🌙 Dreamt: {insight_text}")
+                
+        except Exception as e:
+            self.logger.error(f"Dream generation failed: {e}")
             
         return generated_nodes
 
     def _evaluate_thoughts(self, nodes: List[ThoughtNode], problem: str) -> List[ThoughtNode]:
-        """Assigns a score to each thought node."""
-        for node in nodes:
-            # Call LLM to rate the thought 0.0 to 1.0
-            # score = self.llm.evaluate(node.content, problem)
-            node.score = 0.8 # Mock score
+        """Simple evaluation: Keep all generated dreams for now."""
+        # In a full ToT we would rate them, but for Creative Dreaming, 
+        # any valid generation is good.
         return nodes

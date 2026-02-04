@@ -50,12 +50,17 @@ class EmotionalCore:
         """Inizializza il sistema emotivo."""
     def __init__(self):
         """Inizializza il sistema emotivo."""
+        # Phase 17: TinyBERT Integration
+        try:
+            from allma_model.agency_system.ml_emotional_system import MLEmotionalSystem
+            self.ml_system = MLEmotionalSystem()
+        except ImportError:
+            print("Warning: MLEmotionalSystem not found.")
+            self.ml_system = None
+
         # TRANSFORMERS REMOVED: Using LLM (Gemma) for emotion detection
         self.emotion_classifier = None
 
-        # self.intensity_scaler = None # Removed unused scaler
-
-        # self.intensity_scaler = None # Removed unused scaler
         self.emotion_history: Dict[str, List[EmotionalState]] = {}
         self.current_emotion = None
         self.emotion_intensity = 0.0
@@ -222,24 +227,38 @@ Analizza il seguente testo: "{text}"<end_of_turn>
         llm_client = None # New optional Argument
     ) -> EmotionalState:
         """
-        Rileva le emozioni dal testo. Usa LLM se fornito, altrimenti fallback.
+        Rileva le emozioni dal testo. Uses TinyBERT (Fast) -> LLM (Deep) -> Fallback.
         """
         if context is None:
             context = {}
             
-        # 1. TENTATIVO CON LLM (PRIORITARIO)
+        # 1. TENTATIVO CON TINYBERT (FAST & SPECIALIZED)
+        # Phase 17 Upgrade
+        if self.ml_system:
+            try:
+                # Use synchronous analyze for blocking detection
+                emotion_label = self.ml_system.analyze(text)
+                if emotion_label and emotion_label != "neutral":
+                    return EmotionalState(
+                        primary_emotion=emotion_label,
+                        confidence=0.9, # High confidence in ML
+                        secondary_emotions={},
+                        intensity=0.7,
+                        context=context
+                    )
+            except Exception as e:
+                print(f"TinyBERT failed: {e}")
+
+        # 2. TENTATIVO CON LLM (FALLBACK / DEEP)
         if llm_client:
-            # Se llm_client è l'istanza Llama, passiamo il suo metodo __call__ o create_completion
+            # Se llm_client è l'istanza Llama
             if hasattr(llm_client, '__call__'):
                 return self.detect_emotion_via_llm(text, llm_client, context)
             elif hasattr(llm_client, 'create_completion'):
                 return self.detect_emotion_via_llm(text, llm_client.create_completion, context)
                 
-        # 2. LOGICA ORIGINALE (TRANSFORMERS) RIMOSSA
-        # Manteniamo solo il fallback basato su regole o dummy se LLM manca
-        
-        # Fallback semplice se non abbiamo LLM
-        print("DEBUG - No LLM client provided for emotion detection, using fallback.")
+        # 3. FALLBACK FINALE
+        print("DEBUG - No Emotion System available, using fallback.")
         return EmotionalState(
             primary_emotion="neutral",
             confidence=0.5,

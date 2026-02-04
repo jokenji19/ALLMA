@@ -11,24 +11,9 @@ class TemperatureMonitor:
     
     def __init__(self):
         self.is_android = platform == 'android'
-        self.battery_manager = None
         
         if self.is_android:
-            try:
-                from jnius import autoclass, cast
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Context = autoclass('android.content.Context')
-                BatteryManager = autoclass('android.os.BatteryManager')
-                
-                activity = PythonActivity.mActivity
-                self.battery_manager = cast(
-                    BatteryManager,
-                    activity.getSystemService(Context.BATTERY_SERVICE)
-                )
-                logging.info("✅ TemperatureMonitor initialized (Android)")
-            except Exception as e:
-                logging.error(f"❌ Failed to initialize TemperatureMonitor: {e}")
-                self.battery_manager = None
+            logging.info("✅ TemperatureMonitor initialized (Android)")
     
     def get_temperatures(self):
         """
@@ -37,7 +22,7 @@ class TemperatureMonitor:
         Returns:
             dict: {'cpu': float, 'battery': float} in Celsius
         """
-        if not self.is_android or not self.battery_manager:
+        if not self.is_android:
             # Fallback for desktop testing
             import random
             return {
@@ -46,13 +31,24 @@ class TemperatureMonitor:
             }
         
         try:
-            # Battery temperature (in 0.1 degrees C, need to divide by 10)
-            battery_temp = self.battery_manager.getIntProperty(
-                self.battery_manager.BATTERY_PROPERTY_TEMPERATURE
-            ) / 10.0
+            # ROBUST METHOD: Use Sticky Intent for Battery
+            from jnius import autoclass
+            Intent = autoclass('android.content.Intent')
+            IntentFilter = autoclass('android.content.IntentFilter')
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
             
-            # CPU temperature: Try reading from thermal zones
-            cpu_temp = self._get_cpu_temperature()
+            activity = PythonActivity.mActivity
+            filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            battery_status = activity.registerReceiver(None, filter)
+            
+            if battery_status:
+                raw_temp = battery_status.getIntExtra("temperature", 0)
+                battery_temp = raw_temp / 10.0
+            else:
+                battery_temp = 25.0 # Fallback
+            
+            # CPU temperature: Try reading from thermal zones or estimate
+            cpu_temp = self._get_cpu_temperature(battery_temp)
             
             return {
                 'cpu': round(cpu_temp, 1),
@@ -66,7 +62,7 @@ class TemperatureMonitor:
                 'battery': 0.0
             }
     
-    def _get_cpu_temperature(self):
+    def _get_cpu_temperature(self, battery_temp):
         """
         Read CPU temperature from thermal zone files
         Android exposes these in /sys/class/thermal/
@@ -77,37 +73,30 @@ class TemperatureMonitor:
                 '/sys/class/thermal/thermal_zone0/temp',
                 '/sys/class/thermal/thermal_zone1/temp',
                 '/sys/devices/virtual/thermal/thermal_zone0/temp',
+                # Some Samsung specific
+                '/sys/class/thermal/thermal_zone7/temp', # Often CPU on newer SOCs
             ]
             
             for path in thermal_paths:
                 try:
-                    with open(path, 'r') as f:
-                        temp_raw = int(f.read().strip())
-                        # Temperature is in millidegrees, convert to Celsius
-                        temp_celsius = temp_raw / 1000.0
-                        
-                        # Sanity check (20-100°C range)
-                        if 20 <= temp_celsius <= 100:
-                            return temp_celsius
+                    import os
+                    if os.path.exists(path):
+                        with open(path, 'r') as f:
+                            content = f.read().strip()
+                            if content:
+                                temp_raw = int(content)
+                                # Temperature is in millidegrees, convert to Celsius
+                                temp_celsius = temp_raw / 1000.0
+                                
+                                # Sanity check (20-100°C range)
+                                if 20 <= temp_celsius <= 100:
+                                    return temp_celsius
                 except (FileNotFoundError, ValueError, PermissionError):
                     continue
             
-            # Fallback: estimate from battery temp + offset
-            from jnius import autoclass
-            battery_temp = self.battery_manager.getIntProperty(
-                self.battery_manager.BATTERY_PROPERTY_TEMPERATURE
-            ) / 10.0
-            
-            # CPU usually 5-15°C hotter than battery during processing
+            # Fallback: CPU usually 5-15°C hotter than battery during processing
             return battery_temp + 10.0
             
         except Exception as e:
             logging.warning(f"Could not read CPU temperature: {e}")
-            # Use battery temp as fallback
-            try:
-                battery_temp = self.battery_manager.getIntProperty(
-                    self.battery_manager.BATTERY_PROPERTY_TEMPERATURE
-                ) / 10.0
-                return battery_temp + 8.0
-            except:
-                return 45.0  # Safe default
+            return battery_temp + 8.0

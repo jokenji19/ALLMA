@@ -9,12 +9,16 @@
     <title>ALLMA AI</title>
     <!-- Use v24 assets -->
     <link rel="stylesheet" href="style_v24.css">
+    <link rel="stylesheet" href="settings_ui.css">
 </head>
 
 <body>
 
     <!-- Sidebar Backdrop -->
     <div id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+
+    <!-- Status Indicators (Dream Mode) -->
+    <div id="dream-indicator" class="status-icon hidden" title="Sognando...">🌙</div>
 
     <!-- Sidebar Drawer -->
     <aside id="sidebar">
@@ -147,7 +151,19 @@
                 </div>
             </div>
 
-            <!-- Placeholder for future settings -->
+            <!-- Dream Mode Setting -->
+            <div class="settings-section">
+                <h4>🌙 Sogni & Iniziativa</h4>
+                <p class="section-desc">Consenti ad ALLMA di riflettere offline (richiede Carica + >70%)</p>
+                <div class="setting-item">
+                    <span>Modalità Sogno</span>
+                    <label class="apple-switch">
+                        <input type="checkbox" id="dream-mode-toggle" onchange="toggleDreamMode(this)">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
             <div class="settings-section">
                 <h4>💬 Preferenze Chat</h4>
                 <p class="section-desc">Personalizza l'esperienza conversazione</p>
@@ -158,6 +174,19 @@
                 <div class="setting-item">
                     <span>Mostra pensieri</span>
                     <span class="setting-value">✅ Attivo</span>
+                </div>
+            </div>
+
+            <!-- Diagnostics Section -->
+            <div class="settings-section">
+                <h4>🧪 Diagnostica & Test</h4>
+                <p class="section-desc">Strumenti per sviluppatori e analisi cognitiva</p>
+                <div class="setting-item action-item" onclick="startBenchmark()">
+                    <div class="action-label">
+                        <span class="icon">🧠</span>
+                        <span>Esegui Benchmark Cognitivo</span>
+                    </div>
+                    <span class="arrow-icon">▶</span>
                 </div>
             </div>
         </div>

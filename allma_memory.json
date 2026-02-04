@@ -1,0 +1,127 @@
+{
+  "conversations": {
+    "user": [
+      {
+        "id": "user_1770073106.020171",
+        "user_id": "user",
+        "timestamp": "2026-02-02T23:58:26.020179",
+        "content": "Astronomia e Pizza sono belle",
+        "metadata": {}
+      },
+      {
+        "id": "insight_1770073106.020529",
+        "user_id": "allma_dream",
+        "timestamp": "2026-02-02T23:58:26.020532",
+        "content": "INSIGHT: Insight generato",
+        "metadata": {
+          "type": "dream_insight",
+          "origin_topics": [
+            "Astronomia"
+          ],
+          "confidence": 1.0
+        }
+      }
+    ],
+    "user_default": [
+      {
+        "id": "user_default_1770074431.129528",
+        "user_id": "user_default",
+        "timestamp": "2026-02-03T00:20:31.129529",
+        "content": "[Proactive] Ciao! Ho avuto un'idea geniale sui gatti spaziali.",
+        "metadata": {}
+      }
+    ],
+    "bench": []
+  },
+  "messages": [
+    {
+      "conversation_id": "user_test_1770073023.66811",
+      "role": "user",
+      "content": "Mi piace la pizza e l'astronomia.",
+      "timestamp": "2026-02-02T23:57:03.668119",
+      "metadata": {},
+      "user_id": "user_test"
+    },
+    {
+      "conversation_id": "user_test_1770073023.668593",
+      "role": "user",
+      "content": "I gatti sono alieni venuti da Marte.",
+      "timestamp": "2026-02-02T23:57:03.668596",
+      "metadata": {},
+      "user_id": "user_test"
+    },
+    {
+      "conversation_id": "user_1770073106.020171",
+      "role": "user",
+      "content": "Astronomia e Pizza sono belle",
+      "timestamp": "2026-02-02T23:58:26.020179",
+      "metadata": {},
+      "user_id": "user"
+    },
+    {
+      "conversation_id": "user_default_1770074431.129528",
+      "role": "user",
+      "content": "[Proactive] Ciao! Ho avuto un'idea geniale sui gatti spaziali.",
+      "timestamp": "2026-02-03T00:20:31.129529",
+      "metadata": {},
+      "user_id": "user_default"
+    },
+    {
+      "conversation_id": "conv_test",
+      "role": "system",
+      "content": "Ciao! Sono ALLMA. La mia rete neurale è attualmente offline (Safe Mode), ma sono qui.",
+      "timestamp": "2026-02-03T00:42:12.240909",
+      "metadata": {
+        "emotion": "neutral",
+        "topics": [
+          "technical"
+        ],
+        "timestamp": "2026-02-03T00:42:12.240905"
+      },
+      "user_id": null
+    },
+    {
+      "conversation_id": "conv_test",
+      "role": "system",
+      "content": "[[PENSIERO:Test response",
+      "timestamp": "2026-02-03T00:42:51.724217",
+      "metadata": {
+        "emotion": "neutral",
+        "topics": [
+          "general"
+        ],
+        "timestamp": "2026-02-03T00:42:51.724214"
+      },
+      "user_id": null
+    },
+    {
+      "conversation_id": "1",
+      "role": "system",
+      "content": "[[PENSIERO:Test Response",
+      "timestamp": "2026-02-03T00:44:23.382257",
+      "metadata": {
+        "emotion": "neutral",
+        "topics": [
+          "technical"
+        ],
+        "timestamp": "2026-02-03T00:44:23.382239"
+      },
+      "user_id": null
+    },
+    {
+      "conversation_id": "1",
+      "role": "system",
+      "content": "[[PENSIERO:Test Response",
+      "timestamp": "2026-02-03T00:44:25.225602",
+      "metadata": {
+        "emotion": "neutral",
+        "topics": [
+          "technical"
+        ],
+        "timestamp": "2026-02-03T00:44:25.225583"
+      },
+      "user_id": null
+    }
+  ],
+  "user_data": {}
+}

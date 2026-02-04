@@ -438,7 +438,73 @@ class ConversationalMemory:
             )
         )
         return conversation_id
-        return conversation_id
+
+    def store_insight(self, content: str, origin_topics: List[str]) -> None:
+        """
+        [DREAM SYSTEM] Memorizza un insight generato durante il sogno.
+        """
+        # Creiamo un 'fatto' sintetico che rappresenta l'insight
+        user_id = "allma_dream" # Internal ID for dreams
+        
+        # Salviamo come una conversazione speciale
+        conv = Conversation(
+            id=f"insight_{datetime.now().timestamp()}",
+            user_id=user_id,
+            timestamp=datetime.now(),
+            content=f"INSIGHT: {content}",
+            metadata={
+                "type": "dream_insight",
+                "origin_topics": origin_topics,
+                "confidence": 1.0
+            }
+        )
+        # Calcolo embedding per renderlo ricercabile
+        try:
+            vectors = self.vectorizer.fit_transform([content])
+            conv.embeddings = vectors.toarray()[0]
+        except:
+            pass
+            
+        # Aggiungi alla memoria generale (usiamo 'user' principale se disponibile, altrimenti system)
+        target_uid = list(self.conversations.keys())[0] if self.conversations else "user"
+        self.conversations[target_uid].append(conv)
+        
+        # FIX PHASE 20: Ensure it exists in Message History for retrieval
+        self.store_message(
+            conversation_id=conv.id,
+            content=conv.content, # "INSIGHT: ..."
+            role="system",
+            metadata=conv.metadata,
+            user_id=target_uid
+        )
+        
+        self.save_memory()
+        print(f"🌙 DREAM: Insight stored: '{content[:50]}...'")
+
+    def get_random_topics(self, limit: int = 2) -> List[str]:
+        """
+        [DREAM SYSTEM] Recupera topic casuali dalle conversazioni recenti.
+        """
+        import random
+        candidates = []
+        
+        # Raccogli tutti i contenuti recenti
+        for uid, convs in self.conversations.items():
+            for c in convs[-20:]: # Ultimi 20 scambi
+                # Estrai parole chiave grezze (molto semplice per ora)
+                # In futuro usare il CognitiveTracker per topic veri
+                words = [w for w in c.content.split() if len(w) > 5]
+                candidates.extend(words)
+                
+        if not candidates:
+            return ["Vita", "Universo"] # Fallback filosofico
+            
+        # Rimuovi duplicati e scegli a caso
+        candidates = list(set(candidates))
+        if len(candidates) < limit:
+            return candidates
+            
+        return random.sample(candidates, limit)
 
     def _json_serial(self, obj):
         """JSON serializer for objects not serializable by default json code"""
@@ -478,11 +544,26 @@ class ConversationalMemory:
             import os
             # Use internal storage path or current dir
             file_path = os.path.join(os.getcwd(), 'allma_memory.json')
-            with open(file_path, 'w', encoding='utf-8') as f:
+            temp_path = file_path + ".tmp"
+            
+            # ATOMIC WRITE: Write to .tmp first, then rename
+            with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, default=self._json_serial, ensure_ascii=False, indent=2)
-            print(f"💾 MEMORY SAVED to {file_path}")
+                f.flush()
+                os.fsync(f.fileno()) # Ensure write to disk
+            
+            # Rename is atomic on POSIX
+            if os.path.exists(file_path):
+                os.remove(file_path) # Windows compatibility (rename might fail if exists)
+            os.rename(temp_path, file_path)
+            
+            print(f"💾 MEMORY SAVED (ATOMIC) to {file_path}")
         except Exception as e:
             print(f"❌ MEMORY SAVE FAILED: {e}")
+            # Try cleanup
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                try: os.remove(temp_path)
+                except: pass
 
     def load_memory(self):
         """Carica lo stato della memoria da file JSON."""

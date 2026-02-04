@@ -86,6 +86,12 @@ class ChatView(MDScreen):
             self.conversation_id = self.core.start_conversation("user_default")
             print(f"ChatView: Started conversation {self.conversation_id}")
             
+            # PHASE 14: Start Dream System Loop (Background)
+            # The loop is safe: it sleeps if disabled.
+            if hasattr(self.core, 'start_dreaming_loop'):
+                self.core.start_dreaming_loop()
+                print("ChatView: Dream System Loop Started.")
+            
             # Define callback for JS messages (Input from User)
             def on_js_message(message):
                 print(f"Message from WebView: {message}")
@@ -109,6 +115,15 @@ class ChatView(MDScreen):
                                     self.core.update_user_identity(name, int(age) if age else 0)
                             return
                         
+                        # System Actions (Dream Mode)
+                        if msg_type == 'action':
+                             if action == 'toggle_dream_mode':
+                                 enabled = data.get('enabled', False)
+                                 print(f"ChatView: Setting Dream Mode -> {enabled}")
+                                 if self.core and hasattr(self.core, 'set_dream_mode'):
+                                     self.core.set_dream_mode(enabled)
+                                 return
+
                         # System Actions (Memory Debug)
                         if msg_type == 'system':
                             if action == 'get_memory_debug':
@@ -199,6 +214,10 @@ class ChatView(MDScreen):
             self.is_initialized = True
             self.voice_mode_enabled = False # Track Voice Mode State
             
+            # Register UI Output Callback with Core (For Proactive Messages)
+            if hasattr(self.core, 'register_output_callback'):
+                self.core.register_output_callback(self._handle_core_output)
+                
             # Initialize STT Engine
             try:
                 from allma_model.voice_system.stt_engine import STTEngine
@@ -408,3 +427,37 @@ class ChatView(MDScreen):
         except Exception as e:
             # print(f"Error updating learning status: {e}") # Silenzia log per pulizia
             pass
+
+    def _handle_core_output(self, data):
+        """
+        Handle output pushed from Core (e.g. Proactive Messages).
+        Executed in Core's thread, so we must be careful with UI bridge.
+        """
+        try:
+            msg_type = data.get('type')
+            content = data.get('content')
+            
+            if not self.bridge:
+                print("ChatView: Cannot handle core output - Bridge not ready.")
+                return
+
+            print(f"ChatView: Handling Core Output -> {msg_type}: {content}")
+            
+            if msg_type == 'thought':
+                # Show thought bubble
+                cleaned = content.replace('"', '\\"').replace('\n', ' ')
+                self.bridge.execute_js(f"window.showThought('{cleaned}')")
+                
+            elif msg_type == 'text':
+                # Show bot message
+                self.bridge.send_message_to_js(content, 'bot')
+                
+            elif msg_type == 'status':
+                # Handle Status Updates (e.g. Dreaming)
+                for key, value in content.items():
+                    # Convert python bool to js bool string
+                    js_val = 'true' if value else 'false'
+                    self.bridge.execute_js(f"window.updateStatus('{key}', {js_val})")
+                
+        except Exception as e:
+            print(f"ChatView: Error handling core output: {e}")

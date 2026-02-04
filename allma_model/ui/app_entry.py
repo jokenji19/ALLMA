@@ -90,9 +90,9 @@ class AllmaInternalApp(MDApp):
         Window.softinput_mode = 'resize'
         
         # Configure Material Theme
-        self.theme_cls.theme_style = "Light"
+        self.theme_cls.theme_style = "Dark" # PREMIUM DARK OVERHAUL
         self.theme_cls.primary_palette = "DeepPurple"
-        self.theme_cls.accent_palette = "Teal"
+        self.theme_cls.accent_palette = "Cyan" # Modern Neon Accent
         
         self.sm = ScreenManager(transition=FadeTransition())
         
@@ -148,11 +148,21 @@ class AllmaInternalApp(MDApp):
         if platform == 'android':
             try:
                 from jnius import autoclass, cast
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                JString = autoclass('java.lang.String')
-                Toast = autoclass('android.widget.Toast')
-                context =  PythonActivity.mActivity
-                Toast.makeText(context, cast('java.lang.CharSequence', JString(text)), Toast.LENGTH_LONG).show()
+                from android.runnable import run_on_ui_thread
+                
+                @run_on_ui_thread
+                def _toast_ui(t_text):
+                    try:
+                        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                        JString = autoclass('java.lang.String')
+                        Toast = autoclass('android.widget.Toast')
+                        context =  PythonActivity.mActivity
+                        Toast.makeText(context, cast('java.lang.CharSequence', JString(t_text)), Toast.LENGTH_LONG).show()
+                    except Exception as inner:
+                        print(f"Toast Inner Error: {inner}")
+
+                _toast_ui(text)
+                
             except Exception as e:
                 print(f"Toast Error: {e}")
         else:

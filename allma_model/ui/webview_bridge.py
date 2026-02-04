@@ -42,9 +42,10 @@ class WebViewBridge:
             __javacontext__ = 'app'
             __javainterfaces__ = ['android/webkit/ValueCallback']
 
-            def __init__(self, callback):
+            def __init__(self, callback, bridge):
                 super().__init__()
                 self.callback = callback
+                self.bridge = bridge
 
             @java_method('(Ljava/lang/Object;)V')
             def onReceiveValue(self, value):
@@ -58,6 +59,116 @@ class WebViewBridge:
                         clean_val = json.loads(value)
                         
                         if clean_val:
+                            # FIX 0.57: Double-decode if it's a string (Bridge sends JSON strings)
+                            effective_val = clean_val
+                            if isinstance(clean_val, str) and clean_val.strip().startswith('{'):
+                                try:
+                                    decoded = json.loads(clean_val)
+                                    if isinstance(decoded, dict):
+                                        effective_val = decoded
+                                except:
+                                    pass # Not JSON, treat as plain text
+                            # Check for System/Action Messages using the potentially decoded dict
+                            # SECURITY: Validate structure before processing
+                            if isinstance(effective_val, dict):
+                                # Whitelist allowed keys to prevent object pollution if we were using unsafe loads (we aren't, but good practice)
+                                # For now, just ensuring it's a dict is enough since logic below checks specific keys
+                                pass
+                            elif isinstance(effective_val, str):
+                                # Text message
+                                pass
+                            else:
+                                # Reject unknown types (lists, numbers) as top-level messages
+                                print(f"⚠️ WebViewBridge: Rejected invalid message type: {type(effective_val)}")
+                                return
+                            if isinstance(effective_val, dict) and effective_val.get('type') == 'action':
+                                action = effective_val.get('action')
+                                if action == 'run_benchmark':
+                                    print("🧪 UI Trigger: Starting Benchmark...")
+                                    
+                                    # TOAST FEEDBACK
+                                    from kivy.app import App
+                                    app = App.get_running_app()
+                                    if hasattr(app, 'show_toast'):
+                                        app.show_toast("Benchmark Richiesto... 🚀")
+                                    
+                                    def run_bench():
+                                        try:
+                                            # Toast inside thread might need UI thread dispatch, 
+                                            # but app.show_toast usually handles standard android toast which is thread-safe on some versions,
+                                            # or implementation handles it. looking at app_entry.py, show_toast uses run_on_ui_thread implicitly?
+                                            # No, it uses autoclass directly. It might crash from thread.
+                                            # Safer to just log or try strict dispatch if needed.
+                                            # But at least the START toast above is on main thread.
+                                            
+                                            import sys
+                                            sys.path.append(os.getcwd())
+                                            from benchmark_iq import CognitiveBenchmark
+                                            
+                                            brain_ref = None
+                                            # Try 1: Direct Access
+                                            if hasattr(app, 'chat_screen'):
+                                                if hasattr(app.chat_screen, 'core'):
+                                                    brain_ref = app.chat_screen.core
+                                                elif hasattr(app.chat_screen, 'brain'):
+                                                    brain_ref = app.chat_screen.brain
+                                            
+                                            # Try 2: Via ScreenManager (if Try 1 failed)
+                                            if not brain_ref and hasattr(app, 'sm') and app.sm.has_screen('chat'):
+                                                 chat_scr = app.sm.get_screen('chat')
+                                                 if hasattr(chat_scr, 'core'):
+                                                     brain_ref = chat_scr.core
+                                                 elif hasattr(chat_scr, 'brain'):
+                                                     brain_ref = chat_scr.brain
+                                            
+                                            # CRITICAL ABORT
+                                            if not brain_ref:
+                                                err_msg = "ERR: Brain NOT FOUND (checked .core & .brain)"
+                                                print(f"❌ {err_msg}")
+                                                Clock.schedule_once(lambda dt: app.show_toast(err_msg))
+                                                return
+
+                                            bench = CognitiveBenchmark()
+                                            
+                                            def on_progress(curr, tot, txt):
+                                                self.bridge.update_benchmark_ui(curr, tot, txt)
+                                                
+                                            bench.setup_brain(existing_brain=brain_ref)
+                                            bench.run_tests(progress_callback=on_progress)
+                                            
+                                            print("✅ Benchmark Completed via UI Trigger")
+                                            # Completion Toast
+                                            Clock.schedule_once(lambda dt: app.show_toast("Benchmark Completato! ✅"))
+                                            
+                                            # SHARE REPORT (Instead of Chat)
+                                            try:
+                                                with open(bench.report_path, 'r', encoding='utf-8') as f:
+                                                    report_content = f.read()
+                                                
+                                                short_summary = "📊 **Benchmark Cognitivo ALLMA**\n\n" + report_content
+                                                
+                                                # Trigger Native Share Sheet
+                                                Clock.schedule_once(lambda dt: self.bridge.share_text_content(short_summary), 1.0)
+                                                
+                                            except Exception as read_e:
+                                                print(f"Failed to read/share report: {read_e}")
+                                            
+                                            # Close UI (fade out)
+                                            self.bridge.update_benchmark_ui(100, 100, "Completato!")
+                                            Clock.schedule_once(lambda dt: self.bridge.webview.evaluateJavascript("if(window.benchmarkUI) window.benchmarkUI.close()", None), 2.0)
+                                            
+                                        except Exception as e:
+                                            err_msg = f"ERR: {str(e)[:60]}"
+                                            print(f"❌ {err_msg}")
+                                            import traceback
+                                            traceback.print_exc()
+                                            Clock.schedule_once(lambda dt: app.show_toast(err_msg))
+                                            # Close UI on Error
+                                            Clock.schedule_once(lambda dt: self.bridge.webview.evaluateJavascript("if(window.benchmarkUI) window.benchmarkUI.close()", None), 3.0)
+                                            
+                                    threading.Thread(target=run_bench, daemon=True).start()
+                                    return
+
                             self.callback(clean_val)
                     except Exception as e:
                         print(f"Bridge Decode Error: {e} for value: {value}")
@@ -174,7 +285,7 @@ class WebViewBridge:
                 # ----------------------------------
                 
                 # Setup Polling Callback
-                self.poll_callback = ResultCallback(self.message_callback)
+                self.poll_callback = ResultCallback(self.message_callback, self)
                 
                 # LOAD CONTENT (INLINING)
                 base_path = "assets/web"
@@ -220,7 +331,83 @@ class WebViewBridge:
                 window.fetchPending = function() {
                     return window.msgQueue.shift() || null;
                 };
+                
+                // BENCHMARK TRIGGER (v0.58 DEBUG)
+                window.startBenchmark = function() {
+                    console.log("Run Benchmark Triggered");
+                    // Visual feedback in console/logs
+                    if (window.pyBridge) {
+                        window.pyBridge.postMessage(JSON.stringify({
+                            type: 'action',
+                            action: 'run_benchmark'
+                        }));
+                    } else {
+                        console.error("PyBridge not found!");
+                    }
+                };
+                
                 console.log("ALLMA_DEBUG: Bridge Patch Completed. fetchPending ready.");
+
+                // --- BENCHMARK VISUAL OVERLAY (v0.61) ---
+                window.benchmarkUI = {
+                    overlay: null,
+                    bar: null,
+                    text: null,
+                    
+                    create: function() {
+                        if (this.overlay) return;
+                        
+                        // Main Overlay
+                        this.overlay = document.createElement('div');
+                        this.overlay.style.cssText = "position:fixed; bottom:20px; left:5%; width:90%; background:rgba(20,20,30,0.95); border:1px solid #444; border-radius:12px; padding:15px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:sans-serif; transition: opacity 0.5s ease;";
+                        this.overlay.id = "benchmark-overlay";
+                        
+                        // Title
+                        var title = document.createElement('div');
+                        title.innerText = "🧠 Benchmark Cognitivo in Corso...";
+                        title.style.cssText = "color:#fff; font-size:14px; font-weight:bold; margin-bottom:10px;";
+                        this.overlay.appendChild(title);
+                        
+                        // Progress Container
+                        var progressBg = document.createElement('div');
+                        progressBg.style.cssText = "width:100%; height:8px; background:#333; border-radius:4px; overflow:hidden;";
+                        
+                        // Progress Bar
+                        this.bar = document.createElement('div');
+                        this.bar.style.cssText = "width:0%; height:100%; background:linear-gradient(90deg, #00d2ff, #3a7bd5); transition: width 0.3s ease;";
+                        progressBg.appendChild(this.bar);
+                        this.overlay.appendChild(progressBg);
+                        
+                        // Status Text
+                        this.text = document.createElement('div');
+                        this.text.innerText = "Avvio...";
+                        this.text.style.cssText = "color:#aaa; font-size:12px; margin-top:8px; text-align:right;";
+                        this.overlay.appendChild(this.text);
+                        
+                        document.body.appendChild(this.overlay);
+                    },
+                    
+                    update: function(current, total, statusMsg) {
+                        if (!this.overlay) this.create();
+                        var pct = (current / total) * 100;
+                        if (pct > 100) pct = 100;
+                        
+                        this.bar.style.width = pct + "%";
+                        this.text.innerText = statusMsg + " (" + current + "/" + total + ")";
+                    },
+                    
+                    close: function() {
+                        if (this.overlay) {
+                            this.overlay.style.opacity = '0';
+                            setTimeout(() => {
+                                if (this.overlay && this.overlay.parentNode) {
+                                    this.overlay.parentNode.removeChild(this.overlay);
+                                }
+                                this.overlay = null;
+                            }, 500);
+                        }
+                    }
+                };
                 """
                 
                 # INLINE REPLACEMENT
@@ -335,6 +522,19 @@ class WebViewBridge:
             self.webview.evaluateJavascript("window.endStream()", None)
         run_js()
 
+    def update_benchmark_ui(self, current, total, text):
+        """Aggiorna l'overlay di progresso del benchmark."""
+        if not self.webview: return
+        import json
+        safe_text = json.dumps(text)
+        js_cmd = f"if(window.benchmarkUI) window.benchmarkUI.update({current}, {total}, {safe_text})"
+        
+        from android.runnable import run_on_ui_thread
+        @run_on_ui_thread
+        def run_js():
+            self.webview.evaluateJavascript(js_cmd, None)
+        run_js()
+
 
     def update_synergy(self, percentage: int, status_text: str):
         """Aggiorna il grafico di sinergia/apprendimento."""
@@ -404,3 +604,43 @@ class WebViewBridge:
         def run_js():
             self.webview.evaluateJavascript(js_cmd, None)
         run_js()
+
+    def share_text_content(self, text, subject="ALLMA Benchmark Result"):
+        """Apre il menu di condivisione nativo Android con il testo fornito."""
+        if not self.is_android:
+            print(f"[SHARE] Would share text: {text[:50]}...")
+            return
+
+        from jnius import autoclass, cast
+        from android.runnable import run_on_ui_thread
+
+        @run_on_ui_thread
+        def _share():
+            try:
+                # Android Intents
+                Intent = autoclass('android.content.Intent')
+                String = autoclass('java.lang.String')
+                
+                sendIntent = Intent()
+                sendIntent.setAction(Intent.ACTION_SEND)
+                sendIntent.putExtra(Intent.EXTRA_TEXT, String(text))
+                sendIntent.setType("text/plain")
+                
+                # Title
+                sendIntent.putExtra(Intent.EXTRA_SUBJECT, String(subject))
+                
+                # Create Chooser
+                chooser = Intent.createChooser(sendIntent, String("Salva Report con..."))
+                
+                # Start Activity
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                currentActivity = PythonActivity.mActivity
+                
+                currentActivity.startActivity(chooser)
+                
+            except Exception as e:
+                print(f"Share Error: {e}")
+                import traceback
+                traceback.print_exc()
+
+        _share()

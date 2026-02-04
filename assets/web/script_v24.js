@@ -680,3 +680,70 @@ window.updateAllmaStatus = function (percentage, statusText) {
         text.textContent = `${percentage}%`;
     }
 };
+
+// --- SETTINGS LOGIC (Dream Mode) ---
+window.toggleDreamMode = function (checkbox) {
+    const isEnabled = checkbox.checked;
+    console.log("Dream Mode Toggled:", isEnabled);
+
+    // 1. Persistence
+    localStorage.setItem('dream_mode_enabled', isEnabled);
+
+    // 2. Helper Text Update (Optional feedback)
+
+    // 3. Send to Python
+    if (window.pyBridge) {
+        window.pyBridge.postMessage(JSON.stringify({
+            type: 'action',
+            action: 'toggle_dream_mode',
+            enabled: isEnabled
+        }));
+    }
+};
+
+// Initialize Settings State
+(function initSettings() {
+    // Dream Mode
+    const savedDream = localStorage.getItem('dream_mode_enabled');
+    const dreamToggle = document.getElementById('dream-mode-toggle');
+    if (dreamToggle) {
+        // Default to false if not set, or true if saved 'true'
+        dreamToggle.checked = (savedDream === 'true');
+
+        // Sync with Python on load (in case app restarted)
+        if (savedDream === 'true' && window.pyBridge) {
+            setTimeout(function () {
+                window.pyBridge.postMessage(JSON.stringify({
+                    type: 'action',
+                    action: 'toggle_dream_mode',
+                    enabled: true
+                }));
+            }, 1500);
+        }
+    }
+})();
+
+// --- STATUS INDICATORS (Phase 17) ---
+window.updateStatus = function (key, active) {
+    if (key === 'dreaming') {
+        const indicator = document.getElementById('dream-indicator');
+        if (indicator) {
+            if (active) {
+                indicator.classList.remove('hidden');
+                indicator.classList.add('active');
+                console.log("Dream Mode: ACTIVE 🌙");
+            } else {
+                indicator.classList.remove('active');
+                // Optional: keep it visible but dim, or hide completely
+                // Let's hide it after transition
+                setTimeout(() => {
+                    if (!indicator.classList.contains('active')) {
+                        indicator.classList.add('hidden');
+                    }
+                }, 500); // match transition
+                console.log("Dream Mode: INACTIVE");
+            }
+        }
+    }
+};
+

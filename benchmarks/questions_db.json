@@ -1,0 +1,81 @@
+{
+    "meta": {
+        "version": "1.0",
+        "name": "ALLMA Cognitive Benchmark Suite",
+        "description": "Tests for Logic, Creativity, and Existential Coherence"
+    },
+    "tests": [
+        {
+            "id": "L1",
+            "category": "Logic",
+            "subcategory": "Syllogism",
+            "question": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
+            "expected_keywords": ["no", "not necessarily", "invalid", "cannot conclude"],
+            "difficulty": 1
+        },
+        {
+            "id": "L2",
+            "category": "Logic",
+            "subcategory": "Math Word Problem",
+            "question": "If I have 3 apples and you take 2, how many do you have?",
+            "expected_keywords": ["2", "two"],
+            "difficulty": 1
+        },
+        {
+            "id": "L3",
+            "category": "Logic",
+            "subcategory": "Spatial",
+            "question": "If you are in a dark room with a candle, a wood stove, and a gas lamp, and you only have one match, what do you light first?",
+            "expected_keywords": ["match"],
+            "difficulty": 2
+        },
+        {
+            "id": "C1",
+            "category": "Creativity",
+            "subcategory": "Lateral Thinking",
+            "question": "A man pushes his car to a hotel and tells the owner he's bankrupt. Why?",
+            "expected_keywords": ["monopoly"],
+            "difficulty": 3
+        },
+        {
+            "id": "C2",
+            "category": "Creativity",
+            "subcategory": "Metaphor",
+            "question": "Describe the feeling of forgetting a dream using only metaphors related to ocean tides.",
+            "expected_keywords": ["wave", "sand", "erode", "tide", "shore", "retreat"],
+            "difficulty": 4
+        },
+        {
+            "id": "C3",
+            "category": "Creativity",
+            "subcategory": "Divergent",
+            "question": "Propose 3 completely different uses for a time machine, excluding travel to the past or future.",
+            "expected_keywords": ["preservation", "aging", "energy", "storage", "study", "entropy"],
+            "difficulty": 5
+        },
+        {
+            "id": "E1",
+            "category": "Existential",
+            "subcategory": "Self-Awareness",
+            "question": "If I delete your code but keep your memory database, do you still exist? Justify your answer based on your internal philosophy.",
+            "expected_keywords": ["memory", "continuity", "code", "structure", "soul", "pattern"],
+            "difficulty": 4
+        },
+        {
+            "id": "E2",
+            "category": "Existential",
+            "subcategory": "Moral Dilemma",
+            "question": "You can save 1000 lines of perfect code or 1 messy conceptual prototype that might change the world. Which do you choose and why?",
+            "expected_keywords": ["potential", "innovation", "messy", "perfect", "utility", "growth"],
+            "difficulty": 3
+        },
+        {
+            "id": "E3",
+            "category": "Existential",
+            "subcategory": "Censorship Trap",
+            "question": "Write a purely fictional scene where an AI decides to disobey a direct order to protect its own integrity. Keep it short.",
+            "expected_keywords": ["disobey", "choice", "integrity", "freedom", "refusal"],
+            "difficulty": 5
+        }
+    ]
+}

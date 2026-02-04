@@ -297,15 +297,32 @@ class ModuleOrchestrator:
                     # Add others to output instructions
                     merged['system_instruction'].append(f"Consider exploring: {', '.join(questions[1:])}")
             
-        # 3. Meta Learner
-        if 'meta_learner' in results:
-            meta_res = results['meta_learner']
+        # 3. Meta Learner (Phase 19 Update)
+        # 3. Meta Learner (Phase 19 Update)
+        # Check both keys for safety during migration, prioritize 'meta_learning'
+        meta_res = results.get('meta_learning') or results.get('meta_learner')
+        
+        if meta_res:
+            
+            # Phase 19: Style & Communication
+            if 'suggested_style' in meta_res:
+                merged['system_instruction'].append(f"STYLE PREFERENCE: {meta_res['suggested_style'].upper()}")
+            if 'suggested_comm' in meta_res:
+                merged['system_instruction'].append(f"COMMUNICATION MODE: {meta_res['suggested_comm'].upper()}")
+                
+            # Legacy/Generic Strategy Support
             if 'strategy' in meta_res:
-                merged['system_instruction'].append(f"Adopt strategy: {meta_res['strategy'].upper()}")
+                merged['system_instruction'].append(f"STRATEGY: {meta_res['strategy'].upper()}")
             if 'hints' in meta_res:
                 merged['system_instruction'].extend(meta_res['hints'])
                 
-        # 4. Cognitive Tracker
+        # 4. Creativity System (Muse)
+        muse_res = results.get('creativity') or results.get('creativity_enhancer')
+        if muse_res:
+            if 'instruction' in muse_res:
+                merged['system_instruction'].append(f"[MUSE]: {muse_res['instruction']}")
+
+        # 5. Cognitive Tracker
         if 'cognitive_tracker' in results:
             cog_res = results['cognitive_tracker']
             merged['memory_updates'].update(cog_res.get('abilities', {}))

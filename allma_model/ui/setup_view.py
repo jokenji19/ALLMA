@@ -13,12 +13,19 @@ Factory.register('Theme', cls=Theme)
 
 Builder.load_string('''
 #:import Theme allma_model.ui.theme.Theme
+#:import Animation kivy.animation.Animation
 
 <SetupView>:
-    # SOLID COLOR BACKGROUND FOR HIGH VISIBILITY
+    # PREMIUM GRADIENT BACKGROUND (Deep Space / Aurora)
     canvas.before:
         Color:
-            rgba: 0.95, 0.96, 0.98, 1 # Solid Light Grey
+            rgba: 0.05, 0.05, 0.08, 1 # Deep Space Base
+        Rectangle:
+            pos: self.pos
+            size: self.size
+        # Gradient Effect (Mesh or simpler Texture - using Vertical Gradient via Vertex Instruction not easy in KV string, simulating with overlay)
+        Color:
+            rgba: 0.1, 0.0, 0.2, 0.5 # Purple Tint Bottom
         Rectangle:
             pos: self.pos
             size: self.size
@@ -32,7 +39,7 @@ Builder.load_string('''
         Widget:
             size_hint_y: 0.3
 
-        # Modern Card-like grouping (Visual only)
+        # Modern Card-like grouping
         BoxLayout:
             orientation: 'vertical'
             size_hint_y: None
@@ -40,43 +47,43 @@ Builder.load_string('''
             spacing: dp(15)
             
             Label:
-                text: "✨ ALLMA SYSTEM"
+                text: "🌌 ALLMA SYSTEM"
                 font_name: 'Roboto'
-                font_size: '32sp'
+                font_size: '34sp'
                 bold: True
-                color: 0.2, 0.2, 0.2, 1 # Dark Grey
+                color: 1, 1, 1, 1 # Pure White
                 size_hint_y: None
-                height: dp(50)
+                height: dp(60)
                 halign: 'center'
 
             Label:
                 id: status_label
-                text: "STARTUP..."
+                text: "INITIALIZING SEQUENCES..."
                 font_name: 'Roboto'
-                font_size: '24sp'
+                font_size: '22sp'
                 bold: True
                 text_size: self.width, None
                 halign: 'center'
-                color: 0.2, 0.4, 0.8, 1 # Bright Blue
+                color: 0.0, 0.9, 1, 1 # CYAN / ELECTRIC BLUE (Neon)
                 size_hint_y: None
                 height: dp(50)
 
-            # Custom Progress Bar styling is hard in pure Kivy without KivyMD
-            # We stick to default but placed nicely
+            # Custom Progress Bar (Sleek)
             ProgressBar:
                 id: progress_bar
                 max: 100
                 value: 0
                 size_hint_y: None
-                height: dp(20)
+                height: dp(10)
+                # Note: KivyMD Theme will style this with Primary/Accent color
             
             Label:
                 id: details_label
-                text: "Inizializzazione..."
+                text: "Loading Core Modules..."
                 font_name: 'Roboto'
                 font_size: '14sp'
                 halign: 'center'
-                color: 0.4, 0.4, 0.4, 1
+                color: 0.6, 0.6, 0.7, 1 # Soft Grey
                 size_hint_y: None
                 height: dp(40)
 
