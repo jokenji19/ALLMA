@@ -111,11 +111,11 @@ class TreeOfThoughts:
         )
 
         full_prompt = (
-            f"<start_of_turn>user\n"
-            f"System: {system_prompt}\n"
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n"
             f"Input: {user_prompt}\n"
-            f"<end_of_turn>\n"
-            f"<start_of_turn>model\n"
+            f"<|im_end|>\n"
+            f"<|im_start|>assistant\n"
         )
         
         generated_nodes = []
@@ -124,7 +124,7 @@ class TreeOfThoughts:
             response = self.llm.generate(
                 full_prompt,
                 max_tokens=64,
-                stop=["<end_of_turn>", "\n"],
+                stop=["<|im_end|>", "\n"],
                 echo=False,
                 temperature=0.9 # High creativity for dreams
             )

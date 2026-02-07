@@ -12,8 +12,8 @@ from typing import List, Optional
 LLAMA_CPP_AVAILABLE = True
 
 # Default model path (relative to creating this class, but should be passed in)
-# UPGRADED 2026-02-02: Dolphin 3.0 for zero censorship + better reasoning
-_DEFAULT_MODEL_NAME = "Dolphin3.0-Qwen2.5-3b-Q4_K_M.gguf"
+# UPGRADED 2026-02-06: Qwen2.5-Coder-3B-Instruct-Abliterated (Bartowski)
+_DEFAULT_MODEL_NAME = "Qwen2.5-Coder-3B-Instruct-abliterated-Q4_K_M.gguf"
 
 class MobileGemmaWrapper:
     """
@@ -203,9 +203,9 @@ class MobileGemmaWrapper:
         if not self.llm:
             return "Error: Model not loaded."
 
-        # Default stop tokens for Gemma if none provided
+        # Default stop tokens for Qwen 2.5 (ChatML) if none provided
         if stop is None:
-            stop = ["<end_of_turn>"]
+            stop = ["<|im_end|>", "<|endoftext|>"]
 
         try:
             # CRITICAL: LOCK THE LLM. 

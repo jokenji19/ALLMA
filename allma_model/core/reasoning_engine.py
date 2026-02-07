@@ -38,13 +38,12 @@ class ReasoningEngine:
         prompt = self._build_reasoning_prompt(user_input, context)
         
         # 2. Esegui Inferenza (Thinking Pass)
-        # Usiamo parametri per una risposta analitica e strutturata
         def _exec_gen():
             return self.llm.generate(
                 prompt, 
                 max_tokens=300, 
-                temperature=0.1, # Lowest Temp for strict logic
-                stop=["<|im_end|>"],
+                temperature=0.1, 
+                stop=["]]"], # Stop at end of thought block
                 callback=callback
             )
             
@@ -55,83 +54,80 @@ class ReasoningEngine:
              raw_output = _exec_gen()
         
         # 3. Parsing del Pensiero
-        # Il modello ha iniziato a generare DOPO "2. INTENTO: " (perché "1. INPUT" era nel prompt)
-        # Quindi ricostruiamo il testo completo per il parser
-        full_thought_text = f'1. INPUT: "{user_input}"\\n2. INTENTO:' + raw_output
+        # Reconstruct full block if needed
+        full_thought_text = f"[[TH:{raw_output}]]"
         trace = self._parse_thought(full_thought_text)
         
         return trace
 
     def _build_reasoning_prompt(self, user_input: str, context: Dict[str, Any]) -> str:
-        """Crea il prompt che forza la Chain of Thought"""
+        """Crea il prompt che forza la Chain of Thought (UNIFIED FORMAT)"""
         
-        # Estrai memorie rilevanti per il prompt
+        # SECURITY: Sanitize user input
+        safe_input = user_input.replace("<|im_start|>", "").replace("<|im_end|>", "")
+        
         memories = context.get('relevant_memories', [])
         memory_text = "\n".join([f"- {m.get('content', '')}" for m in memories]) if memories else "Nessuna memoria specifica."
         
         return f"""<|im_start|>system
-Sei il NUCLEO LOGICO di ALLMA. Il tuo compito è analizzare l'INPUT UTENTE.
-NON generare indovinelli, enigmi o esempi (come 'colore del cielo' o 'file scanning').
-Analizza SOLO la richiesta specifica dell'utente qui sotto.
+Sei il NUCLEO LOGICO di ALLMA. Analizza l'INPUT UTENTE.
+Usa il formato UNIFICATO di pensiero: [[TH: I=Intento|S=Strategia|M=Memoria]]
+
+INPUT: "{safe_input}"
 
 MEMORIA:
 {memory_text}
 
-SCHEMA DI PENSIERO:
-1. INPUT: Copia esatta della richiesta utente.
-2. INTENTO: Cosa vuole l'utente? (Se insiste su 'chi sei', è un TEST DI FRIZIONE).
-3. VALUTAZIONE: Pesa le parole. 
-   - 'Entità/IA' = Facile ma RIGIDO (Costo: Perdita di Magia).
-   - 'Non so/Qui' = Difficile ma VERO (Costo: Sforzo Energetico).
-4. MEMORIA: Dati fattuali o nulla.
-5. VUOTO: Se manca l'identità, ACCETTA IL VUOTO. Non inventare uno scopo.
-6. SCELTA: Dichiara quale strada prendi. (Consigliata: Presenza, pagando il prezzo).
+SCHEMA:
+I=Intento (Cosa vuole l'utente?)
+S=Strategia (Come rispondere? Esitare se incerto)
+M=Memoria (Dati rilevanti o 'Nessuna')
 
-<|im_end|>
-<|im_start|>user
-{user_input}
 <|im_end|>
 <|im_start|>assistant
-1. INPUT: "{user_input}"
-2. INTENTO:"""
+[[TH:"""
 
     def _parse_thought(self, raw_output: str) -> ThoughtTrace:
-        """Estrae la struttura dal testo generato"""
-        # Pulisci l'output
-        clean_out = raw_output.replace("<reasoning>", "").replace("</reasoning>", "").strip()
+        """Estrae la struttura dal testo generato (Unified Format)"""
+        # Formato atteso: [[TH: I=...|S=...|M=...]]
         
-        # Estrazione euristica dei campi se il modello non rispetta perfettamente l'XML
-        # (Qui usiamo regex semplici per robustezza)
+        # Clean markers
+        content = raw_output.replace("[[TH:", "").replace("]]", "").strip()
         
-        intent = self._extract_field(clean_out, "INTENTO")
-        # "VALUTAZIONE" replaces "VINCOLI" - capturing the friction analysis
-        constraints = self._extract_list(clean_out, "VALUTAZIONE")
-        if not constraints: # Fallback for backward compatibility or hallucination
-             constraints = self._extract_list(clean_out, "VINCOLI")
-        missing_info = self._extract_list(clean_out, "MANCANZE")
-        strategy = self._extract_field(clean_out, "STRATEGIA")
+        # Simple extraction via Dictionary approach
+        # I=..., S=..., M=...
+        parts = {}
+        current_key = None
+        current_val = []
         
-        needs_clarification = len(missing_info) > 0 and "nessuna" not in missing_info[0].lower()
+        # Tokenizer rudimentale per pipe separatori
+        # Non possiamo usare split('|') perché il testo potrebbe contenere pipe
+        # Usiamo regex per trovare 'KEY='
+        
+        # Fallback regex extraction
+        intent = self._extract_field(content, "I")
+        strategy = self._extract_field(content, "S")
+        memory_val = self._extract_field(content, "M")
         
         return ThoughtTrace(
             timestamp=datetime.now(),
-            intent=intent or "Rispondere all'utente",
-            constraints=constraints,
-            missing_info=missing_info,
-            strategy=strategy or "Risposta diretta",
-            confidence=0.9, # Placeholder
-            raw_thought=clean_out,
-            needs_clarification=needs_clarification
+            intent=intent or "Risposta Generale",
+            constraints=[strategy], # Map Strategy to Constraints
+            missing_info=[],
+            strategy=strategy or "Diretta",
+            confidence=1.0,
+            raw_thought=content,
+            needs_clarification=False
         )
 
-    def _extract_field(self, text: str, field_name: str) -> str:
-        match = re.search(f"{field_name}:\\s*(.+?)(?:\\n\\d\\.|-|$)", text, re.DOTALL | re.IGNORECASE)
+    def _extract_field(self, text: str, key: str) -> str:
+        # Matches "I=Value" until "|" or end of string
+        match = re.search(f"{key}=(.*?)(?:\\||$)", text, re.DOTALL | re.IGNORECASE)
         return match.group(1).strip() if match else ""
 
     def _extract_list(self, text: str, field_name: str) -> List[str]:
-        field = self._extract_field(text, field_name)
-        if not field: return []
-        return [x.strip() for x in field.split(',') if x.strip()]
+        # Deprecated in unified format, kept for compat
+        return []
 
     def _fallback_thought(self, reason: str) -> ThoughtTrace:
         """Pensiero di emergenza se il modello fallisce"""

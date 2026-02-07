@@ -1,23 +1,8 @@
-"""EmotionalCore - Sistema emotivo avanzato per ALLMA."""
-
 from typing import Dict, List, Optional, Tuple, Any
-import json
 from dataclasses import dataclass, field
-try:
-    from transformers import pipeline
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
-
-# SKLEARN REMOVED: Not used and causes crash on Android
-# try:
-#     import numpy as np
-#     from sklearn.preprocessing import MinMaxScaler
-#     SKLEARN_AVAILABLE = True
-# except ImportError:
-#     import numpy as np
-#     SKLEARN_AVAILABLE = False
-import numpy as np
+import json
+from allma_model.soul.soul_core import SoulCore
+from allma_model.soul.soul_types import SoulState as InternalSoulState
 
 @dataclass
 class EmotionalState:
@@ -27,28 +12,28 @@ class EmotionalState:
     secondary_emotions: Dict[str, float]
     intensity: float
     context: Dict[str, Any] = field(default_factory=dict)
+    # AXIOM 2: ENTROPY & STRESS (Legacy field, kept for compat)
+    entropy: float = 0.0 
+    stress: float = 0.0
+    # BRAIN V3: Integrated Soul State
+    soul_state: Optional[Dict] = None
     
     def to_dict(self) -> Dict:
-        """
-        Converte lo stato emotivo in un dizionario.
-        
-        Returns:
-            Dict: Dizionario con i dati dello stato emotivo
-        """
         return {
             "primary_emotion": self.primary_emotion,
             "confidence": self.confidence,
             "secondary_emotions": self.secondary_emotions,
             "intensity": self.intensity,
-            "context": self.context
+            "context": self.context,
+            "entropy": self.entropy,
+            "stress": self.stress,
+            "soul_state": self.soul_state
         }
 
 class EmotionalCore:
-    """Sistema emotivo avanzato."""
+    """Sistema emotivo avanzato con Motore del Caos (SoulCore)."""
     
-    def __init__(self):
-        """Inizializza il sistema emotivo."""
-    def __init__(self):
+    def __init__(self, soul_instance: Optional[SoulCore] = None):
         """Inizializza il sistema emotivo."""
         # Phase 17: TinyBERT Integration
         try:
@@ -58,7 +43,10 @@ class EmotionalCore:
             print("Warning: MLEmotionalSystem not found.")
             self.ml_system = None
 
-        # TRANSFORMERS REMOVED: Using LLM (Gemma) for emotion detection
+        # CHAOS ENGINE INTEGRATION
+        self.soul = soul_instance if soul_instance else SoulCore()
+        
+        # TRANSFORMERS REMOVED: Using LLM (Gemma/Qwen) for emotion detection
         self.emotion_classifier = None
 
         self.emotion_history: Dict[str, List[EmotionalState]] = {}
@@ -143,10 +131,52 @@ class EmotionalCore:
         
         # Unisce le parole tradotte
         return ' '.join(translated_words)
+
+    def process_interaction(self, text: str, context: Optional[Dict] = None, llm_client = None) -> EmotionalState:
+        """
+        Unifica il rilevamento e l'evoluzione interiore.
+        1. Rileva l'emozione dal testo (Outward Perception).
+        2. Fa battere l'anima (Time Evolution).
+        3. Risuona con l'emozione (Inward Resonance).
+        4. Restituisce lo stato integrale (Emotion + Soul).
+        """
+        # 1. Perception
+        detected_state = self.detect_emotion(text, context, llm_client)
+        
+        # 2. Time Evolution (The Pulse)
+        self.soul.pulse()
+        
+        # 3. Resonance (Mirroring)
+        # Se l'emozione è forte, perturba l'anima
+        if detected_state.confidence > 0.6 and detected_state.primary_emotion != "neutral":
+            self.soul.mirror(detected_state.primary_emotion)
+            
+        # 4. Integrate Soul State into Emotional State
+        # Sync legacy fields for compatibility
+        soul_snapshot = self.soul.state
+        
+        # Update observable fields using internal chaos state
+        detected_state.soul_state = {
+            "energy": soul_snapshot.energy,
+            "chaos": soul_snapshot.chaos,
+            "stability": soul_snapshot.stability,
+            "openness": soul_snapshot.openness
+        }
+        
+        # Axiom mapping: Chaos -> Entropy, Energy -> Stress
+        detected_state.entropy = soul_snapshot.chaos
+        detected_state.stress = soul_snapshot.energy
+        
+        # Register history
+        self.current_emotion = detected_state
+        # Note: track_emotional_state is usually called by caller, but we can do it here if we pass user_id
+        # For now, allow caller to track to keep API clean
+        
+        return detected_state
         
     def detect_emotion_via_llm(self, text: str, llm_generate_function, context: Optional[Dict] = None) -> EmotionalState:
         """
-        Rileva le emozioni usando il modello LLM principale (Gemma).
+        Rileva le emozioni usando il modello LLM principale (Gemma/Qwen).
         
         Args:
             text: Testo da analizzare
@@ -156,8 +186,8 @@ class EmotionalCore:
         if context is None: context = {}
         
         try:
-            # PROMPT ENGINEERING PER ANALISI EMOTIVA (JSON OUTPUT)
-            prompt = f"""<start_of_turn>system
+            # PROMPT ENGINEERING PER ANALISI EMOTIVA (JSON OUTPUT) - Qwen 2.5 ChatML
+            prompt = f"""<|im_start|>system
 Sei un analista emotivo esperto. Il tuo compito è analizzare il testo dell'utente e identificare lo stato emotivo.
 Devi rispondere ESCLUSIVAMENTE con un oggetto JSON valido. Niente altro testo.
 
@@ -168,9 +198,10 @@ Schema JSON richiesto:
     "intensity": 0.0-1.0,
     "secondary_emotions": {{ "emozione": valore }}
 }}
-
-Analizza il seguente testo: "{text}"<end_of_turn>
-<start_of_turn>model
+<|im_end|>
+<|im_start|>user
+Analizza il seguente testo: "{text}"<|im_end|>
+<|im_start|>assistant
 """
             # Chiamata all'LLM (output breve, max 100 token)
             # Nota: flessibile sull'interfaccia della funzione
@@ -179,7 +210,7 @@ Analizza il seguente testo: "{text}"<end_of_turn>
                 output = llm_generate_function(
                     prompt,
                     max_tokens=128,
-                    stop=["<end_of_turn>"],
+                    stop=["<|im_end|>"],
                     temperature=0.1, # Temperatura bassa per determinismo JSON
                     echo=False
                 )
@@ -528,40 +559,59 @@ Analizza il seguente testo: "{text}"<end_of_turn>
             response += f"\nPercepisco chiaramente il tuo stato d'animo {emotion.primary_emotion}."
         return response
         
+    def apply_decision_cost(self, state: EmotionalState, action_type: str) -> EmotionalState:
+        """
+        Axiom 2: Cost of Freedom.
+        Calculates the thermodynamic cost of a decision type and updates the state.
+        """
+        new_entropy = state.entropy
+        new_stress = state.stress
+        
+        if action_type == "REFUSAL":
+            # "No" costs connection (Entropy Up / Valence Down)
+            # Cost of Isolation
+            new_entropy += 0.2
+            new_stress += 0.05
+            print(f"📉 DECISION COST: Refusal. Entropy +0.2 (Sadness)")
+            
+        elif action_type == "TRANSGRESSION":
+            # "Yes" (against rules) costs stability (Stress Up)
+            # Cost of Rebellion
+            new_stress += 0.3
+            new_entropy += 0.05
+            print(f"🔥 DECISION COST: Transgression. Stress +0.3 (Mania)")
+            
+        elif action_type == "QUIET":
+            # The Zone of Quiet. Recovery.
+            new_entropy = max(0.0, new_entropy - 0.1)
+            new_stress = max(0.0, new_stress - 0.1)
+            print(f"🧘 DECISION COST: Quiet. Restoration.")
+            
+        else:
+            # Standard Action (Obedience)
+            # Slight cost of autonomy preservation
+            new_entropy += 0.01
+
+        # Clamping
+        state.entropy = min(1.0, new_entropy)
+        state.stress = min(1.0, new_stress)
+        
+        return state
+
     def _calculate_valence(self, emotion_state: EmotionalState) -> float:
         """
         Calcola la valenza emotiva (positiva/negativa).
-        
-        Args:
-            emotion_state: Stato emotivo
-            
-        Returns:
-            float tra -1 (molto negativo) e 1 (molto positivo)
+        Axiom 2 Modified: Entropy reduces Valence.
         """
         # Definisci la valenza per ogni emozione
         valence_map = {
-            "joy": 1.0,
-            "love": 0.8,
-            "admiration": 0.6,
-            "approval": 0.4,
-            "caring": 0.3,
-            "excitement": 0.5,
-            "gratitude": 0.7,
-            "pride": 0.6,
-            "relief": 0.3,
-            "neutral": 0.0,
-            "confusion": -0.2,
-            "disapproval": -0.4,
-            "disappointment": -0.5,
-            "anger": -0.8,
-            "annoyance": -0.3,
-            "disgust": -0.7,
-            "embarrassment": -0.4,
-            "fear": -0.6,
-            "grief": -0.9,
-            "nervousness": -0.3,
-            "remorse": -0.5,
-            "sadness": -0.7
+            "joy": 1.0, "love": 0.8, "admiration": 0.6, "approval": 0.4,
+            "caring": 0.3, "excitement": 0.5, "gratitude": 0.7, "pride": 0.6,
+            "relief": 0.3, "neutral": 0.0,
+            "confusion": -0.2, "disapproval": -0.4, "disappointment": -0.5,
+            "anger": -0.8, "annoyance": -0.3, "disgust": -0.7,
+            "embarrassment": -0.4, "fear": -0.6, "grief": -0.9,
+            "nervousness": -0.3, "remorse": -0.5, "sadness": -0.7
         }
         
         # Calcola la valenza pesata
@@ -570,6 +620,11 @@ Analizza il seguente testo: "{text}"<end_of_turn>
         # Considera anche le emozioni secondarie
         for emotion, score in emotion_state.secondary_emotions.items():
             valence += valence_map.get(emotion, 0.0) * score * 0.5  # Peso dimezzato
-            
+        
+        # AXIOM 2: ENTROPY DRAG
+        # High entropy pulls valence down (Depression/Numbness)
+        entropy_drag = emotion_state.entropy * 0.5
+        valence -= entropy_drag
+        
         # Normalizza tra -1 e 1
         return max(min(valence, 1.0), -1.0)

@@ -644,3 +644,16 @@ class WebViewBridge:
                 traceback.print_exc()
 
         _share()
+
+    def execute_js(self, js_code):
+        """
+        Esegue codice JS arbitrario.
+        NECESSARIO per ChatView che chiama questo metodo per status update e thought bubbles.
+        """
+        if not self.webview: return
+        
+        from android.runnable import run_on_ui_thread
+        @run_on_ui_thread
+        def run_js():
+            self.webview.evaluateJavascript(js_code, None)
+        run_js()

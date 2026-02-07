@@ -183,12 +183,10 @@ class ProactiveAgency:
             )
         
         prompt = (
-            f"<start_of_turn>user\n"
-            f"System: {system_prompt}\n"
-            f"Context: {user_context}\n"
-            f"Instruction: Genera SOLO il messaggio di apertura (max 2 frasi).\n"
-            f"<end_of_turn>\n"
-            f"<start_of_turn>model\n"
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n{user_context}\n"
+            f"Instruction: Genera SOLO il messaggio di apertura (max 2 frasi).<|im_end|>\n"
+            f"<|im_start|>assistant\n"
         )
         
         try:
@@ -196,7 +194,7 @@ class ProactiveAgency:
             response = llm_callback(
                 prompt,
                 max_tokens=80,
-                stop=["<end_of_turn>", "\n\n"],
+                stop=["<|im_end|>", "\n\n"],
                 echo=False,
                 temperature=0.95 # Molta libertà
             )

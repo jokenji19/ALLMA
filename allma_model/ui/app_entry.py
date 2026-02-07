@@ -167,6 +167,38 @@ class AllmaInternalApp(MDApp):
                 print(f"Toast Error: {e}")
         else:
             print(f"[TOAST] {text}")
+            print(f"[TOAST] {text}")
 
+    def on_pause(self):
+        """Called when the app is about to be paused (backgrounded)."""
+        print("[AllmaInternalApp] Pausing... Saving state.")
+        try:
+            if hasattr(self, 'chat_screen') and hasattr(self.chat_screen, 'core'):
+                # 1. Force Save Memory
+                core = self.chat_screen.core
+                if core.conversational_memory:
+                    core.conversational_memory.save_memory()
+                    print("[AllmaInternalApp] Memory saved on pause.")
+                
+                # 2. Suspend Dreaming/Heavy processes
+                if hasattr(core, 'dream_manager'):
+                    # core.dream_manager.suspend() # If implemented
+                    pass
+                
+                # 3. Suspend LLM is hard, but we can stop generation flag if we wanted
+        except Exception as e:
+            print(f"[AllmaInternalApp] Error in on_pause: {e}")
+            
+        return True # Allow backgrounding
+
+    def on_resume(self):
+        """Called when the app resumes."""
+        print("[AllmaInternalApp] Resumed.")
+        try:
+            if hasattr(self, 'chat_screen') and hasattr(self.chat_screen, 'core'):
+                # Trigger specific resume logic if needed (e.g. check clipboard or intent)
+                pass
+        except Exception as e:
+                print(f"[AllmaInternalApp] Error in on_resume: {e}")
 if __name__ == '__main__':
     AllmaInternalApp().run()

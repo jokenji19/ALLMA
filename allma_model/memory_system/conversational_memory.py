@@ -40,9 +40,43 @@ class ConversationalMemory:
         self.vectorizer = SimpleTfidf()
         self.conversation_vectors = {}
         self.messages: List[Message] = []
+        self.trauma_log: List[Dict] = [] # AXIOM 3: Sedimentation
+        
+        # Concurrency safety
+        import threading
+        self.lock = threading.RLock()
         
         # Load persistent memory
+        # Load persistent memory
         self.load_memory()
+        
+    def add_trauma_event(self, description: str, context: Dict = None) -> None:
+        """
+        Axiom 3: Sedimentation.
+        Adds a scar (Trauma Event) to the memory.
+        """
+        if context is None: context = {}
+        event = {
+            "timestamp": datetime.now().isoformat(),
+            "description": description,
+            "context": context,
+            "severity": context.get("severity", 0.5)
+        }
+        with self.lock:
+            self.trauma_log.append(event)
+            # Keep log manageable (Scars accumulate)
+            if len(self.trauma_log) > 1000:
+                self.trauma_log.pop(0) 
+        
+        print(f"🩹 TRAUMA ADDED: {description}")
+        self.save_memory() # Commit scar immediately
+
+    def get_relevant_traumas(self, query: str = "") -> List[Dict]:
+        """
+        Retrieves traumas relevant to the current context.
+        """
+        # Return mostly recent ones or high severity ones.
+        return sorted(self.trauma_log, key=lambda x: x.get('severity', 0.5), reverse=True)[:5]
         
     def store_conversation(
         self,
@@ -64,8 +98,12 @@ class ConversationalMemory:
         if metadata is None:
             metadata = {}
             
-        # Genera ID univoco
-        conversation_id = f"{user_id}_{datetime.now().timestamp()}"
+        if metadata is None:
+            metadata = {}
+            
+        with self.lock:
+            # Genera ID univoco
+            conversation_id = f"{user_id}_{datetime.now().timestamp()}"
         
         # Crea oggetto conversazione
         conversation = Conversation(
@@ -277,7 +315,11 @@ class ConversationalMemory:
         if user_id not in self.conversations:
             return 0
             
-        original_count = len(self.conversations[user_id])
+        if user_id not in self.conversations:
+            return 0
+            
+        with self.lock:
+            original_count = len(self.conversations[user_id])
         
         # Filtra conversazioni
         self.conversations[user_id] = [
@@ -318,23 +360,28 @@ class ConversationalMemory:
         if metadata is None:
             metadata = {}
             
-        message = Message(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            timestamp=datetime.now(),
-            metadata=metadata
-        )
-        self.messages.append(message)
-        self.save_memory()
+        with self.lock:
+            message = Message(
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+                timestamp=datetime.now(),
+                metadata=metadata
+            )
+            self.messages.append(message)
+            self.save_memory()
 
     def save_interaction(self, user_id: str, message: str, role: str):
         """Salva una interazione nella memoria."""
         if user_id not in self.conversations:
             self.conversations[user_id] = []
             
-        self.user_data = getattr(self, 'user_data', {})
-        if user_id not in self.user_data: self.user_data[user_id] = {}
+        if user_id not in self.conversations:
+            self.conversations[user_id] = []
+            
+        with self.lock:
+            self.user_data = getattr(self, 'user_data', {})
+            if user_id not in self.user_data: self.user_data[user_id] = {}
 
         # NAME CAPTURE PATTERN
         if role == "user":
@@ -414,6 +461,22 @@ class ConversationalMemory:
         # Ordina per timestamp decrescente e limita il numero
         user_messages.sort(key=lambda m: m.timestamp, reverse=True)
         return user_messages[:limit]
+
+    def get_recent_history(self, limit: int = 10, user_id: str = None) -> List[Dict]:
+        """
+        Retrieves recent history in a dict format suitable for LLM context.
+        """
+        # If user_id is not provided, try to infer or get all (simplified for now)
+        # For mobile single user, we iterate all.
+        msgs = self.messages[-limit:]
+        
+        history = []
+        for m in msgs:
+            history.append({
+                "role": m.role,
+                "content": m.content
+            })
+        return history
 
     def create_conversation(self, user_id: str) -> str:
         """
@@ -514,31 +577,32 @@ class ConversationalMemory:
 
     def save_memory(self):
         """Salva lo stato della memoria su file JSON."""
-        data = {
-            "conversations": {
-                uid: [
+        with self.lock:
+            data = {
+                "conversations": {
+                    uid: [
+                        {
+                            "id": c.id, 
+                            "user_id": c.user_id, 
+                            "timestamp": c.timestamp, 
+                            "content": c.content, 
+                            "metadata": c.metadata
+                        } for c in convs
+                    ] 
+                    for uid, convs in self.conversations.items()
+                },
+                "messages": [
                     {
-                        "id": c.id, 
-                        "user_id": c.user_id, 
-                        "timestamp": c.timestamp, 
-                        "content": c.content, 
-                        "metadata": c.metadata
-                    } for c in convs
-                ] 
-                for uid, convs in self.conversations.items()
-            },
-            "messages": [
-                {
-                    "conversation_id": m.conversation_id,
-                    "role": m.role,
-                    "content": m.content,
-                    "timestamp": m.timestamp,
-                    "metadata": m.metadata,
-                    "user_id": getattr(m, 'user_id', None)
-                } for m in self.messages
-            ],
-            "user_data": getattr(self, 'user_data', {})
-        }
+                        "conversation_id": m.conversation_id,
+                        "role": m.role,
+                        "content": m.content,
+                        "timestamp": m.timestamp,
+                        "metadata": m.metadata,
+                        "user_id": getattr(m, 'user_id', None)
+                    } for m in self.messages
+                ],
+                "trauma_log": self.trauma_log  # AXIOM 3: Persist Scars
+            }
         
         try:
             import os
@@ -570,12 +634,14 @@ class ConversationalMemory:
         try:
             import os
             file_path = os.path.join(os.getcwd(), 'allma_memory.json')
-            if not os.path.exists(file_path):
-                print("No memory file found. Starting fresh.")
-                return
+            
+            with self.lock:
+                if not os.path.exists(file_path):
+                    print("No memory file found. Starting fresh.")
+                    return
 
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
 
             # Restore Conversations
             self.conversations = defaultdict(list)
@@ -607,7 +673,11 @@ class ConversationalMemory:
 
             # Restore User Data
             self.user_data = data.get("user_data", {})
-            print(f"📂 MEMORY LOADED: {len(self.messages)} messages restored.")
+            
+            # Restore Trauma Log (Axiom 3)
+            self.trauma_log = data.get("trauma_log", [])
+            
+            print(f"📂 MEMORY LOADED: {len(self.messages)} messages, {len(self.trauma_log)} traumas.")
 
         except Exception as e:
             print(f"❌ MEMORY LOAD FAILED: {e}")

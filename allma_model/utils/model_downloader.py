@@ -17,11 +17,10 @@ class ModelDownloader:
         # Nota: Usiamo link diretti a HuggingFace GGUF
         self.models = {
             "gemma": {
-                # Dolphin 3.0 (Qwen2.5 3B) Q4_K_M - Uncensored/Better Reasoning
-                # Restoration: DeepSeek-R1 engine incompatibility fallback.
-                "url": "https://huggingface.co/bartowski/Dolphin3.0-Qwen2.5-3b-GGUF/resolve/main/Dolphin3.0-Qwen2.5-3b-Q4_K_M.gguf",
-                "filename": "Dolphin3.0-Qwen2.5-3b-Q4_K_M.gguf",
-                "size_mb": 1930  # 1.93GB
+                # Qwen 3 1.7B Q8_0 (Official Repository - High Precision)
+                "url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf?download=true",
+                "filename": "model.gguf", 
+                "size_mb": 1800  # Approx 1.8GB
             }
         }
 

@@ -1,17 +1,17 @@
 {
   "entries": [
     {
-      "timestamp": 1770075861.8778508,
-      "datetime": "2026-02-03 00:44:21",
-      "content": "Complex query about physics",
+      "timestamp": 1770483740.6148748,
+      "datetime": "2026-02-07 18:02:20",
+      "content": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
       "context": {
         "source_type": "user_interaction"
       },
-      "emotional_state": "neutral",
+      "emotional_state": "joy",
       "emotional_details": {
-        "primary": "neutral",
+        "primary": "joy",
         "secondary": null,
-        "intensity": 0.1
+        "intensity": 0.7
       },
       "personality_changes": {
         "openness": 0.5,
@@ -34,17 +34,17 @@
       }
     },
     {
-      "timestamp": 1770075861.8778508,
-      "datetime": "2026-02-03 00:44:21",
-      "content": "Complex query about physics",
+      "timestamp": 1770483740.6148748,
+      "datetime": "2026-02-07 18:02:20",
+      "content": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
       "context": {
         "source_type": "user_interaction"
       },
-      "emotional_state": "neutral",
+      "emotional_state": "joy",
       "emotional_details": {
-        "primary": "neutral",
+        "primary": "joy",
         "secondary": null,
-        "intensity": 0.1
+        "intensity": 0.7
       },
       "personality_changes": {
         "openness": 0.5,
@@ -67,17 +67,17 @@
       }
     },
     {
-      "timestamp": 1770075863.558086,
-      "datetime": "2026-02-03 00:44:23",
-      "content": "Complex query about physics",
+      "timestamp": 1770483740.6336682,
+      "datetime": "2026-02-07 18:02:20",
+      "content": "Ciao, come stai?",
       "context": {
         "source_type": "user_interaction"
       },
-      "emotional_state": "neutral",
+      "emotional_state": "anger",
       "emotional_details": {
-        "primary": "neutral",
+        "primary": "anger",
         "secondary": null,
-        "intensity": 0.1
+        "intensity": 0.7
       },
       "personality_changes": {
         "openness": 0.5,
@@ -100,17 +100,17 @@
       }
     },
     {
-      "timestamp": 1770075863.558086,
-      "datetime": "2026-02-03 00:44:23",
-      "content": "Complex query about physics",
+      "timestamp": 1770483740.6336682,
+      "datetime": "2026-02-07 18:02:20",
+      "content": "Ciao, come stai?",
       "context": {
         "source_type": "user_interaction"
       },
-      "emotional_state": "neutral",
+      "emotional_state": "anger",
       "emotional_details": {
-        "primary": "neutral",
+        "primary": "anger",
         "secondary": null,
-        "intensity": 0.1
+        "intensity": 0.7
       },
       "personality_changes": {
         "openness": 0.5,

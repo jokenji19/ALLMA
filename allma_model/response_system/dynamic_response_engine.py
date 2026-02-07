@@ -63,19 +63,18 @@ class DynamicResponseEngine:
             task_desc = f"Conferma di aver imparato/salvato: {details.get('item', 'qualcosa')}."
             
         prompt = (
-            f"<start_of_turn>user\n"
-            f"System: {system_prompt}\n"
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n"
             f"Task: {task_desc}\n"
-            f"Constraint: Max 1 frase. Niente scuse formali.\n"
-            f"<end_of_turn>\n"
-            f"<start_of_turn>model\n"
+            f"Constraint: Max 1 frase. Niente scuse formali.<|im_end|>\n"
+            f"<|im_start|>assistant\n"
         )
         
         try:
             response = llm_callback(
                 prompt,
                 max_tokens=32,
-                stop=["<end_of_turn>", "\n"],
+                stop=["<|im_end|>", "\n"],
                 echo=False,
                 temperature=0.9
             )

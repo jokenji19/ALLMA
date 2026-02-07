@@ -55,12 +55,13 @@ class CognitiveBenchmark:
              print("✅ Using existing Brain instance.")
         else:
              # Initialize Core with expert settings
-             self.brain = ALLMACore(mobile_mode=False) 
+             # FORCE MOBILE MODE TO USE LOCAL GGUF PATHS
+             self.brain = ALLMACore(mobile_mode=True) 
              # Mock specific Android-only components
              self.brain.tts_engine = MagicMock()
              self.brain.vibrator = MagicMock()
              self.brain.audio_recorder = MagicMock()
-             print("✅ Fresh Brain Initialized.")
+             print("✅ Fresh Brain Initialized (Mobile Mode).")
 
     def load_questions(self):
         with open(self.db_path, "r", encoding="utf-8") as f:
@@ -90,7 +91,13 @@ class CognitiveBenchmark:
                     message=q['question']
                 )
                 response_content = response_obj.content
-                thought_trace = str(response_obj.thought_trace) if response_obj.thought_trace else "No thought trace"
+                if response_obj.thought_trace:
+                     if isinstance(response_obj.thought_trace, dict):
+                         thought_trace = response_obj.thought_trace.get("thought", "No thought content")
+                     else:
+                         thought_trace = str(response_obj.thought_trace)
+                else:
+                     thought_trace = "No thought trace"
             except Exception as e:
                 print(f"❌ Error: {e}")
                 response_content = f"ERROR: {str(e)}"
