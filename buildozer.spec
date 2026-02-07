@@ -146,7 +146,9 @@ p4a.local_recipes = ./libs/recipes
 # - NATIVE: ARM64 NEON optimizations
 # Expected: 3-4x speedup vs CPU-only
 # Rollback: buildozer.spec.backup_vulkan if fails
-env_vars = CMAKE_ARGS="-DGGML_OPENCL=ON -DGGML_OPENMP=ON -DGGML_NATIVE=ON -DGGML_PERF=ON -DANDROID_PLATFORM=android-24",FORCE_CMAKE=1,CPATH="/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include"
+# env_vars = CMAKE_ARGS="-DGGML_OPENCL=ON -DGGML_OPENMP=ON -DGGML_NATIVE=ON -DGGML_PERF=ON -DANDROID_PLATFORM=android-24",FORCE_CMAKE=1,CPATH="/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include"
+# CLEAN ENV FOR RECIPE CONTROL
+env_vars = FORCE_CMAKE=1
 
 #
 # iOS specific

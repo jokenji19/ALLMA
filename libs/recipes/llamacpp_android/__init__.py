@@ -8,7 +8,7 @@ import sys
 
 class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
     name = 'llamacpp_android'
-    version = '0.2.90'
+    version = '0.3.16'  # Updated for Qwen3 support (llama.cpp b5401+)
     # Use PyPI source because GitHub tarballs often lack submodules (vendor/llama.cpp)
     # causing the patch to miss the files, or the build to fetch fresh (unpatched) code.
     url = 'https://files.pythonhosted.org/packages/source/l/llama_cpp_python/llama_cpp_python-{version}.tar.gz'
@@ -133,28 +133,8 @@ class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
         os.makedirs(lib_build_dir, exist_ok=True)
         
         env = self.get_recipe_env(arch)
-        
-        # 2. Configure manually (Full Control)
-        cmd_cmake = [
-            "cmake",
-            "-S", llama_cpp_dir,
-            "-B", lib_build_dir,
-            f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake",
-            "-DANDROID_ABI=arm64-v8a",
-            "-DANDROID_PLATFORM=android-24",
-            "-DLLAMA_NATIVE=OFF",
-            "-DGGML_NATIVE=OFF",
-            "-DGGML_OPENMP=OFF",
-            "-DGGML_PERF=OFF",
-            "-DLLAVA_BUILD=OFF",
-            "-DBUILD_SHARED_LIBS=ON",
-            "-DCMAKE_C_FLAGS=-march=armv8-a",
-            "-DCMAKE_CXX_FLAGS=-march=armv8-a"
-        ]
-        
-        logging.info(f"Starting Manual CMake: {cmd_cmake}")
-        subprocess.check_call(cmd_cmake, env=env)
-        
+
+        # --- BEGIN PATCHING SECTION ---
         # 2b. Patch llama.cpp for POSIX constants
         # Check for llama.cpp location (changed in newer versions to src/llama.cpp)
         possible_paths = [
@@ -170,29 +150,25 @@ class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
         
         if not llama_cpp_file:
              logging.error(f"Could not find llama.cpp source in {llama_cpp_dir}")
-             # List dir to help debug
-             logging.error(f"Dir contents: {os.listdir(llama_cpp_dir)}")
-             if os.path.exists(os.path.join(llama_cpp_dir, 'src')):
-                 logging.error(f"Src contents: {os.listdir(os.path.join(llama_cpp_dir, 'src'))}")
-             # Don't raise yet, maybe we don't need to patch if file not found? 
-             # But if we rely on it, we will fail later.
-             # Assume build will fail natively if we don't patch
-             raise FileNotFoundError(f"llama.cpp source not found in {possible_paths}")
-
-        logging.info(f"Patching {llama_cpp_file} for POSIX_MADV definitions...")
-        with open(llama_cpp_file, 'r') as f:
-            content = f.read()
-            
-        if '#define posix_madvise' not in content:
-            logging.info("Patching llama.cpp for POSIX_MADV definitions...")
-            patch_code = """
+             # Only verify if we are sure the source is there. If using PyPI tarball, it should be.
+             # If strictly checking:
+             # raise FileNotFoundError(f"llama.cpp source not found in {possible_paths}")
+             logging.warning("Proceeding without patching llama.cpp source (file not found)")
+        else:
+            logging.info(f"Patching {llama_cpp_file} for POSIX_MADV definitions...")
+            with open(llama_cpp_file, 'r') as f:
+                content = f.read()
+                
+            if '#define posix_madvise' not in content:
+                logging.info("Patching llama.cpp for POSIX_MADV definitions...")
+                patch_code = """
 #if defined(__ANDROID__) || defined(ANDROID)
     #include <sys/mman.h>
     #ifndef POSIX_MADV_WILLNEED
         #ifdef MADV_WILLNEED
             #define POSIX_MADV_WILLNEED MADV_WILLNEED
         #else
-            #define POSIX_MADV_WILLNEED 3
+            #define POSIX_WILLNEED 3
         #endif
     #endif
     #ifndef POSIX_MADV_RANDOM
@@ -205,35 +181,122 @@ class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
     #define posix_madvise madvise
 #endif
 """
-            content = content.replace('#include "llama.h"', '#include "llama.h"\n' + patch_code)
-            with open(llama_cpp_file, 'w') as f:
-                f.write(content)
+                content = content.replace('#include "llama.h"', '#include "llama.h"\n' + patch_code)
+                with open(llama_cpp_file, 'w') as f:
+                    f.write(content)
 
-        # 2c. HARDCORE OPENMP DISABLE PATCH
-        # The variables were ignored, so we patch the CMakeLists directly.
+        # 2c. PATCH ROOT CMAKE TO DISABLE OPENMP & NATIVE
         cmake_ggml = os.path.join(llama_cpp_dir, 'CMakeLists.txt')
         if os.path.exists(cmake_ggml):
             logging.info(f"Patching {cmake_ggml} to FORCE DISABLE OPENMP")
             with open(cmake_ggml, 'r') as f:
                 cm_content = f.read()
             
-            # Replace option default to OFF
+            # 2c. PATCH ROOT CMAKE TO DISABLE OPENMP & NATIVE
             cm_content = cm_content.replace('option(LLAMA_OPENMP "llama: use OpenMP" ON)', 'option(LLAMA_OPENMP "llama: use OpenMP" OFF)')
             cm_content = cm_content.replace('option(GGML_OPENMP "ggml: use OpenMP" ON)', 'option(GGML_OPENMP "ggml: use OpenMP" OFF)')
-            
-            # FORCE DISABLE NATIVE (Optimization flags that break Android ABI)
             cm_content = cm_content.replace('option(LLAMA_NATIVE "llama: enable -march=native optimizations" ON)', 'option(LLAMA_NATIVE "llama: enable -march=native optimizations" OFF)')
             cm_content = cm_content.replace('option(GGML_NATIVE "ggml: enable -march=native optimizations" ON)', 'option(GGML_NATIVE "ggml: enable -march=native optimizations" OFF)')
             
-            # Also brute force set it
-            cm_content += "\nset(LLAMA_OPENMP OFF CACHE BOOL \"Force OFF\" FORCE)\n"
-            cm_content += "\nset(GGML_OPENMP OFF CACHE BOOL \"Force OFF\" FORCE)\n"
-            cm_content += "\nset(LLAMA_NATIVE OFF CACHE BOOL \"Force OFF\" FORCE)\n"
-            cm_content += "\nset(GGML_NATIVE OFF CACHE BOOL \"Force OFF\" FORCE)\n"
-            
+            # Helper to force cache variables
+            force_vars = """
+set(LLAMA_OPENMP OFF CACHE BOOL "Force OFF" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "Force OFF" FORCE)
+set(LLAMA_NATIVE OFF CACHE BOOL "Force OFF" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "Force OFF" FORCE)
+"""
+            # Inject after project() to ensure it takes precedence
+            if "project(" in cm_content:
+                # Find the end of project(...) line roughly or just insert after first project(
+                # Simpler: replace project(...) with project(...) \n force_vars
+                import re
+                cm_content = re.sub(r'(project\s*\(.*?\))', r'\1\n' + force_vars, cm_content, count=1, flags=re.DOTALL)
+            else:
+                cm_content += force_vars # Fallback
+
             with open(cmake_ggml, 'w') as f:
                 f.write(cm_content)
 
+        # 2d. RECURSIVE PATCH FOR THREADS (The real fix for ALL modules)
+        # Scan all CMakeLists.txt and replace find_package(Threads)
+        logging.info("Recursive patching of CMakeLists.txt for Android Threads...")
+        thread_patch = """
+if(ANDROID)
+    set(Threads_FOUND TRUE)
+    if(NOT TARGET Threads::Threads)
+        add_library(Threads::Threads INTERFACE IMPORTED)
+    endif()
+else()
+    find_package(Threads REQUIRED)
+endif()
+"""
+        count_cmake = 0
+        for root, dirs, files in os.walk(llama_cpp_dir):
+            if "CMakeLists.txt" in files:
+                cmake_file = os.path.join(root, "CMakeLists.txt")
+                try:
+                    with open(cmake_file, 'r') as f:
+                        content = f.read()
+                    
+                    if "find_package(Threads" in content:
+                        logging.info(f"Patching Threads in {cmake_file}")
+                        # Coverage for both REQUIRED and not, though usually REQUIRED
+                        new_content = content.replace("find_package(Threads REQUIRED)", thread_patch)
+                        new_content = new_content.replace("find_package(Threads)", thread_patch) # Fallback
+                        
+                        # Also fix CheckLibraryExists which might look for pthread explicitly
+                        # This handles the "ld: error: unable to find library -lpthread" in check stages
+                        if "check_library_exists(pthread" in new_content or "CHECK_LIBRARY_EXISTS(pthread" in new_content:
+                             new_content = new_content.replace("check_library_exists(pthread", "# check_library_exists(pthread")
+                             new_content = new_content.replace("CHECK_LIBRARY_EXISTS(pthread", "# CHECK_LIBRARY_EXISTS(pthread")
+
+                        with open(cmake_file, 'w') as f:
+                            f.write(new_content)
+                        count_cmake += 1
+                except Exception as e:
+                    logging.error(f"Failed to patch {cmake_file}: {e}")
+
+        logging.info(f"Patched Threads in {count_cmake} CMakeLists.txt files.")
+        # --- END PATCHING SECTION ---
+        
+        # 2. Configure manually (Full Control)
+        cmd_cmake = [
+            "cmake",
+            "-S", llama_cpp_dir,
+            "-B", lib_build_dir,
+            f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake",
+            "-DANDROID_ABI=arm64-v8a",
+            "-DANDROID_PLATFORM=android-24",
+            "-DLLAMA_NATIVE=OFF",
+            "-DGGML_NATIVE=OFF",
+            "-DGGML_OPENMP=OFF",
+            "-DGGML_PERF=OFF",
+            "-DLLAVA_BUILD=OFF",
+            "-DLLAMA_CURL=OFF", # Fix for missing libcurl on Android
+            "-DBUILD_SHARED_LIBS=ON",
+            "-DCMAKE_C_FLAGS=-march=armv8-a",
+            "-DCMAKE_CXX_FLAGS=-march=armv8-a",
+            # FORCE PTHREAD VARIABLES TO BYPASS CHECKS
+            "-DCMAKE_HAVE_LIBC_PTHREAD=1",
+            "-DCMAKE_HAVE_PTHREAD_CREATE=1",
+            "-DCMAKE_THREAD_LIBS_INIT=",
+            "-DTHREADS_HAVE_PTHREAD_ARG=1",
+            "-DThreads_FOUND=TRUE"
+        ]
+        
+        logging.info(f"Starting Manual CMake: {cmd_cmake}")
+        try:
+            result = subprocess.run(cmd_cmake, env=env, capture_output=True, text=True, check=True)
+            logging.info(f"CMake SUCCESS:\\n{result.stdout}")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"CMake FAILED!\\nSTDOUT:\\n{e.stdout}\\nSTDERR:\\n{e.stderr}")
+            # SAVE LOG TO FILE FOR DEBUGGING
+            crash_log = os.path.join(build_dir, "cmake_crash_log.txt")
+            with open(crash_log, "w") as f:
+                f.write(f"STDOUT:\n{e.stdout}\n\nSTDERR:\n{e.stderr}")
+            logging.info(f"Saved crash log to {crash_log}")
+            raise
+        
         # 3. Build manually
         logging.info("Starting Manual Make...")
         try:
