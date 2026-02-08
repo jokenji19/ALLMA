@@ -13,7 +13,7 @@ LLAMA_CPP_AVAILABLE = True
 
 # Default model path (relative to creating this class, but should be passed in)
 # UPGRADED 2026-02-06: Qwen2.5-Coder-3B-Instruct-Abliterated (Bartowski)
-_DEFAULT_MODEL_NAME = "Qwen2.5-Coder-3B-Instruct-abliterated-Q4_K_M.gguf"
+_DEFAULT_MODEL_NAME = "model.gguf"
 
 class MobileGemmaWrapper:
     """

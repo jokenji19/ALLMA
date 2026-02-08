@@ -27,7 +27,7 @@ class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
             f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake "
             f"-DCMAKE_SYSTEM_NAME=Android "
             f"-DANDROID_ABI={arch.arch} "
-            f"-DANDROID_PLATFORM=android-24 "
+            f"-DANDROID_PLATFORM=android-32 "
             "-DCMAKE_BUILD_TYPE=Release "
             "-DLLAMA_CUBLAS=OFF " 
             "-DLLAMA_OPENBLAS=OFF "
@@ -257,6 +257,32 @@ endif()
                     logging.error(f"Failed to patch {cmake_file}: {e}")
 
         logging.info(f"Patched Threads in {count_cmake} CMakeLists.txt files.")
+        
+        # --- VULKAN LINKING PATCH ---
+        # The Vulkan::Vulkan imported target doesn't properly link libvulkan.so for Android cross-compilation
+        # We need to patch ggml-vulkan/CMakeLists.txt to add explicit vulkan library linking
+        vulkan_cmake_path = os.path.join(llama_cpp_dir, "ggml", "src", "ggml-vulkan", "CMakeLists.txt")
+        if os.path.exists(vulkan_cmake_path):
+            try:
+                with open(vulkan_cmake_path, 'r') as f:
+                    vulkan_content = f.read()
+                
+                # Add full absolute path to libvulkan.so in target_link_libraries
+                old_link = "target_link_libraries(ggml-vulkan PRIVATE Vulkan::Vulkan)"
+                ndk_libvulkan_path = f"{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android/32/libvulkan.so"
+                # REMOVE Vulkan::Vulkan completely - it uses wrong API level library
+                new_link = f'target_link_libraries(ggml-vulkan PRIVATE "{ndk_libvulkan_path}")'
+                
+                if old_link in vulkan_content:
+                    vulkan_content = vulkan_content.replace(old_link, new_link)
+                    with open(vulkan_cmake_path, 'w') as f:
+                        f.write(vulkan_content)
+                    logging.info(f"Patched Vulkan linking with absolute libvulkan.so path in {vulkan_cmake_path}")
+                else:
+                    logging.warning(f"Vulkan link line not found in {vulkan_cmake_path}")
+            except Exception as e:
+                logging.error(f"Failed to patch Vulkan CMakeLists: {e}")
+        # --- END VULKAN PATCH ---
         # --- END PATCHING SECTION ---
         
         # 2. Configure manually (Full Control)
@@ -266,16 +292,22 @@ endif()
             "-B", lib_build_dir,
             f"-DCMAKE_TOOLCHAIN_FILE={self.ctx.ndk_dir}/build/cmake/android.toolchain.cmake",
             "-DANDROID_ABI=arm64-v8a",
-            "-DANDROID_PLATFORM=android-24",
+            "-DANDROID_PLATFORM=android-32",
             "-DLLAMA_NATIVE=OFF",
             "-DGGML_NATIVE=OFF",
             "-DGGML_OPENMP=OFF",
             "-DGGML_PERF=OFF",
             "-DLLAVA_BUILD=OFF",
             "-DLLAMA_CURL=OFF", # Fix for missing libcurl on Android
+            "-DGGML_VULKAN=ON",  # Enable Vulkan GPU acceleration (Adreno 830)
+            f"-DVulkan_GLSLC_EXECUTABLE={self.ctx.ndk_dir}/shader-tools/darwin-x86_64/glslc",
+            f"-DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN={os.path.dirname(__file__)}/host-toolchain.cmake",
+            f"-DVulkan_INCLUDE_DIR={self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include",
+            f"-DVulkan_LIBRARY={self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android/32/libvulkan.so",
+            f"-DCMAKE_SHARED_LINKER_FLAGS=-L{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android/32 -lvulkan",
             "-DBUILD_SHARED_LIBS=ON",
-            "-DCMAKE_C_FLAGS=-march=armv8-a",
-            "-DCMAKE_CXX_FLAGS=-march=armv8-a",
+            f"-DCMAKE_C_FLAGS=-march=armv8-a -I{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include",
+            f"-DCMAKE_CXX_FLAGS=-march=armv8-a -I{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include",
             # FORCE PTHREAD VARIABLES TO BYPASS CHECKS
             "-DCMAKE_HAVE_LIBC_PTHREAD=1",
             "-DCMAKE_HAVE_PTHREAD_CREATE=1",

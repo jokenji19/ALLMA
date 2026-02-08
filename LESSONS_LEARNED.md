@@ -108,3 +108,15 @@
 1.  **Separation:** Enforce strict double-newline separation in prompt assembly.
 2.  **Manual Stream:** If falling back to static generation, **manually invoke** `stream_callback` chunk-by-chunk in a loop to simulate streaming. This ensures the UI state machine (Thinking -> Speaking) completes correctly.
 
+### Lesson 17: Compiling llama.cpp 0.3.16 for Android (The Phtread & CURL Saga)
+**Goal:** Upgrade `llama.cpp` to support newer models (Qwen 3 / 2.5).
+**Obstacles:**
+1.  **Linker Error (`-lpthread`):** Android puts pthreads in libc, but `llama.cpp` CMake scripts insist on linking `-lpthread` or `-lpthreads`.
+    - **Fix 1 (Failed):** Patching just `common/CMakeLists.txt`.
+    - **Fix 2 (Winning):** **Global Recursive Patch** of ALL `CMakeLists.txt` to replace `find_package(Threads REQUIRED)` with a custom Android block (`add_library(Threads::Threads INTERFACE IMPORTED)`).
+    - **Fix 3 (Nuclear):** Forcing CMake Cache variables (`-DCMAKE_HAVE_LIBC_PTHREAD=1`, `-DCMAKE_THREAD_LIBS_INIT=""`) to bypass internal checks.
+2.  **Missing Dependency (`CURL`):** Newer `llama.cpp` enables `LLAMA_CURL` by default. Android NDK doesn't have it.
+    - **Fix:** Explicitly pass `-DLLAMA_CURL=OFF` to CMake.
+3.  **Environment Conflict:** `buildozer.spec` had stale `env_vars` forcing `-DGGML_OPENMP=ON`, which overrode recipe settings and caused linking errors.
+    - **Fix:** Cleaned `buildozer.spec` to let the recipe control flags.
+**Outcome:** Compiled `libllama.so` succesfully!

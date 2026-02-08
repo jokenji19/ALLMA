@@ -30,7 +30,7 @@ source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .githu
 source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md
 
 # (str) Application versioning (method 1)
-version = 0.54
+version = 0.56
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
@@ -40,7 +40,7 @@ version = 0.54
 requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llamacpp_android,diskcache,typing_extensions,jinja2,MarkupSafe,pytz
 
 # (str) Python for android branch to use, if not master, useful to try new features
-# p4a.branch = develop
+p4a.branch = develop
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
@@ -91,7 +91,7 @@ android.minapi = 24
 #android.sdk = 20
 
 # (str) Android NDK version to use
-#android.ndk = 19b
+android.ndk_path = /Users/erikahu/.buildozer/android/platform/android-ndk-r27d
 
 # (str) Android Build Tools version to use (force stable version)
 android.build_tools_version = 34.0.0

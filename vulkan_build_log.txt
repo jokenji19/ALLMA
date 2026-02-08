@@ -1,0 +1,194 @@
+# Check configuration tokens
+# Ensure build layout
+# Check configuration tokens
+# Preparing build
+# Check requirements for android
+# Search for Git (git)
+#  -> found at /usr/local/git/bin/git
+# Search for Cython (cython)
+#  -> found at /Library/Frameworks/Python.framework/Versions/3.13/bin/cython
+# Search for Java compiler (javac)
+#  -> found at /opt/homebrew/Cellar/openjdk@17/17.0.17/libexec/openjdk.jdk/Contents/Home/bin/javac
+# Search for Java keytool (keytool)
+#  -> found at /opt/homebrew/Cellar/openjdk@17/17.0.17/libexec/openjdk.jdk/Contents/Home/bin/keytool
+# Install platform
+# Run ['git', 'config', '--get', 'remote.origin.url']
+# Cwd /Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/python-for-android
+https://github.com/kivy/python-for-android.git
+# Run ['git', 'branch', '-vv']
+# Cwd /Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/python-for-android
+* master 957a3e5f [origin/master] Merge pull request #2959 from kivy/release-2024.01.21
+# Run ['/Library/Frameworks/Python.framework/Versions/3.13/bin/python3', '-m', 'pip', 'install', '-q', '--user', 'appdirs', 'colorama>=0.3.3', 'jinja2', 'sh>=1.10, <2.0; sys_platform!="win32"', 'build', 'toml', 'packaging', 'setuptools']
+# Cwd None
+
+[notice] A new release of pip is available: 25.2 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
+# Apache ANT found at /Users/erikahu/.buildozer/android/platform/apache-ant-1.9.4
+# Android SDK found at /Users/erikahu/.buildozer/android/platform/android-sdk
+# Recommended android's NDK version by p4a is: 25b
+# Android NDK found at /Users/erikahu/.buildozer/android/platform/android-ndk-r25b
+# Run ['/Library/Frameworks/Python.framework/Versions/3.13/bin/python3', '-m', 'pythonforandroid.toolchain', 'aab', '-h', '--color=always', '--storage-dir=/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a', '--ndk-api=24', '--ignore-setup-py', '--debug']
+# Cwd /Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/python-for-android
+[WARNING]: prerequisites.py is experimental and does not support all prerequisites yet.
+[WARNING]: Please report any issues to the python-for-android issue tracker.
+[INFO]:    Prerequisite homebrew is met
+[INFO]:    Prerequisite autoconf is met
+[INFO]:    Prerequisite automake is met
+[INFO]:    Prerequisite libtool is met
+[INFO]:    Prerequisite pkg-config is met
+[INFO]:    Prerequisite cmake is met
+[INFO]:    Prerequisite openssl is met
+[INFO]:    Found JAVA_HOME environment variable, using it
+[INFO]:    Found a valid JDK at /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+[INFO]:    Prerequisite JDK is met
+[WARNING]: prerequisites.py is experimental and does not support all prerequisites yet.
+[WARNING]: Please report any issues to the python-for-android issue tracker.
+[INFO]:    Prerequisite homebrew is met
+[INFO]:    Prerequisite autoconf is met
+[INFO]:    Prerequisite automake is met
+[INFO]:    Prerequisite libtool is met
+[INFO]:    Prerequisite pkg-config is met
+[INFO]:    Prerequisite cmake is met
+[INFO]:    Prerequisite openssl is met
+[INFO]:    Found JAVA_HOME environment variable, using it
+[INFO]:    Found a valid JDK at /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+[INFO]:    Prerequisite JDK is met
+usage: toolchain.py aab [-h] [--debug] [--color {always,never,auto}]
+                        [--sdk-dir SDK_DIR] [--ndk-dir NDK_DIR]
+                        [--android-api ANDROID_API]
+                        [--ndk-version NDK_VERSION] [--ndk-api NDK_API]
+                        [--symlink-bootstrap-files]
+                        [--storage-dir STORAGE_DIR] [--arch ARCH]
+                        [--dist-name DIST_NAME] [--requirements REQUIREMENTS]
+                        [--recipe-blacklist RECIPE_BLACKLIST]
+                        [--blacklist-requirements BLACKLIST_REQUIREMENTS]
+                        [--bootstrap BOOTSTRAP] [--hook HOOK] [--force-build]
+                        [--no-force-build] [--require-perfect-match]
+                        [--no-require-perfect-match] [--allow-replace-dist]
+                        [--no-allow-replace-dist]
+                        [--local-recipes LOCAL_RECIPES]
+                        [--activity-class-name ACTIVITY_CLASS_NAME]
+                        [--service-class-name SERVICE_CLASS_NAME]
+                        [--java-build-tool {auto,ant,gradle}] [--copy-libs]
+                        [--no-copy-libs] [--add-asset ASSETS]
+                        [--add-resource RESOURCES] [--private PRIVATE]
+                        [--use-setup-py] [--ignore-setup-py] [--release]
+                        [--with-debug-symbols] [--keystore KEYSTORE]
+                        [--signkey SIGNKEY] [--keystorepw KEYSTOREPW]
+                        [--signkeypw SIGNKEYPW]
+
+options:
+  -h, --help            show this help message and exit
+  --debug               Display debug output and all build info
+  --color {always,never,auto}
+                        Enable or disable color output (default enabled on
+                        tty)
+  --sdk-dir, --sdk_dir SDK_DIR
+                        The filepath where the Android SDK is installed
+  --ndk-dir, --ndk_dir NDK_DIR
+                        The filepath where the Android NDK is installed
+  --android-api, --android_api ANDROID_API
+                        The Android API level to build against defaults to 33
+                        if not specified.
+  --ndk-version, --ndk_version NDK_VERSION
+                        DEPRECATED: the NDK version is now found automatically
+                        or not at all.
+  --ndk-api NDK_API     The Android API level to compile against. This should
+                        be your *minimal supported* API, not normally the same
+                        as your --android-api. Defaults to min(ANDROID_API,
+                        21) if not specified.
+  --symlink-bootstrap-files, --ssymlink_bootstrap_files
+                        If True, symlinks the bootstrap files creation. This
+                        is useful for development only, it could also cause
+                        weird problems.
+  --storage-dir STORAGE_DIR
+                        Primary storage directory for downloads and builds
+                        (default: ~/.python-for-android)
+  --arch ARCH           The archs to build for.
+  --dist-name, --dist_name DIST_NAME
+                        The name of the distribution to use or create
+  --requirements REQUIREMENTS
+                        Dependencies of your app, should be recipe names or
+                        Python modules. NOT NECESSARY if you are using Python
+                        3 with --use-setup-py
+  --recipe-blacklist RECIPE_BLACKLIST
+                        Blacklist an internal recipe from use. Allows
+                        disabling Python 3 core modules to save size
+  --blacklist-requirements BLACKLIST_REQUIREMENTS
+                        Blacklist an internal recipe from use. Allows
+                        disabling Python 3 core modules to save size
+  --bootstrap BOOTSTRAP
+                        The bootstrap to build with. Leave unset to choose
+                        automatically.
+  --hook HOOK           Filename to a module that contains python-for-android
+                        hooks
+  --local-recipes, --local_recipes LOCAL_RECIPES
+                        Directory to look for local recipes
+  --activity-class-name ACTIVITY_CLASS_NAME
+                        The full java class name of the main activity
+  --service-class-name SERVICE_CLASS_NAME
+                        Full java package name of the PythonService class
+  --java-build-tool {auto,ant,gradle}
+                        The java build tool to use when packaging the APK,
+                        defaults to automatically selecting an appropriate
+                        tool.
+  --add-asset ASSETS    Put this in the assets folder in the apk.
+  --add-resource RESOURCES
+                        Put this in the res folder in the apk.
+  --private PRIVATE     the directory with the app source code files
+                        (containing your main.py entrypoint)
+  --use-setup-py        Process the setup.py of a project if present.
+                        (Experimental!
+  --ignore-setup-py     Don't run the setup.py of a project if present. This
+                        may be required if the setup.py is not designed to
+                        work inside p4a (e.g. by installing dependencies that
+                        won't work or aren't desired on Android
+  --release             Build your app as a non-debug release build. (Disables
+                        gdb debugging among other things)
+  --with-debug-symbols  Will keep debug symbols from `.so` files.
+  --keystore KEYSTORE   Keystore for JAR signing key, will use jarsigner
+                        default if not specified (release build only)
+  --signkey SIGNKEY     Key alias to sign PARSER_APK. with (release build
+                        only)
+  --keystorepw KEYSTOREPW
+                        Password for keystore
+  --signkeypw SIGNKEYPW
+                        Password for key alias
+
+  Whether to force compilation of a new distribution
+
+  --force-build
+  --no-force-build      (this is the default)
+  --require-perfect-match
+  --no-require-perfect-match
+                        (this is the default)
+  --allow-replace-dist  (this is the default)
+  --no-allow-replace-dist
+  --copy-libs
+  --no-copy-libs        (this is the default)
+# Check application requirements
+# Compile platform
+# Run ['/Library/Frameworks/Python.framework/Versions/3.13/bin/python3', '-m', 'pythonforandroid.toolchain', 'create', '--dist_name=allma_prime', '--bootstrap=sdl2', '--requirements=python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llamacpp_android,diskcache,typing_extensions,jinja2,MarkupSafe,pytz', '--arch=arm64-v8a', '--copy-libs', '--local-recipes', '/Users/erikahu/ALLMA/ALLMA_V4/libs/recipes', '--color=always', '--storage-dir=/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/build-arm64-v8a', '--ndk-api=24', '--ignore-setup-py', '--debug']
+# Cwd /Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/python-for-android
+[WARNING]: prerequisites.py is experimental and does not support all prerequisites yet.
+[WARNING]: Please report any issues to the python-for-android issue tracker.
+[INFO]:    Prerequisite homebrew is met
+[INFO]:    Prerequisite autoconf is met
+[INFO]:    Prerequisite automake is met
+[INFO]:    Prerequisite libtool is met
+[INFO]:    Prerequisite pkg-config is met
+[INFO]:    Prerequisite cmake is met
+[INFO]:    Prerequisite openssl is met
+[INFO]:    Found JAVA_HOME environment variable, using it
+[INFO]:    Found a valid JDK at /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+[INFO]:    Prerequisite JDK is met
+[WARNING]: prerequisites.py is experimental and does not support all prerequisites yet.
+[WARNING]: Please report any issues to the python-for-android issue tracker.
+[INFO]:    Prerequisite homebrew is met
+[INFO]:    Prerequisite autoconf is met
+[INFO]:    Prerequisite automake is met
+[INFO]:    Prerequisite libtool is met
+[INFO]:    Prerequisite pkg-config is met
+[INFO]:    Prerequisite cmake is met
+[INFO]:    Prerequisite openssl is met
+[INFO]:    Found JAVA_HOME environment variable, using it
