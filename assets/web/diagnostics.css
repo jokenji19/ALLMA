@@ -1,0 +1,266 @@
+/* --- DIAGNOSTICS PANEL (v0.57 - Full Screen) --- */
+
+/* VIEW SYSTEM */
+.app-view {
+    height: 100%;
+    width: 100%;
+    display: none;
+    flex-direction: column;
+}
+
+.app-view.active {
+    display: flex;
+}
+
+/* Chat View: inherits flex 1 layout from index.html structure */
+#view-chat {
+    /* No special style, just container */
+    overflow: hidden;
+}
+
+
+/* Diagnostics View */
+#view-diagnostics {
+    background: #F3F4F6;
+    overflow-y: auto;
+}
+
+body.dark-mode #view-diagnostics {
+    background: #0F172A;
+}
+
+/* Header */
+.diagnostics-header {
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 16px;
+    padding-top: max(16px, env(safe-area-inset-top));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+.diagnostics-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.back-btn {
+    background: transparent;
+    border: none;
+    color: var(--primary-color);
+    font-weight: 600;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 8px 12px 8px 0;
+}
+
+.back-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+
+/* Content */
+.diagnostics-content {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+
+
+/* (Existing Card Styles reuse) */
+.diag-section {
+    padding: 16px;
+    background: white;
+    border-radius: 20px;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+body.dark-mode .diag-section {
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.diag-section.no-pad {
+    padding: 0;
+    overflow: hidden;
+}
+
+.diag-section h4 {
+    margin: 0 0 16px 0;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var (--text-secondary);
+    letter-spacing: 1px;
+    opacity: 0.7;
+    font-weight: 800;
+}
+
+.diag-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.diag-card {
+    background: #F9FAFB;
+    padding: 16px;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+body.dark-mode .diag-card {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.diag-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.diag-value {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: 'Roboto Mono', monospace;
+    color: var(--text-primary);
+    letter-spacing: -0.5px;
+}
+
+.diag-bar-bg {
+    height: 6px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 3px;
+    width: 100%;
+    margin-top: 4px;
+    overflow: hidden;
+}
+
+body.dark-mode .diag-bar-bg {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.diag-bar-fill {
+    height: 100%;
+    background: var(--primary-color);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+/* Soul Monitor */
+.soul-viz-container {
+    background: transparent;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.soul-metric {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.soul-metric span {
+    width: 70px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
+.soul-bar {
+    flex: 1;
+    height: 12px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+}
+
+body.dark-mode .soul-bar {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.soul-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.5s ease;
+    /* Shimmer effect */
+    position: relative;
+}
+
+.soul-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.soul-fill.energy {
+    background: linear-gradient(90deg, #F59E0B, #FCD34D);
+}
+
+.soul-fill.chaos {
+    background: linear-gradient(90deg, #8B5CF6, #C4B5FD);
+}
+
+.soul-fill.entropy {
+    background: linear-gradient(90deg, #EF4444, #FCA5A5);
+}
+
+.soul-status-text {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-top: 8px;
+    padding: 8px;
+    background: rgba(59, 130, 246, 0.1);
+    border-radius: 8px;
+}
+
+/* Terminal Logs (Full Height Variant) */
+.terminal-logs.large {
+    height: 300px;
+    padding: 16px;
+    background: #111827;
+}
+
+.log-entry {
+    line-height: 1.5;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    font-size: 12px;
+}

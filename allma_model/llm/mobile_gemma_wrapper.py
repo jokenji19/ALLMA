@@ -70,17 +70,59 @@ class MobileGemmaWrapper:
             # --- CRITICAL: PRE-LOAD libggml.so GLOBALLY ---
             # llama-cpp-python usually fails because it can't find symbols from libggml.so
             private_root = os.environ.get("ANDROID_PRIVATE", "/data/data/org.allma.allma_prime/files/app")
-            libggml_path = os.path.join(private_root, "libggml.so")
             
-            if os.path.exists(libggml_path):
-                print(f"[MobileGemma] Pre-loading libggml.so from {libggml_path}...", flush=True)
+            # Handle p4a structure variations
+            if private_root.endswith("/app"):
+                 base_internal = private_root
+            else:
+                 base_internal = os.path.join(private_root, "app")
+
+            # PRIORITIZE INTERNAL LIBGGML (Vulkan/Optimized)
+            internal_ggml = os.path.join(base_internal, "_python_bundle", "site-packages", "llama_cpp", "libggml.so")
+            fallback_ggml = os.path.join(private_root, "libggml.so")
+            
+            target_ggml = None
+            if os.path.exists(internal_ggml):
+                 target_ggml = internal_ggml
+                 print(f"[MobileGemma] Found INTERNAL libggml.so at {internal_ggml}", flush=True)
+            elif os.path.exists(fallback_ggml):
+                 target_ggml = fallback_ggml
+                 print(f"[MobileGemma] Found fallback libggml.so at {fallback_ggml}", flush=True)
+            
+            if target_ggml:
+                ggml_dir = os.path.dirname(target_ggml)
+                print(f"[MobileGemma] Scanning for libggml dependencies in {ggml_dir}...", flush=True)
+                
+                # CRITICAL: Load backends (cpu, vulkan) FIRST
+                # dlopen fails if these aren't loaded when libggml.so is loaded
+                if os.path.exists(ggml_dir):
+                    for f in os.listdir(ggml_dir):
+                        if f.startswith("libggml-") and f.endswith(".so"):
+                            # RESTORED (Build 163-v23): We MUST load libggml-vulkan.so because libggml.so is linked against it.
+                            # We will disable actual GPU usage via env vars below.
+                            
+                            full_path = os.path.join(ggml_dir, f)
+                            try:
+                                ctypes.CDLL(full_path, mode=ctypes.RTLD_GLOBAL)
+                                print(f"[MobileGemma] Pre-loaded backend: {f}", flush=True)
+                            except Exception as e:
+                                print(f"[MobileGemma] WARN: Failed to load backend {f}: {e}", flush=True)
+
+                print(f"[MobileGemma] Pre-loading main libggml.so from {target_ggml}...", flush=True)
+                
+                # FORCE IGNORE VULKAN DEVICES (Virtual CPU Mode)
+                # This prevents llama.cpp from finding the GPU even if the library is loaded.
+                os.environ["GGML_VULKAN_DEVICE"] = "-1"
+                os.environ["GGML_VK_VISIBLE_DEVICES"] = ""
+                os.environ["GGML_VK_DISABLE_FUSION"] = "1" # Extra safety
+                
                 try:
-                    ctypes.CDLL(libggml_path, mode=ctypes.RTLD_GLOBAL)
+                    ctypes.CDLL(target_ggml, mode=ctypes.RTLD_GLOBAL)
                     print("[MobileGemma] SUCCESS: libggml.so pre-loaded globally.", flush=True)
                 except Exception as e:
                     print(f"[MobileGemma] WARNING: Failed to pre-load libggml.so: {e}", flush=True)
             else:
-                print(f"[MobileGemma] libggml.so NOT FOUND at {libggml_path}", flush=True)
+                print(f"[MobileGemma] CRITICAL: libggml.so NOT FOUND (Checked: {internal_ggml}, {fallback_ggml})", flush=True)
 
             logging.info(f"[MobileGemma] Initializing Llama with path={self.model_path}...")
             print(f"[MobileGemma] PRINT DEBUG: Initializing Llama...", flush=True)
@@ -94,27 +136,56 @@ class MobileGemmaWrapper:
             lib_path = None
             
             if env_lib and os.path.exists(env_lib):
-                print(f"[MobileGemma] Using env LLAMA_CPP_LIB: {env_lib}", flush=True)
-                lib_path = env_lib
+                print(f"[MobileGemma] Env LLAMA_CPP_LIB set to: {env_lib}", flush=True)
+                
+                # CRITICAL FIX: main.py might forcefully set this to 'files/libllama.so' (stale)
+                # If we found a better INTERNAL lib, we must override it.
+                is_stale_fallback = "files/libllama.so" in env_lib or "libllama.so" in env_lib and "app" not in env_lib
+                
+                if is_stale_fallback and target_ggml:
+                    # We have a valid internal ggml, so we should look for internal llama too
+                    internal_llama_dir = os.path.dirname(target_ggml)
+                    possible_internal_llama = os.path.join(internal_llama_dir, "libllama.so")
+                    
+                    if os.path.exists(possible_internal_llama):
+                        print(f"[MobileGemma] OVERRIDE: Ignoring stale env lib {env_lib}. Switching to internal: {possible_internal_llama}", flush=True)
+                        lib_path = possible_internal_llama
+                        os.environ["LLAMA_CPP_LIB"] = lib_path
+                    else:
+                        print(f"[MobileGemma] Stale env lib detected but no internal libllama found at {possible_internal_llama}. Using env.", flush=True)
+                        lib_path = env_lib
+                else:
+                    lib_path = env_lib
             else:
                 print(f"[MobileGemma] env LLAMA_CPP_LIB is {env_lib} (missing or invalid), searching...", flush=True)
                 
                 # Possible locations for the library
                 private_root = os.environ.get("ANDROID_PRIVATE", "/data/data/org.allma.allma_prime/files/app")
+                
+                # Handle p4a structure variations (files/app vs just files)
+                if private_root.endswith("/app"):
+                     base_internal = private_root
+                else:
+                     base_internal = os.path.join(private_root, "app")
+
                 possible_paths = [
-                    # 1. The smuggled location (MOST LIKELY)
-                    os.path.join(private_root, "libllama.so"),
-                    # 2. Custom location in site-packages
-                    os.path.join(private_root, "_python_bundle/site-packages/llama_cpp/libllama.so"),
-                    # 3. As a sibling to this file
-                    os.path.join(os.path.dirname(__file__), "libllama.so"),
-                    # 4. Standard Android native lib dir
+                    # 1. Custom location in site-packages (CORRECT NEW VERSION - VULKAN)
+                    os.path.join(base_internal, "_python_bundle", "site-packages", "llama_cpp", "libllama.so"),
+                     # 2. Site-packages direct (alternative p4a)
+                    os.path.join(private_root, "site-packages", "llama_cpp", "libllama.so"),
+                    # 3. Standard Android native lib dir (Fallback)
                     "/data/app/org.allma.allma_prime/lib/arm64/libllama.so",
+                    # 4. As a sibling to this file
+                    os.path.join(os.path.dirname(__file__), "libllama.so"),
                 ]
+                
+                # REMOVED: os.path.join(private_root, "libllama.so") - This location contains STALE 20MB lib!
                 
                 for p in possible_paths:
                     if os.path.exists(p):
                         lib_path = p
+                        size = os.path.getsize(p)
+                        print(f"[MobileGemma] Found libllama.so at {p} (Size: {size} bytes)", flush=True)
                         break
             
             if lib_path:
@@ -132,15 +203,38 @@ class MobileGemmaWrapper:
             try:
                 from llama_cpp import Llama
                 print("[MobileGemma] Llama class imported successfully!", flush=True)
-            except ImportError:
-                print("[MobileGemma] ImportError for Llama class. Re-trying with manual extensive lib check...", flush=True)
-                # Fallback: Try to force load libraries again manually just in case
-                if lib_path:
-                    try:
-                       ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
-                    except: pass
+            except ImportError as e:
+                print(f"[MobileGemma] ImportError for Llama class: {e}", flush=True)
+                logging.error(f"ImportError detail: {e}")
                 
-                from llama_cpp import Llama # Retry or fail hard
+                # ATTEMPT RECOVERY: CLEAR CONFLICTS
+                try:
+                    if "LLAMA_CPP_LIB" in os.environ:
+                        print(f"[MobileGemma] Clearing LLAMA_CPP_LIB ({os.environ['LLAMA_CPP_LIB']}) and retrying...", flush=True)
+                        del os.environ["LLAMA_CPP_LIB"]
+                    
+                    import importlib
+                    import llama_cpp
+                    importlib.reload(llama_cpp)
+                    
+                    from llama_cpp import Llama
+                    print("[MobileGemma] RECOVERY SUCCESS: Llama class imported after reset.", flush=True)
+                    
+                    self.llm = Llama(
+                        model_path=self.model_path,
+                        n_ctx=self.n_ctx,
+                        n_threads=8, 
+                        n_gpu_layers=0, # DEBUG: Force CPU to check if Vulkan is crashing
+                        verbose=True
+                    )
+                    # If successful, we don't go to the main init block below, 
+                    # but we need to ensure self.llm is set.
+                    # Actually, better to just let it fall through or raise.
+                    
+                except Exception as e2:
+                    print(f"[MobileGemma] RECOVERY FAILED: {e2}", flush=True)
+                    # CRITICAL: Re-raise the ORIGINAL error to show in UI
+                    raise e
 
             # PERFORMANCE OPTIMIZATION (2026-02-02):
             # Real-world testing revealed unacceptable slowness (20-40s responses).
@@ -157,28 +251,37 @@ class MobileGemmaWrapper:
             # Expected: 2-3x total speedup (20-40s → 7-15s)
             # Trade-off: Shorter conversation memory (10 exchanges → 5-7)
             
-            import gc
-            gc.collect()
+            # VULKAN RESTORATION (Build 163-v18)
+            # OpenCL blocked by Android Namespace (clns-9).
+            # Reverting to Vulkan with STABILITY FLAGS to prevent crash.
+            
+            # CPU FALLBACK (Build 163-v21)
+            # Vulkan Shaders rejected by Adreno 830 Driver (Pipeline create failed).
+            # Forcing CPU mode to guarantee stability.
+            
+            # --- FUTURE GPU ENABLEMENT (ADRENO 830) ---
+            # To re-enable GPU acceleration when drivers/llama.cpp are updated:
+            # 1. Uncomment the flags below.
+            # 2. Set n_gpu_layers = 99.
+            # 
+            # os.environ["GGML_VK_DISABLE_FUSION"] = "1"  # Stability
+            # os.environ["GGML_VK_DISABLE_F16"] = "1"      # Stability
+            # os.environ["GGML_VK_DISABLE_COOPMAT"] = "1"  # Stability
+            # ------------------------------------------
 
             self.llm = Llama(
                 model_path=self.model_path,
-                n_ctx=2048,         # OPTIMIZED: Halved for speed
-                                    # 2048 tokens ≈ 5-7 conversation exchanges
-                                    # (vs 4096 = 10 exchanges but 2x slower)
-                n_threads=8,        # OPTIMIZED: Use all S25 Ultra cores
-                                    # (1x X5 + 7x A7xx = 8 total)
-                n_batch=256,        # OPTIMIZED: Better GPU batching
-                                    # GPU can handle 256+, was bottlenecked
-                n_gpu_layers=-1,    # CRITICAL FIX (2026-02-02 03:38):
-                                    # Use ALL GPU layers via Vulkan!
-                                    # This was MISSING → 100% CPU inference
-                                    # -1 = auto max layers, expected 3x speedup
-                use_mmap=True,      # Mmap Active (memory efficiency)
+                n_ctx=2048,
+                n_threads=8,        # Performance: 8 threads for Snapdragon 8 Elite CPU
+                n_batch=512,        # Performance: High batch for CPU
+                n_gpu_layers=0,     # CPU ONLY: Set to 99 to re-enable GPU
+                flash_attn=False,
+                use_mmap=True,
                 use_mlock=False,
                 verbose=True
             )
             
-            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success! (n_ctx=2048, n_threads=8, n_batch=256)", flush=True)
+            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success! (Build 163-v23 - LINKED CPU)", flush=True)
             logging.info("[MobileGemma] Model loaded successfully.")
         except Exception as e:
             logging.error(f"[MobileGemma] Error loading model: {e}")
@@ -236,13 +339,18 @@ class MobileGemmaWrapper:
                 
                 if stream_mode:
                     text_buffer = ""
+                    import time
                     for chunk in output:
                         # llama-cpp-python stream chunk format:
-                        # {'id': '...', 'object': 'text_completion', 'created': 123, 'model': '...', 'choices': [{'text': 'T', 'index': 0, 'logprobs': None, 'finish_reason': None}]}
                         token = chunk['choices'][0]['text']
                         text_buffer += token
                         if callback:
                             callback(token)
+                            
+                        # CRITICAL FIX: Yield to UI Thread
+                        # On Android, CPU inference can starve the main thread (ANR/Freeze)
+                        # We force a small sleep to let the OS schedule the UI.
+                        time.sleep(0.02)
                     return text_buffer
                 else:
                     return output['choices'][0]['text']

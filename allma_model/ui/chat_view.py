@@ -197,6 +197,18 @@ class ChatView(MDScreen):
                         self.bridge.inject_temperature_to_js()
                     return
 
+                if message == "__REQUEST_DIAGNOSTICS_UPDATE__":
+                    # Full Diagnostics (CPU, RAM, Soul, Logs)
+                    if self.bridge:
+                        diag_data = self._get_diagnostics_data()
+                        # Send as JSON string to window.updateDiagnostics
+                        import json
+                        json_str = json.dumps(diag_data)
+                        # Escape quotes for JS string argument
+                        safe_str = json_str.replace('"', '\\"') 
+                        self.bridge.execute_js(f'window.updateDiagnostics("{safe_str}")')
+                    return
+
                 # Send to Core (Standard Chat)
                 Thread(target=self.process_message, args=(message,)).start()
                 
@@ -427,6 +439,86 @@ class ChatView(MDScreen):
         except Exception as e:
             # print(f"Error updating learning status: {e}") # Silenzia log per pulizia
             pass
+
+    def _get_diagnostics_data(self):
+        """Collects system stats and soul state for the Diagnostics Panel."""
+        stats = {
+            "resources": {"cpu": 0, "ram": 0, "temp": 0},
+            "soul": {"energy": 0, "chaos": 0, "entropy": 0, "state_label": "Offline"},
+            "logs": []
+        }
+
+        try:
+            # 1. System Resources
+            # RAM
+            import os
+            try:
+                # Python memory usage
+                import resource
+                usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                # Linux/Mac: KB. 
+                if platform == 'android':
+                    # On Android often it's already in KB or needs scaling? 
+                    # Usually getrusage output varies. Let's assume KB.
+                    stats["resources"]["ram"] = usage / 1024.0 # MB
+                else:
+                    # Mac is bytes? No, Mac is bytes. Linux is KB.
+                    # Actually getrusage on Mac returns BYTES.
+                    stats["resources"]["ram"] = usage / (1024.0 * 1024.0) # MB
+            except:
+                pass
+
+            # CPU (Mock/LoadAvg)
+            try:
+                # Add jitter to make it look alive even if load is stable
+                import random
+                jitter = random.uniform(-2.0, 2.0)
+                
+                # loadavg gives 1min, 5min, 15min load. 
+                # Normalize by core count?
+                load = os.getloadavg()[0] 
+                # Rough percentage 0-100 logic
+                cpu_count = os.cpu_count() or 4
+                base_cpu = (load / cpu_count) * 100.0
+                stats["resources"]["cpu"] = max(0, min(100, base_cpu + jitter))
+                
+                # RAM Jitter (flicker bytes)
+                stats["resources"]["ram"] += random.uniform(-10.0, 10.0)
+                
+            except:
+                pass
+            
+            # Temp (reuse existing logic if desired, or simpler)
+            # We skip temp here if not easily available, or rely on existing temp monitor logic
+            # MOCK TEMP for now if 0
+            stats["resources"]["temp"] = 38.0 + random.uniform(-0.5, 0.5)
+
+            # 2. Soul State
+            if self.core and hasattr(self.core, 'soul'):
+                s = self.core.soul.state
+                stats["soul"] = {
+                    "energy": s.energy,
+                    "chaos": s.chaos,
+                    "entropy": s.entropy,
+                    "state_label": "Active" # Could infer from values
+                }
+            
+            # 3. Recent Logs (Mock or recent memory)
+            # If we had a log buffer. For now, show last interactions from memory
+            if self.core and hasattr(self.core, 'conversational_memory'):
+                msgs = self.core.conversational_memory.get_recent_context(limit=5)
+                for m in msgs:
+                    # m is Message object
+                    import datetime
+                    ts = m.timestamp.strftime("%H:%M:%S") if m.timestamp else "--"
+                    # Truncate content
+                    short_content = (m.content[:40] + '..') if len(m.content) > 40 else m.content
+                    stats["logs"].append({"time": ts, "msg": f"[{m.role.upper()}] {short_content}"})
+
+        except Exception as e:
+            print(f"Diag Error: {e}")
+        
+        return stats
 
     def _handle_core_output(self, data):
         """

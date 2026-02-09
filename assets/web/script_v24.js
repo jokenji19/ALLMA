@@ -746,4 +746,301 @@ window.updateStatus = function (key, active) {
         }
     }
 };
+// --- DIAGNOSTICS PANEL LOGIC (v0.56) ---
 
+let diagUpdateInterval = null;
+
+function startDiagnostics() {
+    console.log("Starting Diagnostics Monitoring...");
+    if (diagUpdateInterval) clearInterval(diagUpdateInterval);
+
+    // Immediate Request
+    requestDiagnostics();
+
+    // Poll every 1s
+    diagUpdateInterval = setInterval(requestDiagnostics, 1000);
+}
+
+function stopDiagnostics() {
+    console.log("Stopping Diagnostics.");
+    if (diagUpdateInterval) {
+        clearInterval(diagUpdateInterval);
+        diagUpdateInterval = null;
+    }
+}
+
+function requestDiagnostics() {
+    if (window.msgQueue) {
+        window.msgQueue.push("__REQUEST_DIAGNOSTICS_UPDATE__");
+    } else if (window.pyBridge) {
+        // Direct call if queue unavailable (should rely on bridge usually)
+        // Check if we can post directly? No, usually handled by bridge queue consumer
+        // Mock fallback for testing if no backend
+        // displayDiagnostics(generateMockDiagnostics()); 
+    }
+}
+
+// Called by Python via bridge: window.updateDiagnostics(jsonString)
+window.updateDiagnostics = function (jsonStats) {
+    try {
+        const stats = (typeof jsonStats === 'string') ? JSON.parse(jsonStats) : jsonStats;
+        displayDiagnostics(stats);
+    } catch (e) {
+        console.error("Diag Update Failed:", e);
+    }
+};
+
+function displayDiagnostics(stats) {
+    // 1. Resources
+    if (stats.resources) {
+        const cpu = stats.resources.cpu || 0;
+        const ram = stats.resources.ram || 0; // MB
+        const temp = stats.resources.temp || 0;
+
+        updateBar('diag-cpu', cpu, '%', 100);
+
+        // RAM max estimate? Say 4GB for phone logic or just raw MB
+        const ramPercent = Math.min(100, (ram / 6000) * 100); // Assume 6GB soft cap for visualizations
+        updateBar('diag-ram', ram, ' MB', 6000);
+
+        updateBar('diag-temp', temp, '°C', 100);
+    }
+
+    // 2. Soul
+    if (stats.soul) {
+        setSoulBar('energy', stats.soul.energy);
+        setSoulBar('chaos', stats.soul.chaos);
+        setSoulBar('entropy', stats.soul.entropy);
+
+        const statusEl = document.getElementById('soul-status-text');
+        if (statusEl) statusEl.textContent = `Stato: ${stats.soul.state_label || 'Unknown'}`;
+    }
+
+    // 3. Log Trace
+    if (stats.logs && Array.isArray(stats.logs)) {
+        const logContainer = document.getElementById('diag-logs');
+        if (logContainer) {
+            // Log Buffer Strategy: Append ONLY new logs
+            // The backend flushes its buffer on read, so whatever we get is new.
+
+            stats.logs.forEach(log => {
+                const div = document.createElement('div');
+                div.className = 'log-entry';
+                // Colorize based on level
+                let color = '#D4D4D4'; // Default
+                if (log.msg.includes('ERROR')) color = '#EF4444'; // Red
+                if (log.msg.includes('WARN')) color = '#F59E0B'; // Orange
+                if (log.msg.includes('LLM')) color = '#3B82F6'; // Blue
+                if (log.msg.includes('SYSTEM')) color = '#10B981'; // Green
+                if (log.msg.includes('INPUT')) color = '#A78BFA'; // Purple
+
+                div.innerHTML = `<span class="log-time" style="opacity:0.5; font-size:10px; margin-right:6px;">${log.time || ''}</span><span class="log-msg" style="color:${color}">${log.msg}</span>`;
+                logContainer.appendChild(div);
+            });
+
+            // Auto-scroll if near bottom
+            logContainer.scrollTop = logContainer.scrollHeight;
+
+            // Optional: Limit total DOM elements to avoid lag
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+    }
+}
+
+function updateBar(idPrefix, value, unit, max) {
+    const valEl = document.getElementById(idPrefix + '-val');
+    const barEl = document.getElementById(idPrefix + '-bar');
+    if (valEl) valEl.textContent = Math.round(value) + unit;
+    if (barEl) {
+        const pct = Math.min(100, (value / max) * 100);
+        barEl.style.width = pct + '%';
+        // Color logic
+        if (pct > 80) barEl.style.backgroundColor = '#EF4444';
+        else if (pct > 50) barEl.style.backgroundColor = '#F59E0B';
+        else barEl.style.backgroundColor = '#3B82F6';
+    }
+}
+
+function setSoulBar(type, value0to1) {
+    const bar = document.getElementById(`soul-${type}-bar`);
+    if (bar) {
+        const pct = Math.min(100, Math.max(0, value0to1 * 100));
+        bar.style.width = pct + '%';
+    }
+}
+
+
+// --- VIEW MANAGEMENT (v0.57) ---
+// --- DIAGNOSTICS LOGIC (v2 - Debug Enhanced) ---
+let diagInterval = null;
+
+function setDiagStatus(msg, color) {
+    const el = document.getElementById('diag-conn-status');
+    if (el) {
+        el.innerText = msg;
+        el.style.color = color;
+    }
+}
+
+function startDiagnostics() {
+    console.log("Diagnostics: Starting loop...");
+    setDiagStatus("Starting...", "orange");
+
+    if (diagInterval) clearInterval(diagInterval);
+
+    // Immediate Request
+    requestDiagnostics();
+
+    // Loop every 1s
+    diagInterval = setInterval(requestDiagnostics, 1000);
+}
+
+function stopDiagnostics() {
+    console.log("Diagnostics: Stopping loop.");
+    setDiagStatus("Stopped", "gray");
+    if (diagInterval) {
+        clearInterval(diagInterval);
+        diagInterval = null;
+    }
+}
+
+function requestDiagnostics() {
+    if (window.pyBridge) {
+        setDiagStatus("Requesting...", "yellow");
+        // We use postMessage instead of direct call if possible, or just direct
+        // But the bridge usually binds to window.pyBridge.postMessage
+        window.pyBridge.postMessage("__REQUEST_DIAGNOSTICS_UPDATE__");
+    } else {
+        console.warn("Diagnostics: No pyBridge found!");
+        setDiagStatus("No Bridge!", "red");
+
+        // Mock data for browser testing
+        updateDiagnostics(JSON.stringify(generateMockDiagnostics()));
+    }
+}
+
+// Global exposure for Bridge
+window.updateDiagnostics = function (jsonString) {
+    setDiagStatus("Connected", "#10B981"); // Green
+    try {
+        // Clean and Parse
+        // Python sending: json.dumps(data) -> string
+        // Bridge sending: execute_js(f'window.updateDiagnostics("{safe_str}")')
+        // So jsonString is ALREADY a string of JSON.
+
+        // Double-parsing check
+        let stats;
+        try {
+            stats = JSON.parse(jsonString);
+            if (typeof stats === 'string') stats = JSON.parse(stats);
+        } catch (e) {
+            console.error("JSON Parse Error:", e);
+            setDiagStatus("JSON Error", "red");
+            return;
+        }
+
+        // 1. Resources
+        if (stats.resources) {
+            if (document.getElementById('diag-cpu')) {
+                document.getElementById('diag-cpu').innerText = Math.round(stats.resources.cpu) + "%";
+                document.getElementById('diag-cpu-bar').style.width = Math.min(100, stats.resources.cpu) + "%";
+            }
+            if (document.getElementById('diag-ram')) {
+                document.getElementById('diag-ram').innerText = Math.round(stats.resources.ram) + " MB";
+                // Assume 8GB max for bar scaling
+                let ramPct = (stats.resources.ram / 8000) * 100;
+                document.getElementById('diag-ram-bar').style.width = Math.min(100, ramPct) + "%";
+            }
+            if (document.getElementById('diag-temp')) {
+                document.getElementById('diag-temp').innerText = Math.round(stats.resources.temp) + "°C";
+                let tempPct = (stats.resources.temp / 80) * 100;
+                document.getElementById('diag-temp-bar').style.width = Math.min(100, tempPct) + "%";
+            }
+        }
+
+        // 2. Soul
+        if (stats.soul) {
+            const statusEl = document.getElementById('soul-status-text');
+            if (statusEl) statusEl.textContent = `Stato: ${stats.soul.state_label || 'Unknown'}`;
+
+            setSoulBar('energy', stats.soul.energy);
+            setSoulBar('chaos', stats.soul.chaos);
+            setSoulBar('entropy', stats.soul.entropy);
+        }
+
+        // 3. Log Trace
+        if (stats.logs && Array.isArray(stats.logs)) {
+            const logContainer = document.getElementById('diag-logs');
+            if (logContainer) {
+                stats.logs.forEach(log => {
+                    const div = document.createElement('div');
+                    div.className = 'log-entry';
+
+                    let color = '#D4D4D4';
+                    if (log.msg.includes('ERROR')) color = '#EF4444';
+                    if (log.msg.includes('WARN')) color = '#F59E0B';
+                    if (log.msg.includes('LLM')) color = '#3B82F6';
+                    if (log.msg.includes('SYSTEM')) color = '#10B981';
+                    div.innerHTML = `<span class="log-time" style="opacity:0.5; font-size:10px; margin-right:6px;">${log.time || ''}</span><span class="log-msg" style="color:${color}">${log.msg}</span>`;
+                    logContainer.appendChild(div);
+                });
+
+                // Keep only last 100
+                while (logContainer.children.length > 100) {
+                    logContainer.removeChild(logContainer.firstChild);
+                }
+
+                // Scroll to bottom
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+    } catch (e) {
+        console.error("Diagnostics Update Error:", e);
+    }
+};
+
+// --- VIEW MANAGEMENT (v0.58 Hardened) ---
+window.switchView = function (viewName) {
+    console.log("Switching view to:", viewName);
+
+    // Safety: ensure elements exist
+    const viewChat = document.getElementById('view-chat');
+    const viewDiag = document.getElementById('view-diagnostics');
+    const topHeader = document.getElementById('top-header');
+
+    // FORCE DISPLAY MODES
+    if (viewName === 'diagnostics') {
+        if (viewChat) {
+            viewChat.classList.remove('active');
+            viewChat.classList.add('hidden');
+            viewChat.style.display = 'none'; // HARD FORCE
+        }
+        if (viewDiag) {
+            viewDiag.classList.add('active');
+            viewDiag.classList.remove('hidden');
+            viewDiag.style.display = 'flex'; // HARD FORCE
+        }
+        if (topHeader) topHeader.style.display = 'none';
+
+        startDiagnostics();
+    }
+    else {
+        // Chat Mode
+        if (viewDiag) {
+            viewDiag.classList.remove('active');
+            viewDiag.classList.add('hidden');
+            viewDiag.style.display = 'none'; // HARD FORCE
+        }
+        if (viewChat) {
+            viewChat.classList.add('active');
+            viewChat.classList.remove('hidden');
+            viewChat.style.display = 'flex'; // HARD FORCE
+        }
+        if (topHeader) topHeader.style.display = 'flex';
+
+        stopDiagnostics();
+    }
+};

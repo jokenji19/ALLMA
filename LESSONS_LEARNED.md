@@ -119,4 +119,13 @@
     - **Fix:** Explicitly pass `-DLLAMA_CURL=OFF` to CMake.
 3.  **Environment Conflict:** `buildozer.spec` had stale `env_vars` forcing `-DGGML_OPENMP=ON`, which overrode recipe settings and caused linking errors.
     - **Fix:** Cleaned `buildozer.spec` to let the recipe control flags.
-**Outcome:** Compiled `libllama.so` succesfully!
+
+### Lesson 18: Android Asset Loading & View Systems (Build 185+)
+**Issue:** The new "Diagnostic Panel" CSS failed to load on Android, causing the layout to break (stacked elements).
+**Root Cause:**
+1.  **Lazy Asset Loading:** Android's WebView can be slow or inconsistent in loading newly added CSS files (`diagnostics.css`) if they are not cached or prioritized, especially when injected dynamically.
+2.  **CSS Class Conflicts:** Without a robust View System, "hiding" an element via a class `.hidden` can fail if other CSS rules override `display`.
+**Winning Solution:**
+1.  **Inlining Critical CSS:** Moved the `diagnostics.css` content directly into a `<style>` block in `index.html`. This guarantees the styles are available immediately when the DOM parses.
+2.  **Hardened View Logic:** Updated `switchView()` to forcibly set `element.style.display = 'none'` or `'flex'` via JavaScript, overriding any CSS class ambiguity. This ensures only one view is ever visible.
+**Outcome:** Perfect full-screen transition and layout stability on device.

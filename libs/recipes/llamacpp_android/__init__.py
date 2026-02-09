@@ -8,7 +8,7 @@ import sys
 
 class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
     name = 'llamacpp_android'
-    version = '0.3.16'  # Updated for Qwen3 support (llama.cpp b5401+)
+    version = '0.3.16'  # Reverted to valid version, keeping Vulkan disabled logic
     # Use PyPI source because GitHub tarballs often lack submodules (vendor/llama.cpp)
     # causing the patch to miss the files, or the build to fetch fresh (unpatched) code.
     url = 'https://files.pythonhosted.org/packages/source/l/llama_cpp_python/llama_cpp_python-{version}.tar.gz'
@@ -61,9 +61,48 @@ class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
         super().prebuild_arch(arch)
         build_dir = self.get_build_dir(arch.arch)
         logging.info(f"Scanning {build_dir} for -march=native...")
+
+        # OPENCL MANUAL FIX (Build 163-v7)
+        # We manually placed headers in libs/recipes/llamacpp_android/CL
+        # No need to download anything here.
+        # Just ensure they are found by CMake.
         
         try:
             logging.info("File Structure Check:")
+            
+            # COMPILE OPENCL STUB (Build 163-v14)
+            # We need libOpenCL.so for linking, but the NDK doesn't provide it.
+            # We compile our own stub.
+            stub_c = os.path.join(self.get_recipe_dir(), "opencl_stub.c")
+            stub_so = os.path.join(self.get_recipe_dir(), "libOpenCL.so")
+            
+            if os.path.exists(stub_so):
+                logging.info(f"Removing stale OpenCL stub: {stub_so}")
+                os.remove(stub_so)
+
+            if os.path.exists(stub_c):
+                logging.info(f"Compiling OpenCL stub: {stub_c} -> {stub_so}")
+                
+                # Get CC from arch env (provided by p4a)
+                env = arch.get_env()
+                cc = env.get("CC")
+                logging.info(f"CC environment variable: {cc}")
+                
+                if cc:
+                    import subprocess
+                    # usage of cc might include arguments, so we should be careful. 
+                    # But usually it is just the path to clang with some flags.
+                    # We need to construct the command using the environment to ensure flags are respected if needed, 
+                    # but check_call with shell=True and the command string should work if cc is "clang ...flags..."
+                    
+                    cmd = f"{cc} -shared -fPIC -o {stub_so} {stub_c}"
+                    try:
+                        subprocess.check_call(cmd, shell=True, env=env)
+                        logging.info("OpenCL stub compiled successfully.")
+                    except Exception as e:
+                        logging.error(f"Failed to compile stub: {e}")
+                else:
+                     logging.warning("CC env var not set in arch.get_env(), cannot compile stub!")
         except Exception:
             pass
 
@@ -98,7 +137,7 @@ class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
                 logging.info("VERIFICATION PASSED: No -march=native found in build_dir.")
         except Exception as e:
             logging.error(f"Verification failed: {e}") 
-
+        
         # SETUP.PY PATCH
         logging.info("Applying TROJAN HORSE patch to setup.py...")
         count_setup = 0
@@ -257,6 +296,41 @@ endif()
                     logging.error(f"Failed to patch {cmake_file}: {e}")
 
         logging.info(f"Patched Threads in {count_cmake} CMakeLists.txt files.")
+
+        # --- PLATFORM PATCH (Fixes "Unsupported platform") ---
+        # llama-cpp-python checks sys.platform and raises error if not linux/darwin/win32
+        # On some p4a builds, sys.platform might be 'android' or similar
+        
+        # Search strategy for _ctypes_extensions.py
+        # 1. In llama_cpp_dir/llama_cpp (vendor/llama.cpp/llama_cpp) - unlikely for p4a
+        # 2. In build_dir/llama_cpp (root of package) - most likely for p4a
+        extensions_paths_to_check = [
+            os.path.join(build_dir, "llama_cpp", "_ctypes_extensions.py"),
+            os.path.join(llama_cpp_dir, "llama_cpp", "_ctypes_extensions.py"),
+            os.path.join(llama_cpp_dir, "..", "llama_cpp", "_ctypes_extensions.py")
+        ]
+        
+        extensions_path = None
+        for p in extensions_paths_to_check:
+            if os.path.exists(p):
+                extensions_path = p
+                break
+        
+        if extensions_path:
+             with open(extensions_path, 'r') as f:
+                 ext_content = f.read()
+             
+             # Patch: if sys.platform.startswith("linux") or sys.platform.startswith("freebsd") OR ...("android")
+             if 'sys.platform.startswith("linux")' in ext_content:
+                 logging.info(f"Patching platform check in {extensions_path}")
+                 ext_content = ext_content.replace(
+                     'if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):',
+                     'if sys.platform.startswith("linux") or sys.platform.startswith("freebsd") or sys.platform.startswith("android"):'
+                 )
+                 with open(extensions_path, 'w') as f:
+                     f.write(ext_content)
+        else:
+             logging.warning(f"Could not find _ctypes_extensions.py in {extensions_paths_to_check}")
         
         # --- VULKAN LINKING PATCH ---
         # The Vulkan::Vulkan imported target doesn't properly link libvulkan.so for Android cross-compilation
@@ -269,7 +343,7 @@ endif()
                 
                 # Add full absolute path to libvulkan.so in target_link_libraries
                 old_link = "target_link_libraries(ggml-vulkan PRIVATE Vulkan::Vulkan)"
-                ndk_libvulkan_path = f"{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android/32/libvulkan.so"
+                ndk_libvulkan_path = f"{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android/34/libvulkan.so"
                 # REMOVE Vulkan::Vulkan completely - it uses wrong API level library
                 new_link = f'target_link_libraries(ggml-vulkan PRIVATE "{ndk_libvulkan_path}")'
                 
@@ -283,6 +357,30 @@ endif()
             except Exception as e:
                 logging.error(f"Failed to patch Vulkan CMakeLists: {e}")
         # --- END VULKAN PATCH ---
+        # --- END VULKAN PATCH ---
+        # --- VULKAN HOST TOOLCHAIN PATCH (Build 163-v19) ---
+        # Fix for 'vulkan-shaders-gen' using Android CFLAGS on Host
+        host_toolchain_in = os.path.join(llama_cpp_dir, "ggml", "src", "ggml-vulkan", "cmake", "host-toolchain.cmake.in")
+        if os.path.exists(host_toolchain_in):
+             logging.info(f"Patching {host_toolchain_in} to UNSET cross-compile env vars")
+             with open(host_toolchain_in, 'r') as f:
+                 ht_content = f.read()
+             
+             # Prepend unsets
+             unset_code = """
+# ALLMA PATCH: Unset cross-compile flags for host build
+set(ENV{CFLAGS} "")
+set(ENV{CXXFLAGS} "")
+set(ENV{LDFLAGS} "")
+"""
+             if "ALLMA PATCH" not in ht_content:
+                 new_content = unset_code + ht_content
+                 with open(host_toolchain_in, 'w') as f:
+                     f.write(new_content)
+        else:
+             logging.warning(f"Could not find host-toolchain.cmake.in at {host_toolchain_in}")
+        # --- END VULKAN HOST TOOLCHAIN PATCH ---
+        
         # --- END PATCHING SECTION ---
         
         # 2. Configure manually (Full Control)
@@ -299,12 +397,21 @@ endif()
             "-DGGML_PERF=OFF",
             "-DLLAVA_BUILD=OFF",
             "-DLLAMA_CURL=OFF", # Fix for missing libcurl on Android
-            "-DGGML_VULKAN=ON",  # Enable Vulkan GPU acceleration (Adreno 830)
+            # VULKAN PIVOT (Build 163-v18)
+            "-DGGML_VULKAN=ON", 
+            "-DGGML_OPENCL=OFF",
+            # GLSL COMPILER FIX (Build 163-v19)
             f"-DVulkan_GLSLC_EXECUTABLE={self.ctx.ndk_dir}/shader-tools/darwin-x86_64/glslc",
-            f"-DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN={os.path.dirname(__file__)}/host-toolchain.cmake",
-            f"-DVulkan_INCLUDE_DIR={self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include",
-            f"-DVulkan_LIBRARY={self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android/32/libvulkan.so",
-            f"-DCMAKE_SHARED_LINKER_FLAGS=-L{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android/32 -lvulkan",
+            
+            # CORRECT CMAKE VARIABLES FOR FindOpenCL.cmake
+            f"-DOpenCL_INCLUDE_DIR={self.get_recipe_dir()}", # Parent of CL/
+            f"-DOpenCL_LIBRARY={self.get_recipe_dir()}/libOpenCL.so",
+            # Redundant but helpful flags
+            f"-DCL_IncludeDir={self.get_recipe_dir()}", 
+            f"-DCL_Library={self.get_recipe_dir()}/libOpenCL.so",
+            # Force include path for the compiler
+            f"-DCMAKE_C_FLAGS='-march=armv8-a -I{self.get_recipe_dir()}'",
+            f"-DCMAKE_CXX_FLAGS='-march=armv8-a -I{self.get_recipe_dir()}'",
             "-DBUILD_SHARED_LIBS=ON",
             f"-DCMAKE_C_FLAGS=-march=armv8-a -I{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include",
             f"-DCMAKE_CXX_FLAGS=-march=armv8-a -I{self.ctx.ndk_dir}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include",
@@ -467,6 +574,33 @@ endif()
         find_and_copy("ggml.h", os.path.join(prebuilt_dir, "include"))
         find_and_copy("ggml-alloc.h", os.path.join(prebuilt_dir, "include"))
         find_and_copy("ggml-backend.h", os.path.join(prebuilt_dir, "include"))
+
+        # CRITICAL FIX: explicit copy of libllama.so to prebuilt lib dir
+        # This was missing, causing empty lib dir during packaging
+        if lib_path and os.path.exists(lib_path):
+             import shutil
+             shutil.copy2(lib_path, os.path.join(prebuilt_dir, "lib", "libllama.so"))
+             logging.info(f"Copied libllama.so from {lib_path} to prebuilt lib dir")
+             
+             # ALSO COPY all libggml*.so (cpu, vulkan, etc.)
+             import glob
+             # Search for all libggml*.so files in the lib build dir
+             ggml_libs = []
+             for root, dirs, files in os.walk(lib_build_dir):
+                 for f in files:
+                     if f.startswith("libggml") and f.endswith(".so"):
+                         ggml_libs.append(os.path.join(root, f))
+             
+             if ggml_libs:
+                 for lib in ggml_libs:
+                     shutil.copy2(lib, os.path.join(prebuilt_dir, "lib", os.path.basename(lib)))
+                     logging.info(f"Copied {os.path.basename(lib)} to prebuilt lib dir")
+             else:
+                 logging.warning("No libggml*.so found in build dir!")
+
+        else:
+             logging.error("Source libllama.so missing for prebuilt copy!")
+             raise RuntimeError("Source libllama.so missing")
         
         # 7. Set Environment Variable
         env['LLAMA_CPP_PREBUILT_DIR'] = prebuilt_dir
@@ -533,6 +667,68 @@ endif()
                   logging.info(f"Copied libllama.so to {dest_so}")
              else:
                   logging.warning("Could not find source libllama.so for copy!")
+
+        # Ensure all libggml*.so are in the package (CRITICAL FIX)
+        # Scan prebuilt dir for all ggml libs
+        prebuilt_lib_dir = os.path.join(prebuilt_dir, "lib")
+        if os.path.exists(prebuilt_lib_dir):
+            for f in os.listdir(prebuilt_lib_dir):
+                if f.startswith("libggml") and f.endswith(".so"):
+                    src_lib = os.path.join(prebuilt_lib_dir, f)
+                    dest_lib = os.path.join(installed_pkg, f)
+                    if not os.path.exists(dest_lib):
+                        import shutil
+                        shutil.copy2(src_lib, dest_lib)
+                        logging.info(f"Copied {f} to {dest_lib}")
+        else:
+            logging.warning(f"Prebuilt lib dir {prebuilt_lib_dir} missing during package install!")
+
+        # --- PLATFORM PATCH (POST-INSTALL) ---
+        # This MUST be applied AFTER pip install since pip downloads fresh source
+        # llama-cpp-python checks sys.platform and raises error if not linux/darwin/win32
+        # On Android, sys.platform might be 'android' - we need to support that
+        installed_ext = os.path.join(installed_pkg, "_ctypes_extensions.py")
+        if os.path.exists(installed_ext):
+             with open(installed_ext, 'r') as f:
+                 ext_content = f.read()
+             
+             if 'sys.platform.startswith("linux")' in ext_content and 'startswith("android")' not in ext_content:
+                 logging.info(f"Patching platform check in {installed_ext} (POST-INSTALL)")
+                 ext_content = ext_content.replace(
+                     'if sys.platform.startswith("linux") or sys.platform.startswith("freebsd"):',
+                     'if sys.platform.startswith("linux") or sys.platform.startswith("freebsd") or sys.platform.startswith("android"):'
+                 )
+                 with open(installed_ext, 'w') as f:
+                     f.write(ext_content)
+                 logging.info("Platform patch applied successfully!")
+             
+             # Re-read for second patch
+             with open(installed_ext, 'r') as f:
+                 ext_content = f.read()
+             
+             # LIBRARY PATH PATCH: Add LLAMA_CPP_LIB env var support to load_shared_library
+             # This allows the library to be found from custom paths (Android app files)
+             if 'LLAMA_CPP_LIB' not in ext_content:
+                 logging.info(f"Patching library search in {installed_ext}")
+                 old_func_start = 'def load_shared_library(lib_base_name: str, base_path: pathlib.Path):'
+                 new_func_with_env = '''def load_shared_library(lib_base_name: str, base_path: pathlib.Path):
+    """Platform independent shared library loader"""
+    # ANDROID PATCH: Check LLAMA_CPP_LIB environment variable first
+    env_lib = os.environ.get("LLAMA_CPP_LIB")
+    if env_lib and os.path.exists(env_lib):
+        try:
+            return ctypes.CDLL(env_lib)
+        except Exception as e:
+            pass  # Fall through to standard search
+    
+    # Original:'''
+                 if old_func_start in ext_content:
+                     ext_content = ext_content.replace(old_func_start, new_func_with_env)
+                     with open(installed_ext, 'w') as f:
+                         f.write(ext_content)
+                     logging.info("Library path patch applied successfully!")
+        else:
+             logging.warning(f"Could not find _ctypes_extensions.py at {installed_ext}")
 
         logging.info(f"FINAL INSTALL SUCCESS! Package at {installed_pkg}")
 
