@@ -80,6 +80,12 @@ class MobileGemmaWrapper:
             # PRIORITIZE INTERNAL LIBGGML (Vulkan/Optimized)
             internal_ggml = os.path.join(base_internal, "_python_bundle", "site-packages", "llama_cpp", "libggml.so")
             fallback_ggml = os.path.join(private_root, "libggml.so")
+            candidate_dirs = [
+                os.path.dirname(internal_ggml),
+                os.path.join(base_internal, "site-packages", "llama_cpp"),
+                os.path.join(private_root, "site-packages", "llama_cpp"),
+                os.path.dirname(fallback_ggml),
+            ]
             
             target_ggml = None
             if os.path.exists(internal_ggml):
@@ -88,6 +94,25 @@ class MobileGemmaWrapper:
             elif os.path.exists(fallback_ggml):
                  target_ggml = fallback_ggml
                  print(f"[MobileGemma] Found fallback libggml.so at {fallback_ggml}", flush=True)
+            else:
+                for d in candidate_dirs:
+                    if not d or not os.path.exists(d):
+                        continue
+                    for name in ("libggml.so", "libggml-base.so"):
+                        p = os.path.join(d, name)
+                        if os.path.exists(p):
+                            target_ggml = p
+                            print(f"[MobileGemma] Found libggml at {p}", flush=True)
+                            break
+                    if target_ggml:
+                        break
+                    for f in os.listdir(d):
+                        if f.startswith("libggml") and f.endswith(".so"):
+                            target_ggml = os.path.join(d, f)
+                            print(f"[MobileGemma] Found libggml variant: {target_ggml}", flush=True)
+                            break
+                    if target_ggml:
+                        break
             
             if target_ggml:
                 ggml_dir = os.path.dirname(target_ggml)
@@ -122,7 +147,7 @@ class MobileGemmaWrapper:
                 except Exception as e:
                     print(f"[MobileGemma] WARNING: Failed to pre-load libggml.so: {e}", flush=True)
             else:
-                print(f"[MobileGemma] CRITICAL: libggml.so NOT FOUND (Checked: {internal_ggml}, {fallback_ggml})", flush=True)
+                print(f"[MobileGemma] CRITICAL: libggml not found (Checked: {internal_ggml}, {fallback_ggml})", flush=True)
 
             logging.info(f"[MobileGemma] Initializing Llama with path={self.model_path}...")
             print(f"[MobileGemma] PRINT DEBUG: Initializing Llama...", flush=True)
@@ -187,6 +212,23 @@ class MobileGemmaWrapper:
                         size = os.path.getsize(p)
                         print(f"[MobileGemma] Found libllama.so at {p} (Size: {size} bytes)", flush=True)
                         break
+                
+                if not lib_path:
+                    search_roots = [base_internal, private_root]
+                    for root in search_roots:
+                        if not os.path.exists(root):
+                            continue
+                        for dirpath, dirnames, filenames in os.walk(root):
+                            if "libllama.so" in filenames:
+                                candidate = os.path.join(dirpath, "libllama.so")
+                                if "files/libllama.so" in candidate and "app" not in candidate:
+                                    continue
+                                lib_path = candidate
+                                size = os.path.getsize(candidate)
+                                print(f"[MobileGemma] Found libllama.so at {candidate} (Size: {size} bytes)", flush=True)
+                                break
+                        if lib_path:
+                            break
             
             if lib_path:
                 print(f"[MobileGemma] Resolved libllama.so at {lib_path}, setting env...", flush=True)

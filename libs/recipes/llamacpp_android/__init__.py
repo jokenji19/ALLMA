@@ -5,6 +5,7 @@ import os
 import logging
 import subprocess
 import sys
+import shutil
 
 class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
     name = 'llamacpp_android'
@@ -60,6 +61,23 @@ class LlamacppAndroidRecipe(CompiledComponentsPythonRecipe):
     def prebuild_arch(self, arch):
         super().prebuild_arch(arch)
         build_dir = self.get_build_dir(arch.arch)
+        llama_cpp_dir = os.path.join(build_dir, 'vendor', 'llama.cpp')
+        llama_cpp_tag = os.environ.get("LLAMA_CPP_TAG", "b5092")
+        llama_cpp_repo = os.environ.get("LLAMA_CPP_REPO", "https://github.com/ggml-org/llama.cpp")
+        if os.path.exists(llama_cpp_dir):
+            try:
+                if os.path.exists(os.path.join(llama_cpp_dir, ".git")):
+                    subprocess.check_call(["git", "-C", llama_cpp_dir, "fetch", "--tags"])
+                    subprocess.check_call(["git", "-C", llama_cpp_dir, "checkout", llama_cpp_tag])
+                else:
+                    tmp_dir = os.path.join(build_dir, "llama_cpp_b5092")
+                    if os.path.exists(tmp_dir):
+                        shutil.rmtree(tmp_dir)
+                    subprocess.check_call(["git", "clone", "--depth", "1", "--branch", llama_cpp_tag, llama_cpp_repo, tmp_dir])
+                    shutil.rmtree(llama_cpp_dir)
+                    shutil.move(tmp_dir, llama_cpp_dir)
+            except Exception as e:
+                logging.error(f"Failed to set llama.cpp to {llama_cpp_tag}: {e}")
         logging.info(f"Scanning {build_dir} for -march=native...")
 
         # OPENCL MANUAL FIX (Build 163-v7)
