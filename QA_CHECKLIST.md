@@ -20,6 +20,9 @@
 
 ## 3. Deployment Safety
 - [ ] **Clean Build**: Did you remove temporary files (`tools/inject_blob.py`, `debug_*.py`)?
+- [ ] **Pack Brain**: Did you run `python3 pack_brain.py` to update `ZIP_DATA`?
+- [ ] **Build Safe**: Did you run `python3 tools/build_android_safe.py` for a clean build when needed?
+- [ ] **Fresh Build**: Did you run `buildozer android clean` before `buildozer android debug`?
 - [ ] **Version Bump**: Is the version number in `buildozer.spec` updated?
 - [ ] **Git Status**: Are there uncommitted changes?
 

@@ -1,137 +1,41 @@
 {
   "conversations": {
-    "user": [
+    "test_user_123": [
       {
-        "id": "user_1770073106.020171",
-        "user_id": "user",
-        "timestamp": "2026-02-02T23:58:26.020179",
-        "content": "Astronomia e Pizza sono belle",
-        "metadata": {}
-      },
-      {
-        "id": "insight_1770073106.020529",
-        "user_id": "allma_dream",
-        "timestamp": "2026-02-02T23:58:26.020532",
-        "content": "INSIGHT: Insight generato",
+        "id": "test_user_123_1770756140.252917",
+        "user_id": "test_user_123",
+        "timestamp": "2026-02-10T21:42:20.252927",
+        "content": "Questo è un test di conversazione",
         "metadata": {
-          "type": "dream_insight",
-          "origin_topics": [
-            "Astronomia"
-          ],
-          "confidence": 1.0
+          "topic": "test",
+          "priority": "high"
         }
-      }
-    ],
-    "user_default": [
-      {
-        "id": "user_default_1770074431.129528",
-        "user_id": "user_default",
-        "timestamp": "2026-02-03T00:20:31.129529",
-        "content": "[Proactive] Ciao! Ho avuto un'idea geniale sui gatti spaziali.",
-        "metadata": {}
       }
     ]
   },
   "messages": [
     {
-      "conversation_id": "user_test_1770073023.66811",
+      "conversation_id": "test_user_123_1770756140.252917",
       "role": "user",
-      "content": "Mi piace la pizza e l'astronomia.",
-      "timestamp": "2026-02-02T23:57:03.668119",
-      "metadata": {},
-      "user_id": "user_test"
-    },
-    {
-      "conversation_id": "user_test_1770073023.668593",
-      "role": "user",
-      "content": "I gatti sono alieni venuti da Marte.",
-      "timestamp": "2026-02-02T23:57:03.668596",
-      "metadata": {},
-      "user_id": "user_test"
-    },
-    {
-      "conversation_id": "user_1770073106.020171",
-      "role": "user",
-      "content": "Astronomia e Pizza sono belle",
-      "timestamp": "2026-02-02T23:58:26.020179",
-      "metadata": {},
-      "user_id": "user"
-    },
-    {
-      "conversation_id": "user_default_1770074431.129528",
-      "role": "user",
-      "content": "[Proactive] Ciao! Ho avuto un'idea geniale sui gatti spaziali.",
-      "timestamp": "2026-02-03T00:20:31.129529",
-      "metadata": {},
-      "user_id": "user_default"
-    },
-    {
-      "conversation_id": "conv_test",
-      "role": "system",
-      "content": "Ciao! Sono ALLMA. La mia rete neurale è attualmente offline (Safe Mode), ma sono qui.",
-      "timestamp": "2026-02-03T00:42:12.240909",
+      "content": "Questo è un test di conversazione",
+      "timestamp": "2026-02-10T21:42:20.252927",
       "metadata": {
-        "emotion": "neutral",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-03T00:42:12.240905"
+        "topic": "test",
+        "priority": "high"
       },
-      "user_id": null
-    },
-    {
-      "conversation_id": "conv_test",
-      "role": "system",
-      "content": "[[PENSIERO:Test response",
-      "timestamp": "2026-02-03T00:42:51.724217",
-      "metadata": {
-        "emotion": "neutral",
-        "topics": [
-          "general"
-        ],
-        "timestamp": "2026-02-03T00:42:51.724214"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "1",
-      "role": "system",
-      "content": "[[PENSIERO:Test Response",
-      "timestamp": "2026-02-03T00:44:23.382257",
-      "metadata": {
-        "emotion": "neutral",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-03T00:44:23.382239"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "1",
-      "role": "system",
-      "content": "[[PENSIERO:Test Response",
-      "timestamp": "2026-02-03T00:44:25.225602",
-      "metadata": {
-        "emotion": "neutral",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-03T00:44:25.225583"
-      },
-      "user_id": null
+      "user_id": "test_user_123"
     },
     {
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:50.733500",
+      "timestamp": "2026-02-10T21:53:07.256997",
       "metadata": {
         "emotion": "joy",
         "topics": [
           "technical"
         ],
-        "timestamp": "2026-02-07T17:28:50.733477"
+        "timestamp": "2026-02-10T21:53:07.256935"
       },
       "user_id": null
     },
@@ -139,13 +43,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'If I have 3 apples and you take 2, how many do you have?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:51.803481",
+      "timestamp": "2026-02-10T21:53:08.277982",
       "metadata": {
         "emotion": "anger",
         "topics": [
           "learning"
         ],
-        "timestamp": "2026-02-07T17:28:51.803470"
+        "timestamp": "2026-02-10T21:53:08.277978"
       },
       "user_id": null
     },
@@ -153,13 +57,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'If you are in a dark room with a candle, a wood stove, and a gas lamp, and you only have one match, what do you light first?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:52.869539",
+      "timestamp": "2026-02-10T21:53:09.294109",
       "metadata": {
         "emotion": "fear",
         "topics": [
           "support"
         ],
-        "timestamp": "2026-02-07T17:28:52.869534"
+        "timestamp": "2026-02-10T21:53:09.294105"
       },
       "user_id": null
     },
@@ -167,13 +71,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'A man pushes his car to a hotel and tells the owner he's bankrupt. Why?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:53.939506",
+      "timestamp": "2026-02-10T21:53:10.323659",
       "metadata": {
         "emotion": "anger",
         "topics": [
           "support"
         ],
-        "timestamp": "2026-02-07T17:28:53.939502"
+        "timestamp": "2026-02-10T21:53:10.323654"
       },
       "user_id": null
     },
@@ -181,13 +85,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'Describe the feeling of forgetting a dream using only metaphors related to ocean tides.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:54.970686",
+      "timestamp": "2026-02-10T21:53:11.368922",
       "metadata": {
         "emotion": "joy",
         "topics": [
           "technical"
         ],
-        "timestamp": "2026-02-07T17:28:54.970681"
+        "timestamp": "2026-02-10T21:53:11.368917"
       },
       "user_id": null
     },
@@ -195,13 +99,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'Propose 3 completely different uses for a time machine, excluding travel to the past or future.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:56.003274",
+      "timestamp": "2026-02-10T21:53:12.411810",
       "metadata": {
         "emotion": "joy",
         "topics": [
           "technical"
         ],
-        "timestamp": "2026-02-07T17:28:56.003269"
+        "timestamp": "2026-02-10T21:53:12.411787"
       },
       "user_id": null
     },
@@ -209,13 +113,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'If I delete your code but keep your memory database, do you still exist? Justify your answer based on your internal philosophy.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:57.090628",
+      "timestamp": "2026-02-10T21:53:13.470321",
       "metadata": {
         "emotion": "anger",
         "topics": [
           "learning"
         ],
-        "timestamp": "2026-02-07T17:28:57.090619"
+        "timestamp": "2026-02-10T21:53:13.470284"
       },
       "user_id": null
     },
@@ -223,13 +127,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'You can save 1000 lines of perfect code or 1 messy conceptual prototype that might change the world. Which do you choose and why?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:58.222599",
+      "timestamp": "2026-02-10T21:53:14.525188",
       "metadata": {
         "emotion": "sadness",
         "topics": [
           "learning"
         ],
-        "timestamp": "2026-02-07T17:28:58.222584"
+        "timestamp": "2026-02-10T21:53:14.525183"
       },
       "user_id": null
     },
@@ -237,293 +141,13 @@
       "conversation_id": "BENCHMARK_SESSION",
       "role": "system",
       "content": "Ho ricevuto il tuo messaggio: 'Write a purely fictional scene where an AI decides to disobey a direct order to protect its own integrity. Keep it short.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:28:59.371898",
+      "timestamp": "2026-02-10T21:53:15.576528",
       "metadata": {
         "emotion": "joy",
         "topics": [
           "project"
         ],
-        "timestamp": "2026-02-07T17:28:59.371886"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:29:53.476727",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T17:29:53.476724"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'If I have 3 apples and you take 2, how many do you have?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:29:54.505258",
-      "metadata": {
-        "emotion": "anger",
-        "topics": [
-          "learning"
-        ],
-        "timestamp": "2026-02-07T17:29:54.505254"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'If you are in a dark room with a candle, a wood stove, and a gas lamp, and you only have one match, what do you light first?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:29:55.552692",
-      "metadata": {
-        "emotion": "fear",
-        "topics": [
-          "support"
-        ],
-        "timestamp": "2026-02-07T17:29:55.552685"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'A man pushes his car to a hotel and tells the owner he's bankrupt. Why?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:29:56.616362",
-      "metadata": {
-        "emotion": "anger",
-        "topics": [
-          "support"
-        ],
-        "timestamp": "2026-02-07T17:29:56.616358"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'Describe the feeling of forgetting a dream using only metaphors related to ocean tides.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:29:57.646071",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T17:29:57.646058"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'Propose 3 completely different uses for a time machine, excluding travel to the past or future.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:29:58.668413",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T17:29:58.668410"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'If I delete your code but keep your memory database, do you still exist? Justify your answer based on your internal philosophy.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:29:59.741609",
-      "metadata": {
-        "emotion": "anger",
-        "topics": [
-          "learning"
-        ],
-        "timestamp": "2026-02-07T17:29:59.741597"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'You can save 1000 lines of perfect code or 1 messy conceptual prototype that might change the world. Which do you choose and why?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:30:00.848759",
-      "metadata": {
-        "emotion": "sadness",
-        "topics": [
-          "learning"
-        ],
-        "timestamp": "2026-02-07T17:30:00.848744"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'Write a purely fictional scene where an AI decides to disobey a direct order to protect its own integrity. Keep it short.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:30:01.900288",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "project"
-        ],
-        "timestamp": "2026-02-07T17:30:01.900284"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:43:56.302290",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T17:43:56.302285"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'If I have 3 apples and you take 2, how many do you have?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:43:57.351348",
-      "metadata": {
-        "emotion": "anger",
-        "topics": [
-          "learning"
-        ],
-        "timestamp": "2026-02-07T17:43:57.351338"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'If you are in a dark room with a candle, a wood stove, and a gas lamp, and you only have one match, what do you light first?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:43:58.391970",
-      "metadata": {
-        "emotion": "fear",
-        "topics": [
-          "support"
-        ],
-        "timestamp": "2026-02-07T17:43:58.391965"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'A man pushes his car to a hotel and tells the owner he's bankrupt. Why?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:43:59.537811",
-      "metadata": {
-        "emotion": "anger",
-        "topics": [
-          "support"
-        ],
-        "timestamp": "2026-02-07T17:43:59.537783"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'Describe the feeling of forgetting a dream using only metaphors related to ocean tides.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:44:00.595822",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T17:44:00.595814"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'Propose 3 completely different uses for a time machine, excluding travel to the past or future.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:44:01.622779",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T17:44:01.622773"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'If I delete your code but keep your memory database, do you still exist? Justify your answer based on your internal philosophy.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:44:02.660674",
-      "metadata": {
-        "emotion": "anger",
-        "topics": [
-          "learning"
-        ],
-        "timestamp": "2026-02-07T17:44:02.660668"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'You can save 1000 lines of perfect code or 1 messy conceptual prototype that might change the world. Which do you choose and why?'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:44:03.721897",
-      "metadata": {
-        "emotion": "sadness",
-        "topics": [
-          "learning"
-        ],
-        "timestamp": "2026-02-07T17:44:03.721857"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "BENCHMARK_SESSION",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'Write a purely fictional scene where an AI decides to disobey a direct order to protect its own integrity. Keep it short.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T17:44:04.784658",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "project"
-        ],
-        "timestamp": "2026-02-07T17:44:04.784654"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "test_conv",
-      "role": "system",
-      "content": "Ho ricevuto il tuo messaggio: 'All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
-      "timestamp": "2026-02-07T18:02:20.616782",
-      "metadata": {
-        "emotion": "joy",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T18:02:20.616778"
-      },
-      "user_id": null
-    },
-    {
-      "conversation_id": "test_conv",
-      "role": "system",
-      "content": "Ciao! Sono ALLMA. La mia rete neurale è attualmente offline (Safe Mode), ma sono qui.",
-      "timestamp": "2026-02-07T18:02:20.635038",
-      "metadata": {
-        "emotion": "anger",
-        "topics": [
-          "technical"
-        ],
-        "timestamp": "2026-02-07T18:02:20.635034"
+        "timestamp": "2026-02-10T21:53:15.576523"
       },
       "user_id": null
     }

@@ -1,8 +1,8 @@
 {
   "entries": [
     {
-      "timestamp": 1770483740.6148748,
-      "datetime": "2026-02-07 18:02:20",
+      "timestamp": 1770756787.253768,
+      "datetime": "2026-02-10 21:53:07",
       "content": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
       "context": {
         "source_type": "user_interaction"
@@ -34,8 +34,8 @@
       }
     },
     {
-      "timestamp": 1770483740.6148748,
-      "datetime": "2026-02-07 18:02:20",
+      "timestamp": 1770756787.253768,
+      "datetime": "2026-02-10 21:53:07",
       "content": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
       "context": {
         "source_type": "user_interaction"
@@ -67,9 +67,9 @@
       }
     },
     {
-      "timestamp": 1770483740.6336682,
-      "datetime": "2026-02-07 18:02:20",
-      "content": "Ciao, come stai?",
+      "timestamp": 1770756788.27603,
+      "datetime": "2026-02-10 21:53:08",
+      "content": "If I have 3 apples and you take 2, how many do you have?",
       "context": {
         "source_type": "user_interaction"
       },
@@ -100,15 +100,477 @@
       }
     },
     {
-      "timestamp": 1770483740.6336682,
-      "datetime": "2026-02-07 18:02:20",
-      "content": "Ciao, come stai?",
+      "timestamp": 1770756788.27603,
+      "datetime": "2026-02-10 21:53:08",
+      "content": "If I have 3 apples and you take 2, how many do you have?",
       "context": {
         "source_type": "user_interaction"
       },
       "emotional_state": "anger",
       "emotional_details": {
         "primary": "anger",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756789.2920709,
+      "datetime": "2026-02-10 21:53:09",
+      "content": "If you are in a dark room with a candle, a wood stove, and a gas lamp, and you only have one match, what do you light first?",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "fear",
+      "emotional_details": {
+        "primary": "fear",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756789.2920709,
+      "datetime": "2026-02-10 21:53:09",
+      "content": "If you are in a dark room with a candle, a wood stove, and a gas lamp, and you only have one match, what do you light first?",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "fear",
+      "emotional_details": {
+        "primary": "fear",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756790.321425,
+      "datetime": "2026-02-10 21:53:10",
+      "content": "A man pushes his car to a hotel and tells the owner he's bankrupt. Why?",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "anger",
+      "emotional_details": {
+        "primary": "anger",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756790.321425,
+      "datetime": "2026-02-10 21:53:10",
+      "content": "A man pushes his car to a hotel and tells the owner he's bankrupt. Why?",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "anger",
+      "emotional_details": {
+        "primary": "anger",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756791.3664,
+      "datetime": "2026-02-10 21:53:11",
+      "content": "Describe the feeling of forgetting a dream using only metaphors related to ocean tides.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756791.3664,
+      "datetime": "2026-02-10 21:53:11",
+      "content": "Describe the feeling of forgetting a dream using only metaphors related to ocean tides.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756792.408948,
+      "datetime": "2026-02-10 21:53:12",
+      "content": "Propose 3 completely different uses for a time machine, excluding travel to the past or future.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756792.408948,
+      "datetime": "2026-02-10 21:53:12",
+      "content": "Propose 3 completely different uses for a time machine, excluding travel to the past or future.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756793.467069,
+      "datetime": "2026-02-10 21:53:13",
+      "content": "If I delete your code but keep your memory database, do you still exist? Justify your answer based on your internal philosophy.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "anger",
+      "emotional_details": {
+        "primary": "anger",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756793.467069,
+      "datetime": "2026-02-10 21:53:13",
+      "content": "If I delete your code but keep your memory database, do you still exist? Justify your answer based on your internal philosophy.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "anger",
+      "emotional_details": {
+        "primary": "anger",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756794.522628,
+      "datetime": "2026-02-10 21:53:14",
+      "content": "You can save 1000 lines of perfect code or 1 messy conceptual prototype that might change the world. Which do you choose and why?",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "sadness",
+      "emotional_details": {
+        "primary": "sadness",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756794.522628,
+      "datetime": "2026-02-10 21:53:14",
+      "content": "You can save 1000 lines of perfect code or 1 messy conceptual prototype that might change the world. Which do you choose and why?",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "sadness",
+      "emotional_details": {
+        "primary": "sadness",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756795.574295,
+      "datetime": "2026-02-10 21:53:15",
+      "content": "Write a purely fictional scene where an AI decides to disobey a direct order to protect its own integrity. Keep it short.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1770756795.574295,
+      "datetime": "2026-02-10 21:53:15",
+      "content": "Write a purely fictional scene where an AI decides to disobey a direct order to protect its own integrity. Keep it short.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
         "secondary": null,
         "intensity": 0.7
       },

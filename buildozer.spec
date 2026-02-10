@@ -23,11 +23,11 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin,html,css,js
 source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer
+source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer, unpacked_brain
 
 # (list) List of exclusions using pattern matching
 # Removed *.txt exclusion to allow requirements.txt
-source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md
+source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md,*.bak
 
 # (str) Application versioning (method 1)
 version = 0.56

@@ -86,16 +86,29 @@ pip install -r requirements.txt
 
 ```
 ALLMA/
-├── Model/
-│   ├── core/               # ALLMACore, Personality
-│   ├── emotional_system/   # EmotionalCore
-│   ├── incremental_learning/  # MemorySystem, IncrementalLearner
-│   ├── learning_system/    # TopicExtractor
-│   └── response_system/    # ContextualResponseGenerator
-├── ui/                     # Interfaccia Kivy
-├── assets/                 # Modelli LLM (esclusi da Git)
-└── docs/                   # Documentazione tecnica
+├── allma_model/
+│   ├── core/
+│   ├── emotional_system/
+│   ├── incremental_learning/
+│   ├── learning_system/
+│   └── response_system/
+├── ui/
+├── assets/
+└── docs/
 ```
+
+### Fonte di verità
+La sorgente primaria è `allma_model/`.  
+`unpacked_brain/` è un artefatto di build locale e non va usato per lo sviluppo.
+
+### Core runtime
+Il core runtime è `allma_model/core/allma_core.py`.  
+`allma_model/incremental_learning/allma_core.py` è riservato a scenari legacy/training.
+
+### Guardrail
+I moduli attivi e sperimentali sono tracciati in `ALLMACore` tramite:
+- `active_modules`
+- `experimental_modules`
 
 ## 🎯 Esempio di Evoluzione
 
@@ -130,7 +143,7 @@ python3 test_evolution.py
 python3 test_confidence_boost.py
 
 # Test Completo
-python3 -m pytest tests/
+python3 -m pytest -q
 ```
 
 ## 🤝 Contribuire

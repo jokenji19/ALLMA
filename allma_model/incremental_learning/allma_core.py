@@ -198,7 +198,7 @@ class SleepSystem:
         # Implementazione base per i test
         self.memories_since_sleep = 0
 
-class ALLMA(nn.Module):
+class ALLMALegacy(nn.Module):
     def __init__(self):
         super().__init__()
         self.tokenizer = ALLMATokenizer()

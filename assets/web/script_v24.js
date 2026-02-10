@@ -497,9 +497,35 @@ function updateUserUI(name) {
     }
 }
 
+window.updateVoiceStackStatus = function (status) {
+    const stt = document.getElementById('status-stt');
+    const tts = document.getElementById('status-tts');
+    const llm = document.getElementById('status-llm');
+    if (!stt || !tts || !llm) return;
+
+    const setChip = (el, label, ok) => {
+        el.classList.remove('status-ok', 'status-ko', 'status-unknown');
+        if (ok === true) {
+            el.classList.add('status-ok');
+            el.textContent = `${label} OK`;
+        } else if (ok === false) {
+            el.classList.add('status-ko');
+            el.textContent = `${label} KO`;
+        } else {
+            el.classList.add('status-unknown');
+            el.textContent = label;
+        }
+    };
+
+    setChip(stt, 'STT', status?.stt);
+    setChip(tts, 'TTS', status?.tts);
+    setChip(llm, 'LLM', status?.llm);
+};
+
 // Initialize on Load
 document.addEventListener("DOMContentLoaded", () => {
     try {
+        document.body.classList.add('pro-mode');
         const savedName = localStorage.getItem('allma_username');
         const savedAge = localStorage.getItem('allma_userage');
         if (savedName) {

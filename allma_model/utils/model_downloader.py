@@ -17,10 +17,9 @@ class ModelDownloader:
         # Nota: Usiamo link diretti a HuggingFace GGUF
         self.models = {
             "gemma": {
-                # Qwen 2.5 Coder 3B Instruct (Q4_K_M) - Powerful & Compatible
-                "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q4_k_m.gguf?download=true",
-                "filename": "model.gguf", 
-                "size_mb": 1900  # Approx 1.9GB
+                "url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf?download=true",
+                "filename": "qwen3-1.7b-q8_0.gguf", 
+                "size_mb": 1650
             }
         }
 

@@ -29,16 +29,26 @@ Buildozer non supporta nativamente Windows. Si consiglia di utilizzare:
     buildozer init
     ```
 
-3.  **Lancia la compilazione**:
+3.  **Aggiorna il blob del core**:
+    ```bash
+    python3 pack_brain.py
+    ```
+
+4.  **Oppure usa la build sicura automatica**:
+    ```bash
+    python3 tools/build_android_safe.py
+    ```
+
+5.  **Lancia la compilazione**:
     ```bash
     buildozer android debug
     ```
     *La prima volta questo processo può richiedere 15-30 minuti perché deve scaricare l'Android SDK/NDK.*
 
-4.  **Trova l'APK**:
+6.  **Trova l'APK**:
     Al termine, troverai il file `.apk` nella cartella `bin/`.
 
-5.  **Installa su dispositivo**:
+7.  **Installa su dispositivo**:
     Collega il telefono via USB (con Debug USB attivo) e esegui:
     ```bash
     buildozer android deploy run

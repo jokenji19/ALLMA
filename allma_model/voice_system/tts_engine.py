@@ -54,7 +54,7 @@ class TTSEngine:
             import traceback
             traceback.print_exc()
 
-    def speak(self, text, flush=False):
+    def speak(self, text, voice_params=None, flush=False):
         """
         Speaks the given text.
         flush=True interrupts current speech (QUEUE_FLUSH).
@@ -75,7 +75,13 @@ class TTSEngine:
         
         if platform == 'android':
             if self.native_tts and self.is_ready:
-                from jnius import cast
+                if voice_params:
+                    pitch = voice_params.get('pitch')
+                    rate = voice_params.get('rate')
+                    if isinstance(pitch, (int, float)):
+                        self.native_tts.setPitch(max(0.1, min(2.0, float(pitch))))
+                    if isinstance(rate, (int, float)):
+                        self.native_tts.setSpeechRate(max(0.1, min(2.0, float(rate))))
                 # Queue mode: 0 = QUEUE_FLUSH, 1 = QUEUE_ADD
                 mode = 0 if flush else 1
                 self.native_tts.speak(text, mode, None)
@@ -87,7 +93,12 @@ class TTSEngine:
             try:
                 # Sanitize text
                 clean_text = text.replace('"', '').replace("'", "")
-                os.system(f'say "{clean_text}" &')
+                if voice_params and isinstance(voice_params.get('rate'), (int, float)):
+                    rate_value = int(120 + (voice_params['rate'] - 1.0) * 80)
+                    rate_value = max(80, min(260, rate_value))
+                    os.system(f'say -r {rate_value} "{clean_text}" &')
+                else:
+                    os.system(f'say "{clean_text}" &')
             except:
                 pass
 

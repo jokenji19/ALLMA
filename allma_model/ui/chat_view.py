@@ -51,6 +51,8 @@ class ChatView(MDScreen):
         self.bridge = None
         self.conversation_id = None
         self.is_initialized = False
+        self.current_voice_params = None
+        self.voice_stack_status = {}
 
         if self.is_initialized:
             return
@@ -201,12 +203,9 @@ class ChatView(MDScreen):
                     # Full Diagnostics (CPU, RAM, Soul, Logs)
                     if self.bridge:
                         diag_data = self._get_diagnostics_data()
-                        # Send as JSON string to window.updateDiagnostics
+                        # Pass object directly to JS
                         import json
-                        json_str = json.dumps(diag_data)
-                        # Escape quotes for JS string argument
-                        safe_str = json_str.replace('"', '\\"') 
-                        self.bridge.execute_js(f'window.updateDiagnostics("{safe_str}")')
+                        self.bridge.execute_js(f"window.updateDiagnostics({json.dumps(diag_data)})")
                     return
 
                 # Send to Core (Standard Chat)
@@ -271,6 +270,8 @@ class ChatView(MDScreen):
                 print(f"ChatView: STT Init Failed: {e}")
                 self.stt = None
 
+            self._report_voice_stack_status()
+
             # Start Learning Status Loop (Every 5 seconds)
             Clock.schedule_interval(self.update_learning_status, 5.0)
             
@@ -306,6 +307,8 @@ class ChatView(MDScreen):
             # TTS Buffer
             tts_buffer = ""
             
+            voice_params = self.current_voice_params
+            
             def on_stream_data(data):
                 nonlocal tts_buffer
                 msg_type = data.get('type')
@@ -340,7 +343,7 @@ class ChatView(MDScreen):
                             tts_buffer = tts_buffer[earliest_idx+1:]
                             
                             if phrase.strip():
-                                self.tts.speak(phrase.strip())
+                                self.tts.speak(phrase.strip(), voice_params=voice_params)
                         else:
                             # No more delimiters, wait for more data
                             break
@@ -357,8 +360,12 @@ class ChatView(MDScreen):
             self.bridge.end_stream()
             
             # Flush remaining TTS
+            if hasattr(processed_response, 'voice_params'):
+                self.current_voice_params = processed_response.voice_params
+                voice_params = self.current_voice_params
+            
             if self.tts and tts_buffer.strip() and self.voice_mode_enabled:
-                self.tts.speak(tts_buffer.strip())
+                self.tts.speak(tts_buffer.strip(), voice_params=voice_params)
             
             # Fallback checks?
             if not processed_response.is_valid:
@@ -370,6 +377,31 @@ class ChatView(MDScreen):
             traceback.print_exc()
             self.bridge.end_stream()
 
+    def _report_voice_stack_status(self):
+        stt_ok = self.stt is not None
+        tts_ok = self.tts is not None
+        llm_ok = bool(getattr(self.core, '_llm_ready', False))
+        llm_error = getattr(self.core, '_mobile_llm_error', None)
+        models_dir = getattr(self.core, 'models_dir', None)
+        self.voice_stack_status = {
+            'stt': stt_ok,
+            'tts': tts_ok,
+            'llm': llm_ok,
+            'models_dir': models_dir,
+            'llm_error': llm_error
+        }
+
+        if self.bridge:
+            status_line = f"Diagnostica Voce → STT: {'OK' if stt_ok else 'KO'} | TTS: {'OK' if tts_ok else 'KO'} | LLM: {'OK' if llm_ok else 'KO'}"
+            if not llm_ok and llm_error:
+                status_line += f" | LLM Err: {llm_error}"
+            self.bridge.send_message_to_js(status_line, 'bot')
+            try:
+                import json
+                status_payload = json.dumps(self.voice_stack_status)
+                self.bridge.execute_js(f"window.updateVoiceStackStatus({status_payload})")
+            except Exception:
+                pass
     def update_learning_status(self, dt):
         if not self.core or not self.bridge:
             return
@@ -497,23 +529,31 @@ class ChatView(MDScreen):
             if self.core and hasattr(self.core, 'soul'):
                 s = self.core.soul.state
                 stats["soul"] = {
-                    "energy": s.energy,
-                    "chaos": s.chaos,
-                    "entropy": s.entropy,
+                    "energy": getattr(s, 'energy', 0.5),
+                    "chaos": getattr(s, 'chaos', 0.1),
+                    "entropy": 1.0 - getattr(s, 'stability', 0.5),
                     "state_label": "Active" # Could infer from values
                 }
             
             # 3. Recent Logs (Mock or recent memory)
             # If we had a log buffer. For now, show last interactions from memory
             if self.core and hasattr(self.core, 'conversational_memory'):
-                msgs = self.core.conversational_memory.get_recent_context(limit=5)
+                mem = self.core.conversational_memory
+                # Robust history retrieval (Fallback to .messages)
+                msgs = []
+                if hasattr(mem, 'messages'):
+                    msgs = mem.messages[-5:]
+                
                 for m in msgs:
-                    # m is Message object
                     import datetime
-                    ts = m.timestamp.strftime("%H:%M:%S") if m.timestamp else "--"
+                    m_role = getattr(m, 'role', 'SYSTEM')
+                    m_content = getattr(m, 'content', '')
+                    m_ts = getattr(m, 'timestamp', None)
+                    
+                    ts = m_ts.strftime("%H:%M:%S") if m_ts else "--:--"
                     # Truncate content
-                    short_content = (m.content[:40] + '..') if len(m.content) > 40 else m.content
-                    stats["logs"].append({"time": ts, "msg": f"[{m.role.upper()}] {short_content}"})
+                    short_content = (m_content[:40] + '..') if len(m_content) > 40 else m_content
+                    stats["logs"].append({"time": ts, "msg": f"[{m_role.upper()}] {short_content}"})
 
         except Exception as e:
             print(f"Diag Error: {e}")

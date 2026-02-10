@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.bak
 .Python
 build/
 develop-eggs/
@@ -71,6 +72,8 @@ ENV/
 # OS files
 Thumbs.db
 
+# Build artifacts
+unpacked_brain/
+
 # Visual Memory (troppo grande per Git)
 visual_memory/
-

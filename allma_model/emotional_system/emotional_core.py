@@ -35,13 +35,20 @@ class EmotionalCore:
     
     def __init__(self, soul_instance: Optional[SoulCore] = None):
         """Inizializza il sistema emotivo."""
-        # Phase 17: TinyBERT Integration
         try:
-            from allma_model.agency_system.ml_emotional_system import MLEmotionalSystem
-            self.ml_system = MLEmotionalSystem()
-        except ImportError:
-            print("Warning: MLEmotionalSystem not found.")
+            from kivy.utils import platform
+        except Exception:
+            platform = None
+
+        if platform == "android":
             self.ml_system = None
+        else:
+            try:
+                from allma_model.agency_system.ml_emotional_system import MLEmotionalSystem
+                self.ml_system = MLEmotionalSystem()
+            except ImportError:
+                print("Warning: MLEmotionalSystem not found.")
+                self.ml_system = None
 
         # CHAOS ENGINE INTEGRATION
         self.soul = soul_instance if soul_instance else SoulCore()
@@ -186,8 +193,7 @@ class EmotionalCore:
         if context is None: context = {}
         
         try:
-            # PROMPT ENGINEERING PER ANALISI EMOTIVA (JSON OUTPUT) - Qwen 2.5 ChatML
-            prompt = f"""<|im_start|>system
+            prompt_chatml = f"""<|im_start|>system
 Sei un analista emotivo esperto. Il tuo compito è analizzare il testo dell'utente e identificare lo stato emotivo.
 Devi rispondere ESCLUSIVAMENTE con un oggetto JSON valido. Niente altro testo.
 
@@ -203,46 +209,89 @@ Schema JSON richiesto:
 Analizza il seguente testo: "{text}"<|im_end|>
 <|im_start|>assistant
 """
-            # Chiamata all'LLM (output breve, max 100 token)
-            # Nota: flessibile sull'interfaccia della funzione
-            try:
-                # Se è un oggetto Llama di llama-cpp
-                output = llm_generate_function(
-                    prompt,
-                    max_tokens=128,
-                    stop=["<|im_end|>"],
-                    temperature=0.1, # Temperatura bassa per determinismo JSON
-                    echo=False
-                )
-                if isinstance(output, dict) and 'choices' in output:
-                    json_str = output['choices'][0]['text'].strip()
-                else:
-                    json_str = str(output).strip()
-            except Exception as e:
-                print(f"Errore chiamata LLM diretta: {e}")
-                raise e
+            prompt_plain = (
+                "Sei un analista emotivo esperto. Rispondi SOLO con JSON valido.\n"
+                "Schema JSON richiesto:\n"
+                "{"
+                "\"primary_emotion\":\"uno tra [joy, sadness, anger, fear, surprise, neutral]\","
+                "\"confidence\":0.0-1.0,"
+                "\"intensity\":0.0-1.0,"
+                "\"secondary_emotions\":{}}"
+                "\n"
+                f"Testo: {text}\n"
+                "JSON:"
+            )
 
-            # Parsing JSON (gestione errori e pulizia markdown)
-            import json
-            import re
-            
-            # Pulisci eventuali ```json ... ```
-            clean_json = re.sub(r'```json\s*', '', json_str)
-            clean_json = re.sub(r'```', '', clean_json).strip()
-            
-            data = json.loads(clean_json)
-            
+            def call_llm(prompt_value: str) -> str:
+                try:
+                    output = llm_generate_function(
+                        prompt_value,
+                        max_tokens=128,
+                        stop=["<|im_end|>"],
+                        temperature=0.1,
+                        echo=False
+                    )
+                except TypeError:
+                    output = llm_generate_function(
+                        prompt_value,
+                        max_tokens=128,
+                        stop=["<|im_end|>"],
+                        temperature=0.1
+                    )
+                if isinstance(output, dict) and 'choices' in output:
+                    return output['choices'][0]['text'].strip()
+                return str(output).strip()
+
+            def parse_json(json_str: str) -> Dict:
+                import json
+                import re
+                clean_json = re.sub(r'```json\s*', '', json_str)
+                clean_json = re.sub(r'```', '', clean_json).strip()
+                if not clean_json:
+                    raise ValueError("Empty emotion JSON")
+                start = None
+                depth = 0
+                for i, ch in enumerate(clean_json):
+                    if ch == "{":
+                        if depth == 0:
+                            start = i
+                        depth += 1
+                    elif ch == "}" and depth > 0:
+                        depth -= 1
+                        if depth == 0 and start is not None:
+                            try:
+                                return json.loads(clean_json[start:i + 1])
+                            except Exception:
+                                start = None
+                return json.loads(clean_json)
+
+            last_error = None
+            for prompt_value in (prompt_chatml, prompt_plain):
+                try:
+                    json_str = call_llm(prompt_value)
+                    data = parse_json(json_str)
+                    print(f"✅ Emotion LLM OK: {data.get('primary_emotion', 'neutral')} conf={data.get('confidence', 0.5)}", flush=True)
+                    return EmotionalState(
+                        primary_emotion=data.get("primary_emotion", "neutral").lower(),
+                        confidence=float(data.get("confidence", 0.5)),
+                        secondary_emotions=data.get("secondary_emotions", {}),
+                        intensity=float(data.get("intensity", 0.1)),
+                        context=context
+                    )
+                except Exception as e:
+                    last_error = e
+
+            print(f"Errore detect_emotion_via_llm: {last_error} - Input era: {text}")
             return EmotionalState(
-                primary_emotion=data.get("primary_emotion", "neutral").lower(),
-                confidence=float(data.get("confidence", 0.5)),
-                secondary_emotions=data.get("secondary_emotions", {}),
-                intensity=float(data.get("intensity", 0.1)),
+                primary_emotion="neutral",
+                confidence=0.5,
+                secondary_emotions={},
+                intensity=0.1,
                 context=context
             )
 
         except Exception as e:
             print(f"Errore detect_emotion_via_llm: {e} - Input era: {text}")
-            # Fallback sicuro
             return EmotionalState(
                 primary_emotion="neutral",
                 confidence=0.5,
@@ -287,6 +336,8 @@ Analizza il seguente testo: "{text}"<|im_end|>
                 return self.detect_emotion_via_llm(text, llm_client, context)
             elif hasattr(llm_client, 'create_completion'):
                 return self.detect_emotion_via_llm(text, llm_client.create_completion, context)
+            elif hasattr(llm_client, 'generate'):
+                return self.detect_emotion_via_llm(text, llm_client.generate, context)
                 
         # 3. FALLBACK FINALE
         print("DEBUG - No Emotion System available, using fallback.")

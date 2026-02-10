@@ -18,6 +18,7 @@ def pack_and_update():
                 if file in ['.DS_Store', '.gitignore', 'allma_diary.json']: 
                     continue
                 if file.endswith('.pyc'): continue
+                if file.endswith('.bak'): continue
                 if file.endswith('.log'): continue # Exclude logs
                 if file.endswith('.zip'): continue # Exclude zips (models should be downloaded)
                 if file.startswith('debug_') and file.endswith('.txt'): continue # Exclude heavy debug dumps

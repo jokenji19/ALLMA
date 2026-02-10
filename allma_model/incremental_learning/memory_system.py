@@ -24,7 +24,44 @@ except ImportError:
     TORCH_AVAILABLE = False
 from collections import defaultdict
 import threading
-from threading import Lock
+from threading import Lock, RLock
+
+def _compute_importance(
+    emotional_valence: float,
+    context: Dict = None,
+    concept_count: int = 0,
+    learning_level: float = 0.0,
+    confidence: float = 0.5,
+    mode: str = "episodic"
+) -> float:
+    if mode == "episodic":
+        importance = 0.3 * abs(emotional_valence)
+        if context:
+            if context.get('is_novel', False):
+                importance += 0.3
+            if context.get('is_significant', False):
+                importance += 0.2
+            if context.get('is_learning', False):
+                importance += 0.2
+        return min(1.0, importance)
+
+    factors = {
+        "emotional_intensity": abs(emotional_valence),
+        "complexity": concept_count * 0.1,
+        "learning_level": learning_level,
+        "confidence": confidence
+    }
+    weights = {
+        "emotional_intensity": 0.4,
+        "complexity": 0.3,
+        "learning_level": 0.2,
+        "confidence": 0.1
+    }
+    importance = sum(
+        factor * weights[name]
+        for name, factor in factors.items()
+    )
+    return min(max(importance, 0.0), 1.0)
 
 @dataclass
 class Memory:
@@ -74,7 +111,7 @@ class MemoryItem:
     """Rappresenta un singolo item di memoria"""
     content: str
     timestamp: datetime
-    type: str  # 'experience', 'concept', 'relation'
+    type: str = "experience"
     context: Dict[str, Any] = field(default_factory=dict)
     emotional_valence: float = 0.0
     importance: float = 0.0
@@ -305,7 +342,7 @@ class EpisodicMemory:
             'retrieved_memories': 0
         }
         self.last_consolidation = datetime.now()
-        self._lock = Lock()
+        self._lock = RLock()
         
     def add_memory(self, content: str, emotional_valence: float, context: Dict = None) -> None:
         """Aggiunge una nuova memoria episodica"""
@@ -396,24 +433,11 @@ class EpisodicMemory:
         
     def _calculate_importance(self, emotional_valence: float, context: Dict = None) -> float:
         """Calcola l'importanza di una memoria"""
-        # Base importance from emotional valence (0.3 weight)
-        importance = 0.3 * abs(emotional_valence)
-        
-        # Context-based importance (0.7 weight)
-        if context:
-            # Novel experiences are very important
-            if context.get('is_novel', False):
-                importance += 0.3
-                
-            # Significant events are important    
-            if context.get('is_significant', False):
-                importance += 0.2
-                
-            # Learning experiences are important
-            if context.get('is_learning', False):
-                importance += 0.2
-                
-        return min(1.0, importance)
+        return _compute_importance(
+            emotional_valence=emotional_valence,
+            context=context,
+            mode="episodic"
+        )
         
     def _categorize_memory(self, content: str, context: Dict = None) -> Set[str]:
         """Categorizza una memoria in base a contenuto e contesto"""
@@ -657,7 +681,7 @@ class MemorySystem:
     
     def __init__(self, mobile_mode: bool = False):
         """Inizializza il sistema di memoria"""
-        self._lock = threading.Lock()
+        self._lock = RLock()
         self.working_memory: List[MemoryItem] = []
         self.episodic = EpisodicMemory()
         self.semantic = SemanticMemory()
@@ -776,28 +800,14 @@ class MemorySystem:
         
     def _calculate_importance(self, experience: str, emotional_valence: float) -> float:
         """Calcola l'importanza di un'esperienza"""
-        # Fattori che influenzano l'importanza
-        factors = {
-            "emotional_intensity": self._get_emotional_intensity(emotional_valence),
-            "complexity": len(self._extract_concepts(experience)) * 0.1,
-            "learning_level": 0.0,  # Non disponibile in questo contesto
-            "confidence": 0.5  # Non disponibile in questo contesto
-        }
-        
-        # Pesi per ciascun fattore
-        weights = {
-            "emotional_intensity": 0.4,
-            "complexity": 0.3,
-            "learning_level": 0.2,
-            "confidence": 0.1
-        }
-        
-        importance = sum(
-            factor * weights[name]
-            for name, factor in factors.items()
+        concept_count = len(self._extract_concepts(experience))
+        return _compute_importance(
+            emotional_valence=emotional_valence,
+            concept_count=concept_count,
+            learning_level=0.0,
+            confidence=0.5,
+            mode="system"
         )
-        
-        return min(max(importance, 0.0), 1.0)
         
     def _get_emotional_intensity(self, emotional_valence: float) -> float:
         """Calcola l'intensità emotiva"""
@@ -871,37 +881,6 @@ class MemorySystem:
                 
         return list(related)
         
-    def recall_memory(self, query: str, context: Dict = None) -> List[MemoryItem]:
-        """
-        Recupera memorie rilevanti basate su query e contesto
-        
-        Args:
-            query: Stringa di ricerca
-            context: Dizionario con informazioni contestuali
-            
-        Returns:
-            Lista di MemoryItem rilevanti
-        """
-        with self._lock:
-            # Cerca prima nella memoria di lavoro
-            working_memories = self.working_memory
-            
-            # Poi nella memoria a breve termine
-            short_term_memories = []
-            
-            # Infine nella memoria episodica
-            episodic_memories = self.episodic.recall(query, context)
-            
-            # Combina e ordina per rilevanza
-            all_memories = working_memories + short_term_memories + episodic_memories
-            all_memories.sort(key=lambda x: (
-                x["importance"],  # Prima le memorie più importanti
-                abs(x["emotional_valence"]),  # Poi quelle più emotive
-                -((datetime.now() - datetime.fromisoformat(x["timestamp"])).total_seconds())  # Infine le più recenti
-            ), reverse=True)
-            
-            return all_memories
-            
     @property
     def memories(self):
         """Restituisce tutte le memorie del sistema"""
@@ -1061,14 +1040,27 @@ class EnhancedMemorySystem(MemorySystem):
         self.procedural = ProceduralMemory()
         self.episodic = EpisodicMemory()
         self.semantic = SemanticMemory()
+
+    def store_procedure(self, name: str, steps: List[str], context: Dict = None) -> None:
+        self.procedural.add_procedure(name, steps, context)
+
+    def practice_procedure(self, name: str, success_rate: float) -> None:
+        self.procedural.practice_procedure(name, success_rate)
+
+    def get_procedure(self, name: str) -> Optional[Dict]:
+        return self.procedural.get_procedure(name)
+
+    def get_procedure_mastery(self, name: str) -> float:
+        return self.procedural.get_mastery_level(name)
         
-    def process_experience(self, experience: str, emotional_valence: float = 0.0) -> Dict[str, Any]:
+    def process_experience(self, experience: str, emotional_valence: float = 0.0, context: Dict = None) -> Dict[str, Any]:
         """
         Processa un'esperienza usando tutti i sistemi di memoria
         
         Args:
             experience: L'esperienza da processare
             emotional_valence: La valenza emotiva (-1.0 a 1.0)
+            context: Contesto opzionale dell'esperienza
             
         Returns:
             Dizionario con i risultati del processamento
@@ -1084,13 +1076,14 @@ class EnhancedMemorySystem(MemorySystem):
             content=experience,
             timestamp=datetime.now(),
             type='experience',
-            emotional_valence=emotional_valence
+            emotional_valence=emotional_valence,
+            context=context or {}
         )
         
         # Processa nei vari sistemi
         self.working_memory.add_item(memory_item)
         self.short_term.add_item(memory_item)
-        self.episodic.add_memory(experience, emotional_valence)
+        self.episodic.add_memory(experience, emotional_valence, context)
         
         # Estrai e processa concetti
         concepts = self._extract_concepts(experience)
