@@ -9,7 +9,7 @@ class TestConversationalMemory(unittest.TestCase):
     
     def setUp(self):
         """Setup per i test."""
-        self.memory = ConversationalMemory()
+        self.memory = ConversationalMemory(load_persistent=False)
         self.test_user = "test_user_123"
         
     def test_store_conversation(self):

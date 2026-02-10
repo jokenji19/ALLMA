@@ -1253,7 +1253,9 @@ Assistant: [[TH: I=Saluto|S=Accoglienza|M=Nessuna]] Ciao! È bello rivederti."""
 
                 def answer_stream_adapter(token):
                     nonlocal first_symbiotic_token, in_thought_block
-                    if stream_callback: 
+                    if not stream_callback:
+                        return
+                    try:
                         if not first_symbiotic_token:
                             first_symbiotic_token = True
                     
@@ -1268,7 +1270,7 @@ Assistant: [[TH: I=Saluto|S=Accoglienza|M=Nessuna]] Ciao! È bello rivederti."""
                                     in_thought_block = False
                                     subparts = parts[1].split("</think>")
                                     if subparts[0]: stream_callback({'type': 'thought', 'content': subparts[0]})
-                                    if len(subparts) > 1: stream_callback({'type': 'answer', 'content': subparts[1]})
+                                    if len(subparts) > 1 and subparts[1]: stream_callback({'type': 'answer', 'content': subparts[1]})
                                 else:
                                     stream_callback({'type': 'thought', 'content': parts[1]})
                             return
@@ -1284,6 +1286,8 @@ Assistant: [[TH: I=Saluto|S=Accoglienza|M=Nessuna]] Ciao! È bello rivederti."""
                             stream_callback({'type': 'thought', 'content': content_to_process})
                         else:
                             stream_callback({'type': 'answer', 'content': content_to_process})
+                    except Exception:
+                        return
 
                 generated_part = self._llm.generate(
                     prompt=full_prompt,

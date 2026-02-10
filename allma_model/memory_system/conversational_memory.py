@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import json
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
 from dataclasses import dataclass
 import numpy as np
 from allma_model.utils.text_processing import SimpleTfidf, cosine_similarity
@@ -34,7 +34,7 @@ class Message:
 class ConversationalMemory:
     """Sistema di memoria conversazionale."""
     
-    def __init__(self):
+    def __init__(self, load_persistent: bool = True):
         """Inizializza il sistema di memoria conversazionale."""
         self.conversations: Dict[str, List[Conversation]] = defaultdict(list)
         self.vectorizer = SimpleTfidf()
@@ -46,9 +46,8 @@ class ConversationalMemory:
         import threading
         self.lock = threading.RLock()
         
-        # Load persistent memory
-        # Load persistent memory
-        self.load_memory()
+        if load_persistent:
+            self.load_memory()
         
     def add_trauma_event(self, description: str, context: Dict = None) -> None:
         """
@@ -117,7 +116,10 @@ class ConversationalMemory:
         # Calcola embedding
         try:
             vectors = self.vectorizer.fit_transform([content])
-            conversation.embeddings = vectors.toarray()[0]
+            if hasattr(vectors, "toarray"):
+                conversation.embeddings = vectors.toarray()[0]
+            else:
+                conversation.embeddings = vectors[0]
         except Exception as e:
             print(f"Errore nel calcolo embeddings: {e}")
             
@@ -180,18 +182,34 @@ class ConversationalMemory:
         if not current_topic.strip():
             return results
             
-        # Calcola embedding del topic
-        try:
-            topic_vector = self.vectorizer.transform([current_topic]).toarray()[0]
-        except Exception as e:
-            print(f"Errore nel calcolo embedding topic: {e}")
-            return results
-            
         # Filtra conversazioni per utente se specificato
         conversations = (
             self.conversations[user_id] if user_id
             else [c for convs in self.conversations.values() for c in convs]
         )
+        
+        if conversations and (
+            not self.vectorizer.vocab
+            or any(c.embeddings is None for c in conversations)
+            or any(len(c.embeddings) != len(self.vectorizer.vocab) for c in conversations if c.embeddings is not None)
+        ):
+            contents = [c.content for c in conversations]
+            vectors = self.vectorizer.fit_transform(contents)
+            if hasattr(vectors, "toarray"):
+                vectors = vectors.toarray()
+            for conv, vec in zip(conversations, vectors):
+                conv.embeddings = vec
+                self.conversation_vectors[conv.id] = vec
+
+        try:
+            topic_vectors = self.vectorizer.transform([current_topic])
+            if hasattr(topic_vectors, "toarray"):
+                topic_vector = topic_vectors.toarray()[0]
+            else:
+                topic_vector = topic_vectors[0]
+        except Exception as e:
+            print(f"Errore nel calcolo embedding topic: {e}")
+            return results
         
         # Calcola similarità con ogni conversazione
         for conv in conversations:
@@ -202,7 +220,22 @@ class ConversationalMemory:
                 )[0][0]
                 results.append((similarity, conv))
                 
-        # Ordina per similarità e prendi i top N
+        topic_tokens = set(current_topic.lower().split())
+        if results:
+            def score_pair(item):
+                sim, conv = item
+                content_tokens = set(conv.content.lower().split()) if isinstance(conv.content, str) else set()
+                bonus = 0.5 if topic_tokens & content_tokens else 0.0
+                return sim + bonus
+            results.sort(reverse=True, key=score_pair)
+            return results[:max_results]
+
+        for conv in conversations:
+            content_tokens = set(conv.content.lower().split()) if isinstance(conv.content, str) else set()
+            overlap = len(topic_tokens & content_tokens)
+            if overlap:
+                results.append((overlap / max(len(topic_tokens), 1), conv))
+
         results.sort(reverse=True, key=lambda x: x[0])
         return results[:max_results]
 
@@ -289,6 +322,14 @@ class ConversationalMemory:
             common_topics = tfidf.get_feature_names_out().tolist()
         except:
             common_topics = []
+
+        if not common_topics:
+            tokens = []
+            for text in all_content:
+                if isinstance(text, str):
+                    tokens.extend([t for t in re.findall(r'\b\w+\b', text.lower()) if len(t) > 2])
+            if tokens:
+                common_topics = [w for w, _ in Counter(tokens).most_common(10)]
             
         return {
             'total_conversations': total,

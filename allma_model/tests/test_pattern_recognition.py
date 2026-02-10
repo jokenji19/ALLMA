@@ -17,6 +17,8 @@ class TestPatternRecognition(unittest.TestCase):
     def setUp(self):
         """Setup per i test."""
         self.system = PatternRecognitionSystem()
+        if not hasattr(self.system, "nlp") or self.system.nlp is None:
+            raise unittest.SkipTest("NLP non disponibile")
         # Reset delle keywords per ogni test
         self.system.sentiment_keywords = {
             'positive': {'contento', 'felice', 'bene', 'ottimo', 'eccellente', 'piace', 'positivo', 'funziona', 'successo'},

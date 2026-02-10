@@ -17,9 +17,11 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple, Any
 from enum import Enum
 from datetime import datetime
+import time
 import re
 import json
 import math
+from collections import defaultdict
 
 class EmotionType(Enum):
     """Tipi di emozioni supportate con maggiore granularità"""

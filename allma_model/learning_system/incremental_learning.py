@@ -5,6 +5,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 from collections import defaultdict
+import logging
 import numpy as np
 from allma_model.utils.text_processing import SimpleTfidf, cosine_similarity
 import threading
@@ -92,7 +93,10 @@ class IncrementalLearner:
                     vectors = self.vectorizer.fit_transform([text])
                 else:
                     vectors = self.vectorizer.transform([text])
-                self.topic_vectors[unit.topic] = vectors.toarray()[0]
+                if hasattr(vectors, "toarray"):
+                    self.topic_vectors[unit.topic] = vectors.toarray()[0]
+                else:
+                    self.topic_vectors[unit.topic] = vectors[0]
             except Exception as e:
                 print(f"Errore nel calcolo embeddings: {e}")
                 
@@ -211,35 +215,41 @@ class IncrementalLearner:
         if not query.strip() or len(self.topic_vectors) == 0:
             return []
             
+        related_units = []
         try:
-            # Calcola embedding della query
             query_vector = self.vectorizer.transform([query]).toarray()[0]
-            
-            # Trova topic correlati
-            related_units = []
             for topic, vector in self.topic_vectors.items():
                 similarity = cosine_similarity([query_vector], [vector])[0][0]
                 if similarity >= threshold:
-                    # Prendi l'unità più recente per il topic
                     units = self.knowledge_base[topic]
                     if units:
                         related_units.append(max(
                             units,
                             key=lambda u: u.timestamp
                         ))
-                        
-            return sorted(
-                related_units,
-                key=lambda u: cosine_similarity(
-                    [query_vector],
-                    [self.topic_vectors[u.topic]]
-                )[0][0],
-                reverse=True
-            )
-            
+            if related_units:
+                return sorted(
+                    related_units,
+                    key=lambda u: cosine_similarity(
+                        [query_vector],
+                        [self.topic_vectors[u.topic]]
+                    )[0][0],
+                    reverse=True
+                )
         except Exception as e:
             print(f"Errore nella ricerca: {e}")
-            return []
+
+        query_tokens = set(query.lower().split())
+        for topic, units in self.knowledge_base.items():
+            topic_tokens = set(topic.lower().split())
+            if query_tokens & topic_tokens:
+                if units:
+                    related_units.append(max(
+                        units,
+                        key=lambda u: u.timestamp
+                    ))
+
+        return related_units
             
     def _update_knowledge_state(
         self,
