@@ -573,79 +573,8 @@ window.streamChunk = function (text, isThought) {
             // Auto-open while streaming to show progress
             currentStreamBubble.reasoningContainer.classList.add('open');
         }
+        currentStreamBubble.reasoning.textContent += text;
 
-        // PHASE 24: Minimalist Badge Styling (Chips)
-        // Format: [[TH:I=Saluto|S=Caldo|M=Nulla]]
-        const thMatch = text.match(/\[\[(?:TH|PENSIERO):\s*(.+?)\]\]/);
-        if (thMatch) {
-            const thContent = thMatch[1];
-            const fragments = thContent.split('|');
-            // Flex container, wrap, minimal spacing
-            let badgeHTML = '<div style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px;">';
-
-            fragments.forEach(fragment => {
-                const pair = fragment.split('=');
-                if (pair.length === 2) {
-                    const key = pair[0].trim();
-                    const val = pair[1].trim();
-                    let icon = ''; // Minimalist: maybe no icon or very small
-                    let color = '#888';
-                    let label = key;
-
-                    // Map keys
-                    if (key === 'I') { icon = '🎯'; label = 'INT'; color = '#4CAF50'; }
-                    if (key === 'S') { icon = '🎭'; label = 'STR'; color = '#2196F3'; }
-                    if (key === 'M') { icon = '🧠'; label = 'MEM'; color = '#9C27B0'; }
-
-                    // Minimalist Chip Style: Tiny font, no border, light background
-                    badgeHTML += `<div style="
-                        background: ${color}15; 
-                        color: ${color};
-                        border: 1px solid ${color}30;
-                        border-radius: 12px;
-                        padding: 2px 8px;
-                        font-family: 'Roboto Mono', monospace;
-                        font-size: 10px;
-                        display: flex;
-                        align-items: center;
-                        gap: 3px;
-                        white-space: nowrap;">
-                        <span>${icon}</span>
-                        <span style="opacity:0.8; font-weight:600;">${label}:</span>
-                        <span style="opacity:1.0;">${val}</span>
-                    </div>`;
-                }
-            });
-            badgeHTML += '</div>';
-
-            // CLEAR previous content to prevent appending if it's a re-parse (safety)
-            // But since we stream chunks, we append HTML. 
-            // Better to append ONLY if we haven't rendered badges yet?
-            // Actually, TH block usually comes in one chunk or small chunks. 
-            // We'll trust the parser handles the full block string if matched.
-
-            // To be safe: clear reasoning content before adding badges (if it was partial text)
-            currentStreamBubble.reasoning.innerHTML = badgeHTML;
-        } else {
-            // Fallback (partial text)
-            // check if text contains partial badge markup? No, just raw text.
-            // If we are streaming token by token, we might not match regex yet.
-            // So we append text, but if regex matches later, we replace?
-            // Complex. For now, assume TH block comes fast.
-            currentStreamBubble.reasoning.textContent += text;
-
-            // LIVE PARSE CHECK: If accumulated text matches regex, render!
-            const accText = currentStreamBubble.reasoning.textContent;
-            const liveMatch = accText.match(/\[\[(?:TH|PENSIERO):\s*(.+?)\]\]/);
-            if (liveMatch) {
-                // Rerender with badges
-                // Reuse logic... (recursion or function call)
-                // For simplified approach: just let the stream finalize?
-                // The user wants to see it LIVE. 
-                // We will rely on the fact that 'text' passed here might be the full block 
-                // if the backend sends it or partial.
-            }
-        }
     } else {
         currentStreamBubble.content.textContent += text;
     }
@@ -908,97 +837,93 @@ function stopDiagnostics() {
 
 function requestDiagnostics() {
     if (window.pyBridge) {
-        setDiagStatus("Requesting...", "yellow");
-        // We use postMessage instead of direct call if possible, or just direct
-        // But the bridge usually binds to window.pyBridge.postMessage
+        // Set a small delay before showing "Requesting" to avoid flicker on fast responses
+        if (window._diagPending) clearTimeout(window._diagPending);
+        window._diagPending = setTimeout(() => {
+            setDiagStatus("Requesting...", "yellow");
+        }, 150);
         window.pyBridge.postMessage("__REQUEST_DIAGNOSTICS_UPDATE__");
     } else {
         console.warn("Diagnostics: No pyBridge found!");
         setDiagStatus("No Bridge!", "red");
-
-        // Mock data for browser testing
         updateDiagnostics(JSON.stringify(generateMockDiagnostics()));
     }
 }
 
 // Global exposure for Bridge
-window.updateDiagnostics = function (jsonString) {
-    setDiagStatus("Connected", "#10B981"); // Green
-    try {
-        // Clean and Parse
-        // Python sending: json.dumps(data) -> string
-        // Bridge sending: execute_js(f'window.updateDiagnostics("{safe_str}")')
-        // So jsonString is ALREADY a string of JSON.
+window.updateDiagnostics = function (input) {
+    if (window._diagPending) clearTimeout(window._diagPending);
+    setDiagStatus("Connected", "#10B981");
 
-        // Double-parsing check
-        let stats;
-        try {
-            stats = JSON.parse(jsonString);
-            if (typeof stats === 'string') stats = JSON.parse(stats);
-        } catch (e) {
-            console.error("JSON Parse Error:", e);
-            setDiagStatus("JSON Error", "red");
-            return;
+    try {
+        let stats = input;
+        if (typeof input === 'string') {
+            try {
+                stats = JSON.parse(input);
+                if (typeof stats === 'string') stats = JSON.parse(stats);
+            } catch (e) {
+                console.error("Diag Parse Error:", e);
+                return;
+            }
         }
+
+        if (!stats) return;
 
         // 1. Resources
         if (stats.resources) {
-            if (document.getElementById('diag-cpu')) {
-                document.getElementById('diag-cpu').innerText = Math.round(stats.resources.cpu) + "%";
-                document.getElementById('diag-cpu-bar').style.width = Math.min(100, stats.resources.cpu) + "%";
+            const cpuVal = document.getElementById('diag-cpu-val');
+            const cpuBar = document.getElementById('diag-cpu-bar');
+            if (cpuVal) cpuVal.innerText = Math.round(stats.resources.cpu) + "%";
+            if (cpuBar) cpuBar.style.width = Math.min(100, stats.resources.cpu) + "%";
+
+            const ramVal = document.getElementById('diag-ram-val');
+            const ramBar = document.getElementById('diag-ram-bar');
+            if (ramVal) ramVal.innerText = Math.round(stats.resources.ram) + " MB";
+            if (ramBar) {
+                let ramPct = (stats.resources.ram / 4000) * 100; // Assume 4GB for mobile scaling
+                ramBar.style.width = Math.min(100, ramPct) + "%";
             }
-            if (document.getElementById('diag-ram')) {
-                document.getElementById('diag-ram').innerText = Math.round(stats.resources.ram) + " MB";
-                // Assume 8GB max for bar scaling
-                let ramPct = (stats.resources.ram / 8000) * 100;
-                document.getElementById('diag-ram-bar').style.width = Math.min(100, ramPct) + "%";
-            }
-            if (document.getElementById('diag-temp')) {
-                document.getElementById('diag-temp').innerText = Math.round(stats.resources.temp) + "°C";
+
+            const tempVal = document.getElementById('diag-temp-val');
+            const tempBar = document.getElementById('diag-temp-bar');
+            if (tempVal) tempVal.innerText = Math.round(stats.resources.temp) + "°C";
+            if (tempBar) {
                 let tempPct = (stats.resources.temp / 80) * 100;
-                document.getElementById('diag-temp-bar').style.width = Math.min(100, tempPct) + "%";
+                tempBar.style.width = Math.min(100, tempPct) + "%";
             }
         }
 
         // 2. Soul
         if (stats.soul) {
             const statusEl = document.getElementById('soul-status-text');
-            if (statusEl) statusEl.textContent = `Stato: ${stats.soul.state_label || 'Unknown'}`;
+            if (statusEl) statusEl.textContent = `Stato: ${stats.soul.state_label || 'Active'}`;
 
             setSoulBar('energy', stats.soul.energy);
             setSoulBar('chaos', stats.soul.chaos);
-            setSoulBar('entropy', stats.soul.entropy);
+            setSoulBar('entropy', stats.soul.entropy || 0.1);
         }
 
         // 3. Log Trace
         if (stats.logs && Array.isArray(stats.logs)) {
             const logContainer = document.getElementById('diag-logs');
             if (logContainer) {
+                // Clear existing (we get a refresh)
+                logContainer.innerHTML = '';
                 stats.logs.forEach(log => {
                     const div = document.createElement('div');
                     div.className = 'log-entry';
-
                     let color = '#D4D4D4';
                     if (log.msg.includes('ERROR')) color = '#EF4444';
-                    if (log.msg.includes('WARN')) color = '#F59E0B';
-                    if (log.msg.includes('LLM')) color = '#3B82F6';
-                    if (log.msg.includes('SYSTEM')) color = '#10B981';
+                    if (log.msg.includes('USER')) color = '#3B82F6';
+                    if (log.msg.includes('BOT')) color = '#10B981';
                     div.innerHTML = `<span class="log-time" style="opacity:0.5; font-size:10px; margin-right:6px;">${log.time || ''}</span><span class="log-msg" style="color:${color}">${log.msg}</span>`;
                     logContainer.appendChild(div);
                 });
-
-                // Keep only last 100
-                while (logContainer.children.length > 100) {
-                    logContainer.removeChild(logContainer.firstChild);
-                }
-
-                // Scroll to bottom
                 logContainer.scrollTop = logContainer.scrollHeight;
             }
         }
-
     } catch (e) {
-        console.error("Diagnostics Update Error:", e);
+        console.error("Diagnostics logic Error:", e);
     }
 };
 

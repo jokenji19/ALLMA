@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import logging
-import threading # <--- Added
+import threading
+import re
 from typing import List, Optional
 
 # Delayed import mechanism match
@@ -13,7 +14,7 @@ LLAMA_CPP_AVAILABLE = True
 
 # Default model path (relative to creating this class, but should be passed in)
 # UPGRADED 2026-02-06: Qwen2.5-Coder-3B-Instruct-Abliterated (Bartowski)
-_DEFAULT_MODEL_NAME = "model.gguf"
+_DEFAULT_MODEL_NAME = "qwen3-1.7b-q8_0.gguf"
 
 class MobileGemmaWrapper:
     """
@@ -353,21 +354,15 @@ class MobileGemmaWrapper:
             stop = ["<|im_end|>", "<|endoftext|>"]
 
         try:
-            # CRITICAL: LOCK THE LLM. 
-            # Prevents "Dream Cycle" / Background threads from crashing the engine 
-            # while main chat is generating.
+            def strip_think(text: str) -> str:
+                return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL).strip()
+
             with self.inference_lock:
-                # CRITICAL FIX (2026-01-31): Prevent prompt prefix caching
-                # The model was doing "771 prefix-match hit" and reusing old context
-                # reset() doesn't work - we need to use random seed to force fresh generation
                 import random
                 random_seed = random.randint(0, 2**31 - 1)
-                
-                # Enable streaming if callback is provided
-                stream_mode = (callback is not None)
-                
+                stream_mode = callback is not None
                 logging.info(f"[MobileGemma] Generating response (Stream={stream_mode}, Seed={random_seed})")
-                
+
                 output = self.llm(
                     prompt,
                     max_tokens=max_tokens,
@@ -376,26 +371,25 @@ class MobileGemmaWrapper:
                     stop=stop,
                     echo=False,
                     stream=stream_mode,
-                    seed=random_seed  # Force new generation, no cache reuse
+                    seed=random_seed
                 )
-                
+
                 if stream_mode:
-                    text_buffer = ""
+                    full_text = ""
                     import time
                     for chunk in output:
-                        # llama-cpp-python stream chunk format:
-                        token = chunk['choices'][0]['text']
-                        text_buffer += token
+                        token = chunk["choices"][0]["text"]
+                        full_text += token
                         if callback:
-                            callback(token)
-                            
-                        # CRITICAL FIX: Yield to UI Thread
-                        # On Android, CPU inference can starve the main thread (ANR/Freeze)
-                        # We force a small sleep to let the OS schedule the UI.
+                            try:
+                                callback(token)
+                            except Exception as cb_err:
+                                logging.error(f"[MobileGemma] Stream callback error: {cb_err}")
                         time.sleep(0.02)
-                    return text_buffer
+                    return strip_think(full_text)
                 else:
-                    return output['choices'][0]['text']
+                    raw_text = output["choices"][0]["text"]
+                    return strip_think(raw_text)
 
         except Exception as e:
             logging.error(f"[MobileGemma] Inference error: {e}")

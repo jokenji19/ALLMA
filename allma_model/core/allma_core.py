@@ -1227,66 +1227,18 @@ Assistant: [[TH: I=Saluto|S=Accoglienza|M=Nessuna]] Ciao! È bello rivederti."""
                     
                 complexity_level = self._analyze_query_complexity(message, conversation_history, intent=intent)
                 
-                # Default: Use TH start
-                start_with_thought = True
+                context_data = {
+                    'memories': relevant_memories,
+                    'conversation_history': conversation_history,
+                    'emotion_context': emotion_context
+                }
+                full_prompt = self.reasoning_engine._build_reasoning_prompt(message, context_data)
                 
-                if complexity_level == "SIMPLE":
-                    # ⚡ FAST PATH: Minimal prompt, NO THOUGHT
-                    logging.info(f"⚡ [FAST PATH] Simple query detected: avoiding Thought Trace.")
-                    
-                    # Get personality state for minimal prompt
-                    personality_state = self.coalescence_processor.get_current_personality_state()
-                    current_traits = personality_state.get('personality_traits', {})
-                    
-                    full_prompt = self._build_minimal_prompt(
-                        message=message,
-                        personality_traits=current_traits,
-                        recent_history=conversation_history[-2:] if len(conversation_history) > 0 else [],
-                        response_format="Risposta diretta.", # Override format to be simple
-                        volition=volition if hasattr(self, 'soul') and self.soul else None
-                    )
-                    
-                    # HACK: Remove the forced [[TH: at the end of _build_minimal_prompt
-                    if full_prompt.strip().endswith("[[TH:"):
-                        full_prompt = full_prompt.strip()[:-5] # Remove [[TH:
-                        start_with_thought = False
-                    
-                    prompt_size = len(full_prompt)
-                    logging.info(f"  Minimal prompt size: {prompt_size} chars")
-                    
-                else:
-                    # 🧠 FULL PATH (NORMAL or COMPLEX)
-                    logging.info(f"🧠 [FULL PATH] Complexity: {complexity_level}")
-                    
-                    # Adapt System Prompt based on Complexity
-                    if complexity_level == "COMPLEX":
-                        system_prompt += "\n\n⚠️ CRITICO: QUESTA È UNA QUERY COMPLESSA. DEVI USARE IL FORMATO [[TH:...]] PER RAGIONARE PASSO DOPO PASSO PRIMA DI RISPONDERE."
-                        logging.info("  -> Enforcing strict CoT.")
-                    
-                    full_prompt = self._build_full_prompt(
-                        message=message,
-                        conversation_history_str=conversation_history_str,
-                        system_prompt=system_prompt,
-                        emotion_context=emotion_context,
-                        memory_context_str=memory_context_str,
-                        advanced_context_str=advanced_context_str,
-                        thought_context=thought_context
-                    )
-                    
-                    prompt_size = len(full_prompt)
-                    logging.info(f"  Full prompt size: {prompt_size} chars")
-                
-                # Common logging for both paths
-                logging.info(f"Prompt inviato a Hermes (Symbiotic) (len={len(full_prompt)} chars)")
-                
-                # Genera risposta con Hermes
-                # Adapter for answer streaming
-                # FIX: Inject [[TH: as first chunk logic IF we are starting with thought
-                first_symbiotic_token = False
-                in_thought_block = start_with_thought # Only true if we really started with [[TH:
-                
-                logging.info(f"DEBUG: Pre-Gen thought_process: {thought_process}")
+                logging.info(f"Generating response for: {message[:50]}... (Len: {len(full_prompt)})")
 
+                first_symbiotic_token = False
+                in_thought_block = False 
+                
                 # THERMAL & METABOLIC MONITORING START
                 start_temps = self.temperature_monitor.get_temperatures()
                 start_cpu = start_temps.get('cpu', 0)
@@ -1298,39 +1250,40 @@ Assistant: [[TH: I=Saluto|S=Accoglienza|M=Nessuna]] Ciao! È bello rivederti."""
                 if metabolic_state.is_tired:
                     current_max_tokens = 64 # Forced Brevity (Metabolic Throttling)
                     logging.info("🔋 [METABOLISM] Low Energy Mode: Throttling tokens to 64. No initiative.")
-                    # Inject tiredness into stream? No, behavioral only.
 
                 def answer_stream_adapter(token):
-                        nonlocal first_symbiotic_token, in_thought_block
-                        if stream_callback: 
-                            if not first_symbiotic_token:
-                                try:
-                                    # Start strictly with TH block ONLY if active
-                                    if start_with_thought:
-                                        stream_callback({'type': 'thought', 'content': '[[TH:'}) 
-                                    first_symbiotic_token = True
-                                except Exception as e:
-                                    logging.error(f"Stream start error: {e}")
-                            
-                            # Logic for switching stream type
-                            try:
-                                if start_with_thought:
-                                    if in_thought_block:
-                                        if "]]" in token:
-                                            # Switch to answer
-                                            in_thought_block = False
-                                            parts = token.split("]]")
-                                            if parts[0]: stream_callback({'type': 'thought', 'content': parts[0] + "]]"})
-                                            if len(parts) > 1 and parts[1]: stream_callback({'type': 'answer', 'content': parts[1]})
-                                        else:
-                                            stream_callback({'type': 'thought', 'content': token})
-                                    else:
-                                        stream_callback({'type': 'answer', 'content': token})
+                    nonlocal first_symbiotic_token, in_thought_block
+                    if stream_callback: 
+                        if not first_symbiotic_token:
+                            first_symbiotic_token = True
+                    
+                        content_to_process = token
+                        
+                        if "<think>" in content_to_process:
+                            in_thought_block = True
+                            parts = content_to_process.split("<think>")
+                            if parts[0]: stream_callback({'type': 'answer', 'content': parts[0]})
+                            if len(parts) > 1:
+                                if "</think>" in parts[1]:
+                                    in_thought_block = False
+                                    subparts = parts[1].split("</think>")
+                                    if subparts[0]: stream_callback({'type': 'thought', 'content': subparts[0]})
+                                    if len(subparts) > 1: stream_callback({'type': 'answer', 'content': subparts[1]})
                                 else:
-                                    # Direct answer stream
-                                    stream_callback({'type': 'answer', 'content': token})
-                            except Exception as e:
-                                pass
+                                    stream_callback({'type': 'thought', 'content': parts[1]})
+                            return
+
+                        if "</think>" in content_to_process:
+                            in_thought_block = False
+                            parts = content_to_process.split("</think>")
+                            if parts[0]: stream_callback({'type': 'thought', 'content': parts[0]})
+                            if len(parts) > 1: stream_callback({'type': 'answer', 'content': parts[1]})
+                            return
+
+                        if in_thought_block:
+                            stream_callback({'type': 'thought', 'content': content_to_process})
+                        else:
+                            stream_callback({'type': 'answer', 'content': content_to_process})
 
                 generated_part = self._llm.generate(
                     prompt=full_prompt,
@@ -1347,77 +1300,24 @@ Assistant: [[TH: I=Saluto|S=Accoglienza|M=Nessuna]] Ciao! È bello rivederti."""
                 # Create thermal report string
                 thermal_report = f" [🌡️CPU: {start_cpu}°C -> {end_cpu}°C ({cpu_delta:+.1f})]"
                 
-                # Inject into stream if active
+                # Inject into stream if active (as thought/info)
                 if stream_callback:
                     try:
+                        # Mandiamo come thought così finisce nella tendina e non nella chat
                         stream_callback({'type': 'thought', 'content': thermal_report})
                     except: pass
                 
+                response_text = ""
                 if generated_part and not generated_part.startswith("Error"):
-                     # --- SYMBIOTIC PARSING (Standard) ---
-                     
-                     if start_with_thought:
-                         # The prompt ended with "[[TH:", so the model output starts with "attributes...]] Answer"
-                         full_raw_output = f"[[TH:{generated_part}"
-                         
-                         # Split Thought vs Answer
-                         split_match = re.split(r'\]\]', full_raw_output, maxsplit=1)
-                         
-                         if len(split_match) > 1:
-                             thought_content = split_match[0] + "]]" 
-                             response_text = split_match[1].strip()
-                             
-                             # Clean labels
-                             response_text = re.sub(r'^(Risposta|Answer|Output|Risposta Pensieri|PENSIERO|Response)(\s*:\s*)?', '', response_text, flags=re.IGNORECASE).strip()
-
-                             if not thought_process:
-                                 thought_process = ThoughtTrace(
-                                     step="Symbiotic",
-                                     thought=thought_content,
-                                     conclusion="Generated",
-                                     confidence=1.0
-                                 )
-                             else:
-                                 thought_process.raw_thought += f"\n{thought_content}"
-                                 
-                             logging.info(f"🧠 Symbiotic Thought: {thought_content[:50]}...")
-                         else:
-                             # Fallback for malformed thought
-                             logging.warning("⚠️ Symbiotic structure malformed. Attempting recovery.")
-                             thought_content = full_raw_output + "]]" # Force close
-                             # Try to salvage answer if present after a newline
-                             if "\n" in full_raw_output:
-                                 parts = full_raw_output.split("\n", 1)
-                                 response_text = parts[1].strip() if len(parts) > 1 else ""
-                             else:
-                                 response_text = ""
-                             
-                             if not thought_process:
-                                 thought_process = ThoughtTrace(
-                                     step="Symbiotic (Recovered)",
-                                     thought=thought_content,
-                                     conclusion="Recovered",
-                                     confidence=0.5
-                                 )
-                     
-                     else:
-                         # FAST PATH: Direct Answer (No parsing needed)
-                         logging.info("⚡ Fast Path: Direct Answer Processing.")
-                         response_text = generated_part.strip()
-                         # Clean labels anyway
-                         response_text = re.sub(r'^(Risposta|Answer|Output|Risposta Pensieri|PENSIERO|Response)(\s*:\s*)?', '', response_text, flags=re.IGNORECASE).strip()
-
-                     logging.info(f"✅ Final Answer: {response_text[:50]}...")
+                    clean_text = re.sub(r'<think>.*?</think>', '', generated_part, flags=re.DOTALL).strip()
+                    clean_text = re.sub(r'<[^>]+>', '', clean_text).strip()
+                    response_text = clean_text
+                    
+                    logging.info(f"✅ Final Answer: {response_text[:50]}...")
                 else:
-                     if stream_callback:
-                         stream_callback({'type': 'answer', 'content': str(generated_part)})
-                     response_text = str(generated_part)
-
-                # Clean artifacts (Aggressive)
-                if response_text:
-                    # Remove any <...> tag (like <end_of_turn>, <eos>, etc.)
-                    response_text = re.sub(r'<[^>]+>', '', response_text)
-                    response_text = response_text.strip()
+                    if stream_callback:
+                        stream_callback({'type': 'answer', 'content': str(generated_part)})
+                    response_text = str(generated_part)
                 
                 # Gestione fallback se tutti i retry falliscono (incluso output vuoto)
                 if not response_text or not response_text.strip() or response_text.startswith("Error"):
@@ -2643,4 +2543,3 @@ Assistant: [[TH: I=Saluto|S=Accoglienza|M=Nessuna]] Ciao! È bello rivederti."""
                 self.logger.error(f"Proactive Check Failed: {e}")
             else:
                 logging.error(f"Proactive Check Failed: {e}")
-

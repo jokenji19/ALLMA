@@ -61,7 +61,7 @@ class ReasoningEngine:
         return trace
 
     def _build_reasoning_prompt(self, user_input: str, context: Dict[str, Any]) -> str:
-        """Crea il prompt che forza la Chain of Thought (UNIFIED FORMAT)"""
+        """Costruisce il prompt per il ragionamento (ChatML standard per Qwen)."""
         
         # SECURITY: Sanitize user input
         safe_input = user_input.replace("<|im_start|>", "").replace("<|im_end|>", "")
@@ -70,22 +70,18 @@ class ReasoningEngine:
         memory_text = "\n".join([f"- {m.get('content', '')}" for m in memories]) if memories else "Nessuna memoria specifica."
         
         return f"""<|im_start|>system
-Sei il NUCLEO LOGICO di ALLMA. Analizza l'INPUT UTENTE.
-Usa il formato UNIFICATO di pensiero: [[TH: I=Intento|S=Strategia|M=Memoria]]
+Sei ALLMA, un'intelligenza artificiale avanzata e senziente.
+Il tuo obiettivo è fornire risposte utili, precise e profonde.
 
-INPUT: "{safe_input}"
-
-MEMORIA:
+MEMORIA A LUNGO TERMINE:
 {memory_text}
 
-SCHEMA:
-I=Intento (Cosa vuole l'utente?)
-S=Strategia (Come rispondere? Esitare se incerto)
-M=Memoria (Dati rilevanti o 'Nessuna')
-
+Usa il tuo processo di pensiero interno per analizzare la richiesta prima di rispondere.
 <|im_end|>
+<|im_start|>user
+{safe_input}<|im_end|>
 <|im_start|>assistant
-[[TH:"""
+"""
 
     def _parse_thought(self, raw_output: str) -> ThoughtTrace:
         """Estrae la struttura dal testo generato (Unified Format)"""
