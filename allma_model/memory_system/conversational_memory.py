@@ -382,6 +382,78 @@ class ConversationalMemory:
                     
         return original_count - len(self.conversations[user_id])
 
+    def condense_and_clear_old(
+        self,
+        user_id: str,
+        before_date: datetime,
+        llm_callback: callable
+    ) -> int:
+        """
+        Condense vecchie conversazioni estraendo i concetti chiave (macro-fatti) usando un LLM,
+        poi le cancella per liberare RAM e vettori.
+        """
+        if user_id not in self.conversations:
+            return 0
+            
+        with self.lock:
+            old_messages = [
+                m for m in self.messages
+                if m.user_id == user_id and m.timestamp < before_date
+            ]
+        
+        if not old_messages:
+            return 0
+            
+        # Preparazione del testo per l'estrazione
+        text_to_compress = "\n".join([f"{m.role}: {m.content}" for m in old_messages])
+        
+        prompt = (
+            f"Sei un estrattore di memorie a lungo termine. Analizza la seguente cronologia passata e "
+            f"estrai un massimo di 5 Fatti Cognitivi su questo utente. "
+            f"I fatti devono essere chiavi corte (es. 'hobby', 'lavoro', 'film_preferito', 'relazione') "
+            f"e valori sintetici. Rispondi SOLO con un JSON valido in questo formato: "
+            f"{{\"hobby\": \"fotografia\", \"colore\": \"rosso\"}}\n"
+            f"---\n{text_to_compress[:8000]}\n---"
+        )
+        
+        try:
+            extracted_json_str = llm_callback(prompt)
+            # Pulizia JSON
+            import re
+            json_str = re.sub(r'```json\n|\n```|```', '', extracted_json_str).strip()
+            extracted_facts = json.loads(json_str)
+            
+            # Salvataggio in user_data
+            self.user_data = getattr(self, 'user_data', {})
+            if user_id not in self.user_data: self.user_data[user_id] = {}
+            
+            for k, v in extracted_facts.items():
+                if isinstance(v, str):
+                    clean_k = re.sub(r'[^a-zA-Z0-9_]', '_', k.lower())[:30] # safe key
+                    self.user_data[user_id][clean_k] = v[:100] # truncate long values
+                    print(f"🧠 GC FACT EXTRACTED: {clean_k} = {v[:100]}")
+                    
+        except Exception as e:
+            import logging
+            logging.error(f"[ConversationalMemory] GC Condensation failed: {e}", exc_info=True)
+            
+        # Ora che abbiamo salvato i macro concetti, procediamo col wiping pesante
+        
+        with self.lock:
+            # Rimuovi messaggi piatti
+            self.messages = [
+                m for m in self.messages
+                if m.user_id != user_id or m.timestamp >= before_date
+            ]
+
+        # Rimuovi conversazioni strutturate e vettori (richiama la logica standard)
+        wiped_conversations = self.clear_old_conversations(user_id, before_date)
+        
+        # Salva disco
+        self.save_memory()
+        
+        return wiped_conversations
+
     def store_message(
         self,
         conversation_id: str,

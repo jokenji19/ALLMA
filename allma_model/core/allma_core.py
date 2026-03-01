@@ -397,8 +397,48 @@ class ALLMACore:
             self.cognitive_tracker = None
         
         logging.info(f"🎯 ModuleOrchestrator initialized with {len(self.module_orchestrator.modules)} modules")
+        
+        # Avvia il Garbage Collector della Memoria (Background Thread)
+        self._memory_gc_thread = threading.Thread(target=self._start_memory_gc_thread, daemon=True)
+        self._memory_gc_thread.start()
 
+    def _start_memory_gc_thread(self):
+        """Thread in background che ottimizza la memoria ogni 24h."""
+        import time
+        from datetime import datetime, timedelta
+        
+        while True:
+            # Attendiamo che ALLMA si "calmi" e non sia in mezzo a una chat utente
+            time.sleep(3600 * 24) # Controllo ogni 24 ore
+            
+            if self._user_active.is_set(): 
+                continue # Evita di macinare RAM mentre l'utente chatta
+                
+            logging.info("🧹 [Garbage Collector] Inizio pulizia memorie obsolete...")
+            try:
+                # Cerca i messaggi più vecchi di 30 giorni
+                cutoff_date = datetime.now() - timedelta(days=30)
+                user_id = list(self.conversational_memory.conversations.keys())
+                user_id = user_id[0] if user_id else "user"
+                
+                # Callback per condensare le vecchie chat
+                def llm_extractor(prompt_text):
+                    if hasattr(self, '_llm') and self._llm:
+                        return self._llm.generate(prompt_text, max_tokens=150)
+                    else:
+                        return "{}"
 
+                deleted_count = self.conversational_memory.condense_and_clear_old(
+                    user_id=user_id,
+                    before_date=cutoff_date,
+                    llm_callback=llm_extractor
+                )
+                
+                if deleted_count > 0:
+                    logging.info(f"✨ [Garbage Collector] Completato! {deleted_count} vecchie conversazioni compattate in macro-fatti.")
+            except Exception as e:
+                logging.error(f"[Garbage Collector] Eccezione bloccante: {e}")
+                
     def update_user_identity(self, name: str, age: int):
         """Aggiorna l'identità dell'utente (nome ed età)"""
         if self.user_profile:
