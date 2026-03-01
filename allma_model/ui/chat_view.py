@@ -208,6 +208,17 @@ class ChatView(MDScreen):
                         self.bridge.execute_js(f"window.updateDiagnostics({json.dumps(diag_data)})")
                     return
 
+                if message == "__REQUEST_DREAM_HISTORY__":
+                    if self.bridge and hasattr(self.core, 'dream_manager'):
+                        try:
+                            import json
+                            history = self.core.dream_manager.dream_history
+                            safe_data = json.dumps(history)
+                            self.bridge.execute_js(f"window.restoreDreamHistory({safe_data})")
+                        except Exception as e:
+                            print(f"[ChatView] Error fetching dream history: {e}")
+                    return
+
                 if message == "__REQUEST_MEMORY_UPDATE__":
                     if self.bridge:
                         try:
