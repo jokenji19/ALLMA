@@ -566,8 +566,9 @@ class ConversationalMemory:
         try:
             vectors = self.vectorizer.fit_transform([content])
             conv.embeddings = vectors.toarray()[0]
-        except:
-            pass
+        except Exception as e:
+            import logging
+            logging.error(f"[ConversationalMemory] Error calculating embedding for insight: {e}", exc_info=True)
             
         # Aggiungi alla memoria generale (usiamo 'user' principale se disponibile, altrimenti system)
         target_uid = list(self.conversations.keys())[0] if self.conversations else "user"
@@ -665,10 +666,14 @@ class ConversationalMemory:
             print(f"💾 MEMORY SAVED (ATOMIC) to {file_path}")
         except Exception as e:
             print(f"❌ MEMORY SAVE FAILED: {e}")
+            import logging
+            logging.error(f"[ConversationalMemory] Save failed: {e}", exc_info=True)
             # Try cleanup
             if 'temp_path' in locals() and os.path.exists(temp_path):
-                try: os.remove(temp_path)
-                except: pass
+                try: 
+                    os.remove(temp_path)
+                except Exception as cleanup_err: 
+                    logging.error(f"[ConversationalMemory] Cleanup failed during save error: {cleanup_err}")
 
     def load_memory(self):
         """Carica lo stato della memoria da file JSON."""

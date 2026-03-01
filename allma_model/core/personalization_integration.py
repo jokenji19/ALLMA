@@ -589,19 +589,6 @@ class PersonalizationIntegration:
         return style_adaptations.get(relationship_level, style_adaptations['initial'])
 
     def _cleanup_memory(self):
-        """Ottimizza lo spazio nella memoria spostando i nodi vecchi ma SENZA mai cancellarli"""
-        try:
-            stats = self.memory_system.get_memory_stats()
-            # If we have many nodes, just trigger a lifecycle sweep to move them to cold storage (long_term)
-            if stats.get('total_nodes', 0) > 1000:
-                logging.info(f"💾 Ottimizzazione Memoria Avviata (Nodi: {stats.get('total_nodes')}) - Nessun dato verrà cancellato.")
-                
-                # Invece di consolidare/cancellare, forziamo il lifecycle
-                # che sposta i nodi vecchi nel layer 'long_term'
-                if hasattr(self.memory_system, '_manage_memory_lifecycle'):
-                    self.memory_system._manage_memory_lifecycle()
-                
-                new_stats = self.memory_system.get_memory_stats()
-                logging.info(f"💾 Ottimizzazione Completata. Nodi spostati in Deep Storage. (Totale nodi intatto: {new_stats.get('total_nodes')})")
-        except Exception as e:
-            logging.error(f"Errore durante l'ottimizzazione memoria: {e}")
+        """Libera spazio nella memoria eliminando i nodi meno importanti"""
+        # TODO: Implementare la pulizia della memoria
+        pass

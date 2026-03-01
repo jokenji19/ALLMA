@@ -1453,8 +1453,8 @@ class ALLMACore:
                     # Registra successo per accumulo confidenza verso HIGH (fast-path futuro)
                     try:
                         self.incremental_learner.record_success(topic.lower() if topic else 'general')
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.error(f"[ALLMACore] Error recording success in incremental learner (topic={topic}): {e}", exc_info=True)
             else:
                 # Fallback se il modello non c'è
                 response = self.response_generator.generate_response(message, response_context)
@@ -2375,15 +2375,20 @@ class ALLMACore:
         # Recupera i pattern temporali dalle interazioni
         temporal_patterns = self.memory_system.get_temporal_patterns(user_id)
         
-        # Recupera il conteggio delle interazioni
-        interaction_count = 0  # TODO: Implementare get_user_interactions
+        # Recupera il conteggio delle interazioni e la history iterando i messaggi
+        user_msgs = [m for m in self.conversational_memory.messages if getattr(m, 'user_id', None) == user_id]
+        if not user_msgs and self.conversational_memory.messages:
+            user_msgs = self.conversational_memory.messages  # mobile fallback
+            
+        interaction_count = len(user_msgs)
+        interactions = self.conversational_memory.get_recent_history(limit=50, user_id=user_id)
         
         return {
             "preferences": preferences,
             "learning_style": learning_style,
             "emotional_state": emotional_state,
             "temporal_patterns": temporal_patterns,
-            "interactions": [],  # TODO: Implement interaction history
+            "interactions": interactions,
             "interaction_count": interaction_count
         }
 
