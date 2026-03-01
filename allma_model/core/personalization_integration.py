@@ -590,5 +590,17 @@ class PersonalizationIntegration:
 
     def _cleanup_memory(self):
         """Libera spazio nella memoria eliminando i nodi meno importanti"""
-        # TODO: Implementare la pulizia della memoria
-        pass
+        try:
+            stats = self.memory_system.get_memory_stats()
+            # If memory is getting full or we have many nodes
+            if stats.get('memory_usage', 0) > 0.8 or stats.get('total_nodes', 0) > 1000:
+                logging.info(f"🧹 Pulizia Memoria Avviata (Nodi: {stats.get('total_nodes')}, Uso: {stats.get('memory_usage'):.2f})")
+                
+                # Consolida memorie a lungo termine sotto soglia di conservazione 0.7 (più aggressivo)
+                if hasattr(self.memory_system, 'consolidate_long_term_memories'):
+                    self.memory_system.consolidate_long_term_memories(retention_threshold=0.7)
+                
+                new_stats = self.memory_system.get_memory_stats()
+                logging.info(f"🧹 Pulizia Completata (Nodi rimanenti: {new_stats.get('total_nodes')})")
+        except Exception as e:
+            logging.error(f"Errore durante il _cleanup_memory: {e}")

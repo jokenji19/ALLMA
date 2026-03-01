@@ -78,8 +78,16 @@ class InformationExtractor:
         
     def extract_from_document(self, document_path: str) -> Dict[str, Any]:
         """Estrae informazioni da un documento"""
-        # TODO: Implementare l'estrazione da documenti
-        raise NotImplementedError("L'estrazione da documenti non è ancora implementata")
+        # TODO: Implementare l'estrazione completa da documenti
+        import logging
+        logging.warning(f"L'estrazione da documenti ({document_path}) non è ancora pienamente implementata. Fallback vuoto usato.")
+        return {
+            'document_path': document_path,
+            'extracted_text': '',
+            'patterns': {},
+            'entities': {},
+            'timestamp': datetime.now()
+        }
         
     def _extract_patterns(self, text: str) -> Dict[str, List[str]]:
         """Estrae pattern comuni dal testo usando regex"""
