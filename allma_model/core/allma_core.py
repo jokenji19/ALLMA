@@ -2252,49 +2252,57 @@ class ALLMACore:
         
     def _make_response_visual(self, response: str) -> str:
         """
-        Rende la risposta più visuale, aggiungendo riferimenti a diagrammi e immagini.
-        
-        Args:
-            response: Risposta da rendere visuale
-            
-        Returns:
-            Risposta con elementi visuali
+        Rende la risposta più visuale, chiedendo al LLM un diagramma in ASCII art.
         """
-        # Se la risposta parla di codice o design pattern, aggiungi un esempio di codice
-        if "codice" in response.lower() or "pattern" in response.lower():
-            response += "\n```python\n# Esempio di implementazione\nclass ExamplePattern:\n    def __init__(self):\n        pass\n\n    def apply(self):\n        pass\n```"
-        else:
-            response += "\n[Qui verrebbe inserito un diagramma esplicativo]"
-            
+        if getattr(self, '_llm', None):
+            prompt = (
+                f"<|im_start|>system\nSei un assistente visivo. Crea uno schema o diagramma ASCII art per la seguente risposta. Rispondi SOLO con il blocco codice ASCII.<|im_end|>\n"
+                f"<|im_start|>user\n{response[:500]}<|im_end|>\n"
+                f"<|im_start|>assistant\n```text\n"
+            )
+            try:
+                diagram = self._llm.generate(prompt, max_tokens=256, stop=["```", "<|im_end|>"]).strip()
+                if diagram and len(diagram) > 10:
+                    return f"{response}\n\n**Schema Concettuale:**\n```text\n{diagram}\n```"
+            except Exception as e:
+                logging.error(f"Visual gen error: {e}")
         return response
 
     def _make_response_kinesthetic(self, response: str) -> str:
         """
-        Rende la risposta più pratica e orientata all'azione.
-        
-        Args:
-            response: Risposta da rendere pratica
-            
-        Returns:
-            Risposta con elementi pratici
+        Rende la risposta più pratica chiedendo al LLM uno step-by-step o un esercizio di codice.
         """
-        # TODO: Implementare la logica per rendere la risposta più pratica
-        # Per ora ritorna la risposta originale con un placeholder
-        return f"{response}\n[Qui verrebbero inseriti esercizi pratici e istruzioni step-by-step]"
+        if getattr(self, '_llm', None):
+            prompt = (
+                f"<|im_start|>system\nSei un assistente pratico. Trasforma il concetto seguente in una breve guida step-by-step o un frammento di codice eseguibile. Sii conciso.<|im_end|>\n"
+                f"<|im_start|>user\n{response[:500]}<|im_end|>\n"
+                f"<|im_start|>assistant\n**Applicazione Pratica:**\n"
+            )
+            try:
+                practical = self._llm.generate(prompt, max_tokens=256, stop=["<|im_end|>"]).strip()
+                if practical and len(practical) > 10:
+                    return f"{response}\n\n**Applicazione Pratica:**\n{practical}"
+            except Exception as e:
+                logging.error(f"Kinesthetic gen error: {e}")
+        return response
 
     def _make_response_theoretical(self, response: str) -> str:
         """
-        Rende la risposta più teorica e concettuale.
-        
-        Args:
-            response: Risposta da rendere teorica
-            
-        Returns:
-            Risposta con elementi teorici
+        Rende la risposta più teorica chiedendo al LLM un inquadramento accademico.
         """
-        # TODO: Implementare la logica per rendere la risposta più teorica
-        # Per ora ritorna la risposta originale con un placeholder
-        return f"{response}\n[Qui verrebbero inseriti concetti teorici e riferimenti accademici]"
+        if getattr(self, '_llm', None):
+            prompt = (
+                f"<|im_start|>system\nSei un professore universitario. Aggiungi 2-3 frasi di profondo inquadramento teorico, filosofico o accademico a questa idea.<|im_end|>\n"
+                f"<|im_start|>user\n{response[:500]}<|im_end|>\n"
+                f"<|im_start|>assistant\n**Inquadramento Teorico:**\n"
+            )
+            try:
+                theory = self._llm.generate(prompt, max_tokens=256, stop=["<|im_end|>"]).strip()
+                if theory and len(theory) > 10:
+                    return f"{response}\n\n**Inquadramento Teorico:**\n{theory}"
+            except Exception as e:
+                logging.error(f"Theoretical gen error: {e}")
+        return response
 
     def _make_response_technical(self, response: str) -> str:
         """Rende la risposta più tecnica."""

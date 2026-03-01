@@ -1,9 +1,15 @@
 import threading
 import time
 import logging
+import uuid
+import json
+import os
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+
+DREAM_JOURNAL_PATH = "data/dream_journal.json"
+MAX_DREAM_ENTRIES = 50
 
 @dataclass
 class ThoughtTrace:
@@ -37,7 +43,33 @@ class DreamManager:
         # Callback per streamare il diario al frontend
         self.output_callback = None
         self._user_active_event = None
+        
+        # Inizializza il diario dei sogni persistente
+        self.dream_history = []
+        self._load_dream_journal()
 
+    def _load_dream_journal(self):
+        """Carica lo storico dei sogni dal file JSON."""
+        if os.path.exists(DREAM_JOURNAL_PATH):
+            try:
+                with open(DREAM_JOURNAL_PATH, 'r', encoding='utf-8') as f:
+                    self.dream_history = json.load(f)
+            except Exception as e:
+                self.logger.error(f"Errore nel caricamento del diario dei sogni: {e}")
+                self.dream_history = []
+
+    def _save_dream_journal(self):
+        """Salva lo storico dei sogni su file (mantenendo solo gli ultimi N)."""
+        try:
+            os.makedirs(os.path.dirname(DREAM_JOURNAL_PATH), exist_ok=True)
+            # Mantieni solo gli ultimi MAX_DREAM_ENTRIES
+            if len(self.dream_history) > MAX_DREAM_ENTRIES:
+                self.dream_history = self.dream_history[-MAX_DREAM_ENTRIES:]
+                
+            with open(DREAM_JOURNAL_PATH, 'w', encoding='utf-8') as f:
+                json.dump(self.dream_history, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.logger.error(f"Errore nel salvataggio del diario dei sogni: {e}")
     @property
     def user_active_event(self):
         return self._user_active_event
@@ -51,7 +83,18 @@ class DreamManager:
 
 
     def _log_dream(self, text: str, phase: str = 'default'):
-        """Invia un evento dream_log alla UI per il Diario dei Sogni."""
+        """Invia un evento dream_log alla UI e lo salva nel diario persistente."""
+        
+        # 1. Salva nell'history persistente
+        entry = {
+            'timestamp': datetime.now().isoformat(),
+            'text': text,
+            'phase': phase
+        }
+        self.dream_history.append(entry)
+        self._save_dream_journal()
+        
+        # 2. Invia alla UI in tempo reale
         if self.output_callback:
             try:
                 self.output_callback({'type': 'dream_log', 'content': {'text': text, 'phase': phase}})

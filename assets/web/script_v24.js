@@ -255,7 +255,13 @@ window.openPanel = function (panelName) {
         const panel = document.getElementById('panel-dream');
         if (panel) {
             panel.classList.remove('hidden');
+            if (window.pyBridge) {
+                window.pyBridge.postMessage("__REQUEST_DREAM_HISTORY__");
+            } else if (window.msgQueue) {
+                window.msgQueue.push("__REQUEST_DREAM_HISTORY__");
+            }
         }
+
     } else {
         // Fallback generico per pannelli futuri
         const panel = document.getElementById(`panel-${panelName}`);
@@ -874,7 +880,26 @@ const DREAM_PHASE_ICONS = {
     'default': '🔮',
 };
 
-function appendDreamEntry(text, phase) {
+window.restoreDreamHistory = function (history) {
+    const container = document.getElementById('dream-journal-entries');
+    if (!container) return;
+
+    // Rimuovi tutte le entry attuali (tranne empty state se serve)
+    container.innerHTML = '';
+
+    if (!history || history.length === 0) {
+        container.innerHTML = '<div class="dream-empty-state">Nessun sogno recente.<br>ALLMA svelerà i suoi pensieri qui.</div>';
+        return;
+    }
+
+    // Aggiungi le entry storiche
+    history.forEach(entry => {
+        appendDreamEntry(entry.text, entry.phase, entry.timestamp);
+    });
+};
+
+function appendDreamEntry(text, phase, timestampOverride = null) {
+
     const container = document.getElementById('dream-journal-entries');
     if (!container) return;
 
@@ -883,7 +908,11 @@ function appendDreamEntry(text, phase) {
     if (empty) empty.remove();
 
     const icon = DREAM_PHASE_ICONS[phase] || DREAM_PHASE_ICONS['default'];
-    const time = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    let timeObj = new Date();
+    if (timestampOverride) {
+        timeObj = new Date(timestampOverride);
+    }
+    const time = timeObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const entry = document.createElement('div');
     entry.className = `dream-entry dream-entry--${phase || 'default'}`;
