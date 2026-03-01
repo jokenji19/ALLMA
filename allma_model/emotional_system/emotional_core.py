@@ -193,40 +193,19 @@ class EmotionalCore:
         if context is None: context = {}
         
         try:
-            prompt_chatml = f"""<|im_start|>system
-Sei un analista emotivo esperto. Il tuo compito è analizzare il testo dell'utente e identificare lo stato emotivo.
-Devi rispondere ESCLUSIVAMENTE con un oggetto JSON valido. Niente altro testo.
-
-Schema JSON richiesto:
-{{
-    "primary_emotion": "uno tra [joy, sadness, anger, fear, surprise, neutral]",
-    "confidence": 0.0-1.0,
-    "intensity": 0.0-1.0,
-    "secondary_emotions": {{ "emozione": valore }}
-}}
-<|im_end|>
-<|im_start|>user
-Analizza il seguente testo: "{text}"<|im_end|>
-<|im_start|>assistant
-"""
-            prompt_plain = (
-                "Sei un analista emotivo esperto. Rispondi SOLO con JSON valido.\n"
-                "Schema JSON richiesto:\n"
-                "{"
-                "\"primary_emotion\":\"uno tra [joy, sadness, anger, fear, surprise, neutral]\","
-                "\"confidence\":0.0-1.0,"
-                "\"intensity\":0.0-1.0,"
-                "\"secondary_emotions\":{}}"
-                "\n"
-                f"Testo: {text}\n"
-                "JSON:"
+            # Prompt ultra-compatto: save ~85 token vs versione precedente
+            compact_prompt = (
+                f'<|im_start|>system\nRispondi SOLO con JSON valido. '
+                f'Formato esatto: {{"e":"emotion","c":0.9,"i":0.5}} '
+                f'dove e=joy|sadness|anger|fear|surprise|neutral, c=confidence 0-1, i=intensity 0-1.\n<|im_end|>\n'
+                f'<|im_start|>user\n"{text}"\n<|im_end|>\n<|im_start|>assistant\n'
             )
 
             def call_llm(prompt_value: str) -> str:
                 try:
                     output = llm_generate_function(
                         prompt_value,
-                        max_tokens=128,
+                        max_tokens=64,
                         stop=["<|im_end|>"],
                         temperature=0.1,
                         echo=False
@@ -234,7 +213,7 @@ Analizza il seguente testo: "{text}"<|im_end|>
                 except TypeError:
                     output = llm_generate_function(
                         prompt_value,
-                        max_tokens=128,
+                        max_tokens=64,
                         stop=["<|im_end|>"],
                         temperature=0.1
                     )
@@ -266,20 +245,23 @@ Analizza il seguente testo: "{text}"<|im_end|>
                 return json.loads(clean_json)
 
             last_error = None
-            for prompt_value in (prompt_chatml, prompt_plain):
-                try:
-                    json_str = call_llm(prompt_value)
-                    data = parse_json(json_str)
-                    print(f"✅ Emotion LLM OK: {data.get('primary_emotion', 'neutral')} conf={data.get('confidence', 0.5)}", flush=True)
-                    return EmotionalState(
-                        primary_emotion=data.get("primary_emotion", "neutral").lower(),
-                        confidence=float(data.get("confidence", 0.5)),
-                        secondary_emotions=data.get("secondary_emotions", {}),
-                        intensity=float(data.get("intensity", 0.1)),
-                        context=context
-                    )
-                except Exception as e:
-                    last_error = e
+            try:
+                json_str = call_llm(compact_prompt)
+                data = parse_json(json_str)
+                # Supporta sia chiavi compatte (e/c/i) che chiavi estese
+                emotion = data.get("e") or data.get("primary_emotion", "neutral")
+                confidence = float(data.get("c") or data.get("confidence", 0.5))
+                intensity = float(data.get("i") or data.get("intensity", 0.5))
+                print(f"✅ Emotion LLM OK: {emotion} conf={confidence}", flush=True)
+                return EmotionalState(
+                    primary_emotion=emotion.lower(),
+                    confidence=confidence,
+                    secondary_emotions=data.get("secondary_emotions", {}),
+                    intensity=intensity,
+                    context=context
+                )
+            except Exception as e:
+                last_error = e
 
             print(f"Errore detect_emotion_via_llm: {last_error} - Input era: {text}")
             return EmotionalState(

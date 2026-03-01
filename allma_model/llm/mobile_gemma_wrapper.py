@@ -234,6 +234,53 @@ class MobileGemmaWrapper:
             if lib_path:
                 print(f"[MobileGemma] Resolved libllama.so at {lib_path}, setting env...", flush=True)
                 os.environ["LLAMA_CPP_LIB"] = lib_path
+                
+                # --- OPENCL DIAGNOSTIC LOAD (Build 164-v2) ---
+                try:
+                    # 0. SEARCH FOR SYSTEM OPENCL
+                    system_opencl_paths = [
+                        "/vendor/lib64/libOpenCL.so",
+                        "/system/vendor/lib64/libOpenCL.so",
+                        "/system/lib64/libOpenCL.so",
+                        "/vendor/lib64/libOpenCL-pixel.so", # Pixel devices
+                        "/data/local/tmp/libOpenCL.so"      # Debug fallback
+                    ]
+                    
+                    loaded_opencl = False
+                    for ocl_path in system_opencl_paths:
+                        if os.path.exists(ocl_path):
+                            print(f"[MobileGemma] Found system OpenCL at {ocl_path}", flush=True)
+                            try:
+                                ctypes.CDLL(ocl_path)
+                                print(f"[MobileGemma] SUCCESS: Pre-loaded system {ocl_path}", flush=True)
+                                loaded_opencl = True
+                                break
+                            except Exception as e_ocl:
+                                print(f"[MobileGemma] Failed to load system {ocl_path}: {e_ocl}", flush=True)
+                    
+                    if not loaded_opencl:
+                         print(f"[MobileGemma] WARNING: System libOpenCL.so NOT FOUND or BLOCKED by Namespace.", flush=True)
+                         print(f"[MobileGemma] Using internal statically-linked OpenCL proxy...", flush=True)
+
+                    # 1. Try to load libggml-opencl.so from the same directory
+                    lib_dir = os.path.dirname(lib_path)
+                    opencl_lib = os.path.join(lib_dir, "libggml-opencl.so")
+                    
+                    if os.path.exists(opencl_lib):
+                        print(f"[MobileGemma] Found libggml-opencl.so at {opencl_lib}", flush=True)
+                        # We use RTLD_GLOBAL just in case libllama requires symbols from it
+                        ctypes.CDLL(opencl_lib, mode=ctypes.RTLD_GLOBAL)
+                        print(f"[MobileGemma] SUCCESS: Pre-loaded libggml-opencl.so via ctypes!", flush=True)
+                        logging.info("[MobileGemma] GPU Backend Loaded: OpenCL")
+                    else:
+                        print(f"[MobileGemma] WARNING: libggml-opencl.so NOT FOUND in {lib_dir}", flush=True)
+                        logging.warning("[MobileGemma] GPU Backend Missing: libggml-opencl.so")
+
+                except Exception as e:
+                    print(f"[MobileGemma] CRITICAL ERROR loading libggml-opencl.so: {e}", flush=True)
+                    logging.error(f"[MobileGemma] GPU Init Failed: {e}")
+                # ---------------------------------------------
+
                 try:
                     ctypes.CDLL(lib_path)
                     print(f"[MobileGemma] Pre-loaded {lib_path} successfully!", flush=True)
@@ -317,14 +364,14 @@ class MobileGemmaWrapper:
                 n_ctx=2048,
                 n_threads=8,        # Performance: 8 threads for Snapdragon 8 Elite CPU
                 n_batch=512,        # Performance: High batch for CPU
-                n_gpu_layers=0,     # CPU ONLY: Set to 99 to re-enable GPU
+                n_gpu_layers=0,     # CPU FALLBACK: Disabled GPU to eliminate OpenCL dispatch latency
                 flash_attn=False,
                 use_mmap=True,
                 use_mlock=False,
                 verbose=True
             )
             
-            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success! (Build 163-v23 - LINKED CPU)", flush=True)
+            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success! (CPU-ONLY MODE)", flush=True)
             logging.info("[MobileGemma] Model loaded successfully.")
         except Exception as e:
             logging.error(f"[MobileGemma] Error loading model: {e}")
@@ -333,7 +380,7 @@ class MobileGemmaWrapper:
     def generate(
         self,
         prompt: str,
-        max_tokens: int = 256,
+        max_tokens: int = -1,
         temperature: float = 0.7,
         top_p: float = 0.9,
         stop: Optional[List[str]] = None,
@@ -361,6 +408,17 @@ class MobileGemmaWrapper:
                 import random
                 random_seed = random.randint(0, 2**31 - 1)
                 stream_mode = callback is not None
+
+                # Calcola dinamicamente i token liberi nel contesto
+                if max_tokens == -1:
+                    try:
+                        prompt_token_count = len(self.llm.tokenize(prompt.encode("utf-8")))
+                    except Exception:
+                        prompt_token_count = len(prompt) // 4  # stima approssimativa
+                    # Riserva 64 token di margine di sicurezza
+                    max_tokens = max(64, self.n_ctx - prompt_token_count - 64)
+                    logging.info(f"[MobileGemma] Dynamic max_tokens={max_tokens} (ctx={self.n_ctx}, prompt={prompt_token_count} tokens)")
+
                 logging.info(f"[MobileGemma] Generating response (Stream={stream_mode}, Seed={random_seed})")
 
                 output = self.llm(

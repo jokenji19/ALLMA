@@ -90,14 +90,11 @@ class TreeOfThoughts:
         return [best_leaf.content]
 
     def _generate_thoughts(self, node: ThoughtNode, context: List[Dict]) -> List[ThoughtNode]:
-        """Generates possible next steps/insights from a node using REAL LLM."""
+        """Genera possibili insight usando il LLM (MobileGemmaWrapper)."""
         
         if not self.llm:
             return []
             
-        # Extract topics from node content or use randomly if root
-        # Simplified for "Connection Finding" Dream
-        
         system_prompt = (
             "Sei il subconscio di un'IA. Stai sognando. "
             "Il tuo compito è trovare connessioni profonde e metaforiche tra concetti apparentemente distanti. "
@@ -120,18 +117,26 @@ class TreeOfThoughts:
         
         generated_nodes = []
         try:
-            # Call Real LLM
-            response = self.llm.generate(
+            # 🔴 Controlla se l'utente sta chattando → cedi il LLM
+            if getattr(self, 'user_active_event', None) and self.user_active_event.is_set():
+                self.logger.info("🌙 Dream in pausa: utente attivo, cedo il LLM.")
+                return []
+
+            # MobileGemmaWrapper.generate() restituisce una stringa diretta
+            raw = self.llm.generate(
                 full_prompt,
                 max_tokens=64,
                 stop=["<|im_end|>", "\n"],
-                echo=False,
-                temperature=0.9 # High creativity for dreams
+                temperature=0.9
             )
             
-            insight_text = response['choices'][0]['text'].strip()
+            # Supporto doppio: stringa (MobileGemmaWrapper) o dict (llama.cpp raw)
+            if isinstance(raw, dict):
+                insight_text = raw.get('choices', [{}])[0].get('text', '').strip()
+            else:
+                insight_text = str(raw).strip()
             
-            if insight_text:
+            if insight_text and len(insight_text) > 5:
                 new_node = ThoughtNode(
                     id=str(uuid.uuid4()),
                     content=insight_text,
@@ -148,6 +153,7 @@ class TreeOfThoughts:
             self.logger.error(f"Dream generation failed: {e}")
             
         return generated_nodes
+
 
     def _evaluate_thoughts(self, nodes: List[ThoughtNode], problem: str) -> List[ThoughtNode]:
         """Simple evaluation: Keep all generated dreams for now."""

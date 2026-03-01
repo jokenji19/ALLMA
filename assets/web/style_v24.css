@@ -1312,17 +1312,45 @@ body.dark-mode .thought-chip {
     }
 }
 
-/* --- MEMORY PANEL (v0.60 Cognitive) --- */
+/* --- MEMORY PANEL (v0.80 Cognitive) --- */
 
-.memory-section {
-    margin-bottom: 24px;
+.memory-layout {
+    padding: 0;
+    /* Remove default padding to use full width */
+    height: calc(100% - 70px);
+    /* Subtract header height */
+    display: flex;
+    flex-direction: column;
 }
 
-.section-title {
-    font-size: 13px;
-    font-weight: 700;
+.memory-flex-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.memory-section {
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+body.dark-mode .memory-section {
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.memory-section.logs-section {
+    flex: 1;
+    /* Takes remaining space */
+    border-bottom: none;
+    padding-bottom: 30px;
+}
+
+.memory-section h4 {
+    font-size: 14px;
+    font-weight: 800;
     color: var(--primary-color);
-    margin-bottom: 12px;
+    margin: 0 0 6px 0;
     text-transform: uppercase;
     letter-spacing: 1px;
     display: flex;
@@ -1330,38 +1358,169 @@ body.dark-mode .thought-chip {
     gap: 8px;
 }
 
-.memory-card {
-    background: rgba(255, 255, 255, 0.5);
-    border-radius: 12px;
-    padding: 12px;
-    margin-bottom: 8px;
-    border: 1px solid rgba(0, 0, 0, 0.05);
+.memory-section .section-desc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin: 0 0 16px 0;
+    opacity: 0.8;
+}
+
+/* User Facts Grid */
+.memory-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.memory-fact-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.4) 100%);
+    border-radius: 14px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.8);
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    transition: transform 0.2s;
+    gap: 6px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+    backdrop-filter: blur(10px);
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
-body.dark-mode .memory-card {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.1);
+body.dark-mode .memory-fact-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.4) 100%);
+    border-color: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
-.memory-card:active {
-    transform: scale(0.98);
+.memory-fact-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
 }
 
 .mem-key {
-    font-size: 11px;
+    font-size: 10px;
     color: var(--text-secondary);
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .mem-val {
     font-size: 14px;
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+/* Conversation Flow / Logs */
+.log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: relative;
+    padding-left: 14px;
+    /* Space for timeline line */
+}
+
+/* Timeline Line */
+.log-list::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 6px;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--primary-color), rgba(59, 130, 246, 0.1));
+    border-radius: 2px;
+}
+
+.memory-log-item {
+    position: relative;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+/* Timeline Dot */
+.memory-log-item::before {
+    content: '';
+    position: absolute;
+    left: -14px;
+    /* Align with line */
+    top: 20px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    border: 3px solid var(--modal-bg);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05);
+    z-index: 2;
+}
+
+body.dark-mode .memory-log-item {
+    background: rgba(30, 41, 59, 0.4);
+    border-color: rgba(255, 255, 255, 0.03);
+}
+
+body.dark-mode .memory-log-item::before {
+    border-color: var(--modal-bg);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.memory-log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.mem-role {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mem-role.user {
+    color: #3B82F6;
+}
+
+.mem-role.bot {
+    color: #8B5CF6;
+}
+
+.mem-timestamp {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: 'Roboto Mono', monospace;
+}
+
+.mem-content {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    word-wrap: break-word;
+}
+
+/* Special styling for Thought blocks in Memory */
+.mem-content.is-thought {
+    color: var(--text-secondary);
+    font-style: italic;
+    font-size: 12px;
+    background: rgba(139, 92, 246, 0.05);
+    padding: 8px 12px;
+    border-radius: 8px;
+    border-left: 2px solid #8B5CF6;
+}
+
+.memory-empty-state {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+    width: 100%;
 }
 
 /* --- OVERLAY PANELS (Memory, Settings) --- */
@@ -1755,3 +1914,210 @@ body.dark-mode .temp-status {
         filter: drop-shadow(0 0 5px rgba(100, 100, 255, 0.5));
     }
 }
+/* ============================================
+   TYPING INDICATOR - ChatGPT style
+   ============================================ */
+.typing-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 0;
+    height: 1.2em;
+}
+
+.typing-dots span {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: currentColor;
+    opacity: 0.4;
+    animation: typingBounce 1.2s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(1) { animation-delay: 0s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+    0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.4;
+    }
+    30% {
+        transform: translateY(-6px);
+        opacity: 1;
+    }
+}
+
+/* ============================================
+   DREAM TOAST NOTIFICATION
+   ============================================ */
+#dream-toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: linear-gradient(135deg, rgba(30,20,60,0.97), rgba(60,40,100,0.97));
+    color: #d4b8ff;
+    border: 1px solid rgba(160,100,255,0.4);
+    border-radius: 24px;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    z-index: 9999;
+    box-shadow: 0 4px 24px rgba(100,60,200,0.35);
+    backdrop-filter: blur(10px);
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+#dream-toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.dream-toast-emoji {
+    font-size: 18px;
+    animation: dreamFloat 2s ease-in-out infinite;
+}
+
+@keyframes dreamFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+
+/* 🌙 icon pulsing quando sogna */
+#dream-indicator.pulsing {
+    animation: dreamPulse 2s ease-in-out infinite;
+}
+
+/* ============================================
+   DREAM JOURNAL PANEL
+   ============================================ */
+.dream-journal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    height: 100%;
+}
+
+.dream-journal-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(160,100,255,0.15);
+    background: rgba(30,15,60,0.6);
+}
+
+.dream-badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    letter-spacing: 0.4px;
+}
+.dream-badge--idle {
+    background: rgba(80,80,100,0.25);
+    color: #8888aa;
+}
+.dream-badge--active {
+    background: rgba(120,60,220,0.3);
+    color: #c0a0ff;
+    animation: dreamPulse 2s ease-in-out infinite;
+}
+
+@keyframes dreamPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.dream-clear-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #8888aa;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.dream-clear-btn:hover {
+    background: rgba(255,255,255,0.05);
+    color: #bbbbcc;
+}
+
+.dream-journal-entries {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dream-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    height: 100%;
+    min-height: 180px;
+    color: #555577;
+    font-size: 13px;
+    text-align: center;
+}
+.dream-empty-state span { font-size: 32px; opacity: 0.4; }
+
+.dream-entry {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(40,20,80,0.5);
+    border-left: 3px solid rgba(120,60,220,0.4);
+    animation: dreamEntryIn 0.3s ease-out;
+}
+
+@keyframes dreamEntryIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.dream-entry--done   { border-left-color: rgba(80,200,120,0.6); background: rgba(30,60,30,0.4); }
+.dream-entry--error  { border-left-color: rgba(220,60,60,0.6);  background: rgba(60,20,20,0.4); }
+.dream-entry--paused { border-left-color: rgba(150,150,80,0.5); background: rgba(50,50,20,0.3); }
+.dream-entry--curiosity { border-left-color: rgba(60,180,220,0.5); }
+.dream-entry--refine { border-left-color: rgba(200,160,60,0.5); }
+
+.dream-entry-icon { font-size: 16px; margin-top: 1px; flex-shrink: 0; }
+
+.dream-entry-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+.dream-entry-text {
+    font-size: 13px;
+    color: #c8c0e0;
+    line-height: 1.4;
+}
+
+.dream-entry-time {
+    font-size: 10px;
+    color: #6655aa;
+    font-family: monospace;
+}
+
+.icon-indigo { filter: hue-rotate(20deg); }

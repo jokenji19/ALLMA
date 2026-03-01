@@ -19,20 +19,45 @@ class DreamManager:
     Funziona in background per non rallentare l'interazione utente.
     """
     
-    def __init__(self, memory_system, incremental_learner, reasoning_engine=None, coalescence_processor=None, system_monitor=None):
+    def __init__(self, memory_system, incremental_learner, reasoning_engine=None, coalescence_processor=None, system_monitor=None, llm_wrapper=None):
         self.memory_system = memory_system
         self.incremental_learner = incremental_learner
         self.reasoning_engine = reasoning_engine
         self.coalescence_processor = coalescence_processor
-        self.system_monitor = system_monitor # BRAIN V2
+        self.system_monitor = system_monitor
+        self.llm_wrapper = llm_wrapper
         self.logger = logging.getLogger(__name__)
         self.is_dreaming = False
         self.last_dream_timestamp = datetime.now()
-        self.pending_verification = [] # Insights needing user validation ("Curiosity")
+        self.pending_verification = []
         
-        # Initialize Tree of Thoughts
+        # TreeOfThoughts riceve il wrapper LLM direttamente (non il ReasoningEngine)
         from .tree_of_thoughts import TreeOfThoughts
-        self.tot = TreeOfThoughts(llm_engine=reasoning_engine)
+        self.tot = TreeOfThoughts(llm_engine=llm_wrapper)  # <-- llm_wrapper, non reasoning_engine
+        # Callback per streamare il diario al frontend
+        self.output_callback = None
+        self._user_active_event = None
+
+    @property
+    def user_active_event(self):
+        return self._user_active_event
+
+    @user_active_event.setter
+    def user_active_event(self, event):
+        self._user_active_event = event
+        # Propaga al TreeOfThoughts così può cedere il LLM all'utente
+        if self.tot:
+            self.tot.user_active_event = event
+
+
+    def _log_dream(self, text: str, phase: str = 'default'):
+        """Invia un evento dream_log alla UI per il Diario dei Sogni."""
+        if self.output_callback:
+            try:
+                self.output_callback({'type': 'dream_log', 'content': {'text': text, 'phase': phase}})
+            except Exception:
+                pass
+        self.logger.info(f"[Dream/{phase}] {text}")
 
     def check_and_start_dream(self, user_id=None):
         """
@@ -64,51 +89,47 @@ class DreamManager:
              is_charging = self.system_monitor.get_metabolic_state().is_charging
         
         mode = "REM (Active/Deep)" if is_charging else "NREM (Passive/Light)"
-        self.logger.info(f"🌙 Inizio Fase Onirica (Dream Cycle). Mode: {mode}")
+        self._log_dream(f"Ciclo onirico avviato — Modalità: {mode}", 'start')
         
         try:
-            # 1. Recupero Memorie Recenti (Diurno)
-            # Simula il consolidamento ippocampale
+            # 1. Recupero Memorie Recenti
+            self._log_dream("Recupero memorie delle ultime 24 ore...", 'memory')
             recent_memories = self._fetch_unconsolidated_memories()
             
-            # --- PASSIVE MODE (Always Check) ---
-            # Even in passive mode we could do light housekeeping, but for now we skip ToT
             if not is_charging:
-                self.logger.info("🌙 Passive Sleep (Not Charging): Skipping Deep Analysis to save energy.")
-                # Future: Add light consolidation here (e.g. database vacuum, index reorg)
+                self._log_dream("Non in carica — Sonno leggero (NREM). Nessuna elaborazione profonda.", 'paused')
                 return
 
-            # --- DEEP REM MODE (Charging Only) ---
-            # CRITICAL: Acquire WakeLock to keep CPU running if screen turns off
-            # This ensures "Tree of Thoughts" completes even in Doze mode.
             if self.system_monitor:
                 self.system_monitor.acquire_wake_lock("ALLMA:Dream:REM")
 
             try:
-                # --- CURIOSITY ENGINE ---
                 if not recent_memories:
-                    self.logger.info("🌙 Nessuna memoria recente. Attivazione Motore di Curiosità...")
+                    self._log_dream("Nessuna memoria recente — Attivazione Motore di Curiosità...", 'curiosity')
                     recent_memories = self._generate_curiosity_seeds()
 
                 if not recent_memories:
-                    self.logger.info("🌙 Mente vuota. Sonno profondo senza sogni.")
+                    self._log_dream("Mente vuota. Sonno profondo senza sogni.", 'paused')
                     return
 
-                # 2. Tree of Thoughts (Deep Reflection)
+                self._log_dream(f"{len(recent_memories)} memorie trovate. Avvio Tree of Thoughts...", 'tot')
                 insights = self._run_tree_of_thoughts(recent_memories)
                 
-                # 3. Consolidamento & Validazione
+                self._log_dream(f"{len(insights)} insight generati. Consolidamento in corso...", 'insight')
                 self._consolidate_insights(insights)
                 
+                self._log_dream("Raffinamento varianti di risposta per topic HIGH confidence...", 'refine')
+                self._refine_fast_path_responses()
+                
                 self.last_dream_timestamp = datetime.now()
-                self.logger.info("☀️ Fase Onirica completata. ALLMA si è evoluta.")
+                self._log_dream("Ciclo onirico completato. ALLMA si è evoluta.", 'done')
                 
             finally:
-                # ALWAYS release lock
                 if self.system_monitor:
                     self.system_monitor.release_wake_lock()
             
         except Exception as e:
+            self._log_dream(f"Errore nel sogno: {e}", 'error')
             self.logger.error(f"Incubo (Errore nel sogno): {e}")
         finally:
             self.is_dreaming = False
@@ -144,6 +165,70 @@ class DreamManager:
             insights = ["Nessun insight significativo generato."]
             
         return insights
+
+    def _refine_fast_path_responses(self):
+        """
+        FASE ONIRICA: per ogni topic con confidenza HIGH,
+        usa l'LLM (a bassa temperatura) per generare 2 varianti della risposta cached.
+        Risultato: fast-path mai ripetitivo, sempre vivo.
+        Eseguito solo durante REM (charging, temperatura ok).
+        """
+        if not self.incremental_learner:
+            return
+        if not self.reasoning_engine or not getattr(self.reasoning_engine, 'llm', None):
+            self.logger.info("🌙 Dream Refine: LLM non disponibile. Skip.")
+            return
+
+        try:
+            from ..learning_system.incremental_learning import ConfidenceLevel
+        except ImportError:
+            from allma_model.learning_system.incremental_learning import ConfidenceLevel
+
+        high_topics = {
+            t: s for t, s in self.incremental_learner.knowledge_states.items()
+            if s.confidence == ConfidenceLevel.HIGH
+        }
+
+        if not high_topics:
+            self.logger.info("🌙 Dream Refine: nessun topic HIGH confidence. Skip.")
+            return
+
+        self.logger.info(f"🌙 Dream Refine: generazione varianti per {len(high_topics)} topic(s) HIGH...")
+
+        for topic, state in high_topics.items():
+            try:
+                original = state.content[:300]  # max 300 char come base
+                prompt = (
+                    f'<|im_start|>system\n'
+                    f'Sei ALLMA, un\'intelligenza viva. Rispondi in modo naturale e personale.\n<|im_end|>\n'
+                    f'<|im_start|>user\n'
+                    f'Hai già risposto in passato a domande sul tema "{topic}" così:\n'
+                    f'"{original}"\n\n'
+                    f'Scrivi 2 varianti brevi (max 2 frasi ciascuna) della stessa risposta, '
+                    f'con tono leggermente diverso ma stesso significato. '
+                    f'Separa le 2 varianti con [VAR].\n<|im_end|>\n'
+                    f'<|im_start|>assistant\n'
+                )
+                result = self.reasoning_engine.llm.generate(
+                    prompt,
+                    max_tokens=200,
+                    temperature=0.75,
+                    stop=['<|im_end|>']
+                )
+                if result and '[VAR]' in result:
+                    raw_variants = [v.strip() for v in result.split('[VAR]') if v.strip()]
+                    variants = [state.content] + raw_variants[:2]  # originale + 2 varianti
+                    self.incremental_learner.add_response_variants(topic, variants)
+                    self.logger.info(f"✨ Dream Refine: '{topic}' ora ha {len(variants)} varianti.")
+                else:
+                    self.logger.info(f"🌙 Dream Refine: '{topic}' — nessuna variante generata.")
+
+            except Exception as e:
+                self.logger.warning(f"Dream Refine failed for '{topic}': {e}")
+
+        # Salva le varianti su disco
+        self.incremental_learner.save_state()
+        self.logger.info("💾 Dream Refine: varianti salvate su disco.")
 
     def _generate_curiosity_seeds(self) -> List[Dict]:
         """

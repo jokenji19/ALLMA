@@ -12,6 +12,7 @@ class MetabolicState:
     cognitive_load: float = 0.0     # 0.0 - 1.0 (RAM/CPU)
     is_charging: bool = False       # Crucial for Dream Mode
     is_power_save: bool = False     # If OS is in power save
+    battery_temp_celsius: float = 0.0  # Temperatura batteria (proxy CPU)
     
     @property
     def is_tired(self) -> bool:
@@ -49,6 +50,9 @@ class SystemMonitor:
             level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
             status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+            # Temperatura in decimi di grado (es. 370 = 37.0°C)
+            raw_temp = batteryStatus.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1)
+            batt_temp = raw_temp / 10.0 if raw_temp > 0 else 0.0
             
             if level == -1 or scale == -1:
                 energy = 0.5
@@ -85,7 +89,8 @@ class SystemMonitor:
             self.last_state = MetabolicState(
                 energy_level=energy,
                 cognitive_load=load,
-                is_charging=is_charging
+                is_charging=is_charging,
+                battery_temp_celsius=batt_temp
             )
             return self.last_state
             

@@ -376,6 +376,33 @@ endif()
                 logging.error(f"Failed to patch Vulkan CMakeLists: {e}")
         # --- END VULKAN PATCH ---
         # --- END VULKAN PATCH ---
+        # --- OPENCL STATIC LINKING PATCH ---
+        # Instead of linking against a dynamic libOpenCL.so which fails Android namespace restrictions,
+        # we will compile opencl_stub.c directly into ggml-opencl.
+        opencl_cmake_path = os.path.join(llama_cpp_dir, "ggml", "src", "ggml-opencl", "CMakeLists.txt")
+        if os.path.exists(opencl_cmake_path):
+            try:
+                with open(opencl_cmake_path, 'r') as f:
+                    ocl_content = f.read()
+                
+                # Add opencl_stub.c to the sources
+                stub_c_path = os.path.join(self.get_recipe_dir(), "opencl_stub.c")
+                
+                # Replace the target_link_libraries call
+                search_str = "target_link_libraries(${TARGET_NAME} PRIVATE ${OpenCL_LIBRARIES})"
+                if search_str in ocl_content:
+                    ocl_content = ocl_content.replace(
+                        search_str,
+                        f'target_sources(${{TARGET_NAME}} PRIVATE "{stub_c_path}")\ntarget_include_directories(${{TARGET_NAME}} PRIVATE "{self.get_recipe_dir()}")\ntarget_link_libraries(${{TARGET_NAME}} PRIVATE dl)'
+                    )
+                    with open(opencl_cmake_path, 'w') as f:
+                        f.write(ocl_content)
+                    logging.info("Patched ggml-opencl/CMakeLists.txt for STATIC stub linking.")
+                else:
+                    logging.warning(f"OpenCL target_link_libraries not found in {opencl_cmake_path}")
+            except Exception as e:
+                logging.error(f"Failed to patch OpenCL CMakeLists: {e}")
+        # --- END OPENCL STATIC LINKING PATCH ---
         # --- VULKAN HOST TOOLCHAIN PATCH (Build 163-v19) ---
         # Fix for 'vulkan-shaders-gen' using Android CFLAGS on Host
         host_toolchain_in = os.path.join(llama_cpp_dir, "ggml", "src", "ggml-vulkan", "cmake", "host-toolchain.cmake.in")
@@ -415,9 +442,12 @@ set(ENV{LDFLAGS} "")
             "-DGGML_PERF=OFF",
             "-DLLAVA_BUILD=OFF",
             "-DLLAMA_CURL=OFF", # Fix for missing libcurl on Android
-            # VULKAN PIVOT (Build 163-v18)
-            "-DGGML_VULKAN=ON", 
-            "-DGGML_OPENCL=OFF",
+            # VULKAN PIVOT (Build 163-v18) -> OPENCL (Build 164-v1)
+            "-DGGML_VULKAN=OFF", 
+            "-DGGML_OPENCL=ON",
+            "-DGGML_OPENCL_USE_ADRENO_KERNELS=ON",
+            # "-DGGML_OPENMP=ON",   # Keep OFF for now to avoid libomp linking issues
+            # "-DGGML_PERF=ON",     # Keep OFF
             # GLSL COMPILER FIX (Build 163-v19)
             f"-DVulkan_GLSLC_EXECUTABLE={self.ctx.ndk_dir}/shader-tools/darwin-x86_64/glslc",
             

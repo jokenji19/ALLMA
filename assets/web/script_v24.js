@@ -1,6 +1,17 @@
 // Python Bridge Interface v24
 // Architecture: Flexbox Layout + Safe Timer
 
+// --- BRIDGE POLYFILL (v0.80) ---
+// Guarantee queueing even if Python evaluateJavascript is late
+if (!window.msgQueue) window.msgQueue = [];
+if (!window.pyBridge) {
+    window.pyBridge = {
+        postMessage: function (msg) {
+            window.msgQueue.push(msg);
+        }
+    };
+}
+
 const chatContainer = document.getElementById('chat-container');
 const messageInput = document.getElementById('message-input');
 
@@ -10,10 +21,11 @@ function sendMessage() {
     if (text) {
         addMessage(text, 'user', null);
         messageInput.value = '';
-        messageInput.blur(); // Keep keyboard open? Usually prefer to close or keep. User preference.
-        // If we keep it open, Flexbox handles it.
+        messageInput.blur();
 
         if (window.pyBridge) {
+            // Mostra la bolla con i pallini animati prima del primo token
+            window.startStream();
             window.pyBridge.postMessage(text);
         } else {
             console.warn("No PyBridge");
@@ -159,7 +171,8 @@ window.openVoiceMode = function () {
     if (overlay) {
         overlay.classList.add('active');
         document.getElementById('voice-text').textContent = "Parla ora...";
-        document.getElementById('voice-circle').classList.add('listening');
+        const vc = document.getElementById('voice-circle');
+        if (vc) vc.classList.add('listening');
 
         // Also ensure Mic is active on Python side if not already
         if (window.pyBridge) {
@@ -177,7 +190,8 @@ window.closeVoiceMode = function () {
     const overlay = document.getElementById('voice-overlay');
     if (overlay) {
         overlay.classList.remove('active');
-        document.getElementById('voice-circle').classList.remove('listening');
+        const vc = document.getElementById('voice-circle');
+        if (vc) vc.classList.remove('listening');
 
         if (window.pyBridge) {
             window.pyBridge.postMessage(JSON.stringify({
@@ -222,18 +236,30 @@ window.openPanel = function (panelName) {
     if (panelName === 'voice') {
         openVoiceMode();
     } else if (panelName === 'settings') {
-        // Show settings panel
         const panel = document.getElementById('panel-settings');
         if (panel) {
             panel.classList.remove('hidden');
-            // Start temperature monitoring
             startTemperatureMonitoring();
         }
     } else if (panelName === 'memory') {
         const panel = document.getElementById('panel-memory');
         if (panel) {
             panel.classList.remove('hidden');
+            if (window.pyBridge) {
+                window.pyBridge.postMessage("__REQUEST_MEMORY_UPDATE__");
+            } else if (window.msgQueue) {
+                window.msgQueue.push("__REQUEST_MEMORY_UPDATE__");
+            }
         }
+    } else if (panelName === 'dream') {
+        const panel = document.getElementById('panel-dream');
+        if (panel) {
+            panel.classList.remove('hidden');
+        }
+    } else {
+        // Fallback generico per pannelli futuri
+        const panel = document.getElementById(`panel-${panelName}`);
+        if (panel) panel.classList.remove('hidden');
     }
 };
 
@@ -262,6 +288,102 @@ function startTemperatureMonitoring() {
             updateTemperature();
         }, 2000);
     }
+}
+
+window.updateMemory = function (dataStr) {
+    try {
+        console.log("updateMemory called with data:", dataStr);
+        let data = dataStr;
+        if (typeof data === 'string') {
+            data = JSON.parse(data);
+        }
+
+        const factsContainer = document.getElementById('memory-user-facts');
+        const logsContainer = document.getElementById('memory-logs');
+
+        if (!factsContainer || !logsContainer) return;
+
+        // 1. Render User Facts
+        factsContainer.innerHTML = '';
+        if (data.facts && Object.keys(data.facts).length > 0) {
+            for (const [key, val] of Object.entries(data.facts)) {
+                // Ignore internal metadata keys if any
+                if (key.startsWith('_')) continue;
+
+                const card = document.createElement('div');
+                card.className = 'memory-fact-card';
+                card.innerHTML = `
+                    <div class="mem-key">${escapeHtml(key)}</div>
+                    <div class="mem-val">${escapeHtml(String(val))}</div>
+                `;
+                factsContainer.appendChild(card);
+            }
+        } else {
+            factsContainer.innerHTML = '<div class="memory-empty-state">Nessun dato permanente appreso.</div>';
+        }
+
+        // 2. Render Logs (Timeline)
+        logsContainer.innerHTML = '';
+        if (data.logs && data.logs.length > 0) {
+            // Logs are usually oldest first from backend, we might want to reverse them here if preferred,
+            // but let's assume they are chronologically ordered.
+            data.logs.forEach(msg => {
+                const item = document.createElement('div');
+                item.className = 'memory-log-item';
+
+                const roleClass = msg.role === 'user' ? 'user' : 'bot';
+                const roleName = msg.role === 'user' ? 'Tu' : 'ALLMA';
+
+                // Format Timestamp (approximate if full ISO)
+                let timeStr = "";
+                if (msg.timestamp) {
+                    try {
+                        const d = new Date(msg.timestamp);
+                        timeStr = d.getHours().toString().padStart(2, '0') + ":" +
+                            d.getMinutes().toString().padStart(2, '0');
+                    } catch (e) { timeStr = msg.timestamp; }
+                }
+
+                let contentClass = 'mem-content';
+                let displayedContent = msg.content;
+
+                // Highlight thought blocks
+                if (msg.is_thought || (msg.content && msg.content.includes('[[TH:'))) {
+                    contentClass += ' is-thought';
+                }
+
+                item.innerHTML = `
+                    <div class="memory-log-header">
+                        <span class="mem-role ${roleClass}">${roleName}</span>
+                        <span class="mem-timestamp">${timeStr}</span>
+                    </div>
+                    <div class="${contentClass}">${escapeHtml(displayedContent)}</div>
+                `;
+                logsContainer.appendChild(item);
+            });
+
+            // Auto scroll to bottom of logs
+            setTimeout(() => {
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }, 100);
+        } else {
+            logsContainer.innerHTML = '<div class="memory-empty-state">Nessuna conversazione registrata.</div>';
+        }
+
+    } catch (e) {
+        console.error("Error updating memory UI:", e);
+    }
+};
+
+// Ensure escapeHtml exists
+function escapeHtml(unsafe) {
+    if (!unsafe) return "";
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 function stopTemperatureMonitoring() {
@@ -550,10 +672,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // ---------------------------
 window.startStream = function () {
+    // Se c'è già una bolla attiva (creata da sendMessage), non duplicare
+    if (currentStreamBubble) return;
     const template = document.getElementById('tmpl-bot');
     const clone = template.content.cloneNode(true);
     const contentSpan = clone.querySelector('.content');
     contentSpan.textContent = '';
+
+    // Inietta i pallini animati stile ChatGPT
+    const typingDots = document.createElement('span');
+    typingDots.className = 'typing-dots';
+    typingDots.innerHTML = '<span></span><span></span><span></span>';
+    contentSpan.appendChild(typingDots);
 
     // Setup Thinking
     const reasoningContainer = clone.querySelector('.reasoning-container');
@@ -575,7 +705,8 @@ window.startStream = function () {
         content: contentSpan,
         reasoning: reasoningContent,
         reasoningContainer: reasoningContainer,
-        timer: timerDiv
+        timer: timerDiv,
+        dotsCleared: false  // flag: pallini già rimossi?
     };
 
     streamStartTime = Date.now();
@@ -600,8 +731,13 @@ window.streamChunk = function (text, isThought) {
             currentStreamBubble.reasoningContainer.classList.add('open');
         }
         currentStreamBubble.reasoning.textContent += text;
-
     } else {
+        // Primo token reale in risposta: rimuovi i pallini animati
+        if (!currentStreamBubble.dotsCleared) {
+            const dots = currentStreamBubble.content.querySelector('.typing-dots');
+            if (dots) dots.remove();
+            currentStreamBubble.dotsCleared = true;
+        }
         currentStreamBubble.content.textContent += text;
     }
     scrollToBottom();
@@ -679,28 +815,112 @@ window.toggleDreamMode = function (checkbox) {
 })();
 
 // --- STATUS INDICATORS (Phase 17) ---
+function showDreamToast(message, emoji) {
+    // Rimuovi toast esistente se c'è
+    const existing = document.getElementById('dream-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.id = 'dream-toast';
+    toast.innerHTML = `<span class="dream-toast-emoji">${emoji}</span> ${message}`;
+    document.body.appendChild(toast);
+
+    // Triggera animazione entrata
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => toast.classList.add('visible'));
+    });
+
+    // Auto-dismiss dopo 4s
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 400);
+    }, 4000);
+}
+
 window.updateStatus = function (key, active) {
     if (key === 'dreaming') {
         const indicator = document.getElementById('dream-indicator');
-        if (indicator) {
-            if (active) {
+        if (active) {
+            if (indicator) {
                 indicator.classList.remove('hidden');
-                indicator.classList.add('active');
-                console.log("Dream Mode: ACTIVE 🌙");
-            } else {
-                indicator.classList.remove('active');
-                // Optional: keep it visible but dim, or hide completely
-                // Let's hide it after transition
+                indicator.classList.add('active', 'pulsing');
+            }
+            showDreamToast('ALLMA sta sognando e imparando...', '🌙');
+        } else {
+            if (indicator) {
+                indicator.classList.remove('active', 'pulsing');
                 setTimeout(() => {
                     if (!indicator.classList.contains('active')) {
                         indicator.classList.add('hidden');
                     }
-                }, 500); // match transition
-                console.log("Dream Mode: INACTIVE");
+                }, 500);
             }
+            showDreamToast('Sogno completato. ALLMA si è evoluta.', '☀️');
         }
     }
 };
+
+// --- DREAM JOURNAL ---
+const DREAM_PHASE_ICONS = {
+    'start': '🌙',
+    'memory': '💾',
+    'tot': '🌳',
+    'insight': '💡',
+    'refine': '✨',
+    'curiosity': '❓',
+    'done': '☀️',
+    'paused': '⏸️',
+    'error': '❌',
+    'default': '🔮',
+};
+
+function appendDreamEntry(text, phase) {
+    const container = document.getElementById('dream-journal-entries');
+    if (!container) return;
+
+    // Rimuovi empty state se presente
+    const empty = container.querySelector('.dream-empty-state');
+    if (empty) empty.remove();
+
+    const icon = DREAM_PHASE_ICONS[phase] || DREAM_PHASE_ICONS['default'];
+    const time = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const entry = document.createElement('div');
+    entry.className = `dream-entry dream-entry--${phase || 'default'}`;
+    entry.innerHTML = `
+        <span class="dream-entry-icon">${icon}</span>
+        <div class="dream-entry-content">
+            <span class="dream-entry-text">${text}</span>
+            <span class="dream-entry-time">${time}</span>
+        </div>`;
+
+    container.appendChild(entry);
+    // Scroll in fondo
+    container.scrollTop = container.scrollHeight;
+}
+
+window.clearDreamJournal = function () {
+    const container = document.getElementById('dream-journal-entries');
+    if (!container) return;
+    container.innerHTML = `<div class="dream-empty-state"><span>🌙</span><p>Nessun sogno registrato.</p></div>`;
+    const badge = document.getElementById('dream-status-badge');
+    if (badge) { badge.textContent = 'In attesa...'; badge.className = 'dream-badge dream-badge--idle'; }
+};
+
+window.handleDreamLog = function (data) {
+    // data = { text: "...", phase: "tot" }
+    const text = data.text || data.content || String(data);
+    const phase = data.phase || 'default';
+    appendDreamEntry(text, phase);
+
+    // Aggiorna badge stato
+    const badge = document.getElementById('dream-status-badge');
+    if (badge) {
+        badge.textContent = '🌙 Sognando...';
+        badge.className = 'dream-badge dream-badge--active';
+    }
+};
+
 // --- DIAGNOSTICS PANEL LOGIC (v0.56) ---
 
 let diagUpdateInterval = null;
@@ -919,10 +1139,17 @@ window.updateDiagnostics = function (input) {
             }
         }
 
-        // 2. Soul
+        // 2. Identity (V5) & Soul
         if (stats.soul) {
             const statusEl = document.getElementById('soul-status-text');
-            if (statusEl) statusEl.textContent = `Stato: ${stats.soul.state_label || 'Active'}`;
+            let statusText = `Stato: ${stats.soul.state_label || 'Active'}`;
+
+            // Append Neuro info if available
+            if (stats.neuro && stats.neuro.active_rules !== undefined) {
+                statusText += ` | Rules: ${stats.neuro.active_rules}`;
+            }
+
+            if (statusEl) statusEl.textContent = statusText;
 
             setSoulBar('energy', stats.soul.energy);
             setSoulBar('chaos', stats.soul.chaos);

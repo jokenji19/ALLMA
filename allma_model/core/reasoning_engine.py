@@ -66,6 +66,20 @@ class ReasoningEngine:
         # SECURITY: Sanitize user input
         safe_input = user_input.replace("<|im_start|>", "").replace("<|im_end|>", "")
         
+        # Check for V5 System Instruction Override
+        system_instruction = context.get('system_instruction')
+        
+        if system_instruction:
+            # Use the injected V5 prompt (which already includes ALLMA identity & V5 state)
+            return f"""<|im_start|>system
+{system_instruction}
+<|im_end|>
+<|im_start|>user
+{safe_input}<|im_end|>
+<|im_start|>assistant
+"""
+
+        # Fallback to default if no instruction provided
         memories = context.get('relevant_memories', [])
         memory_text = "\n".join([f"- {m.get('content', '')}" for m in memories]) if memories else "Nessuna memoria specifica."
         

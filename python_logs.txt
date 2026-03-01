@@ -1,0 +1,250 @@
+02-26 21:12:12.938  9827 10793 I python  :  llama_context: n_ubatch      = 512
+02-26 21:12:12.938  9827 10793 I python  :  llama_context: causal_attn   = 1
+02-26 21:12:12.938  9827 10793 I python  :  llama_context: flash_attn    = 0
+02-26 21:12:12.938  9827 10793 I python  :  llama_context: kv_unified    = false
+02-26 21:12:12.938  9827 10793 I python  :  llama_context: freq_base     = 1000000.0
+02-26 21:12:12.938  9827 10793 I python  :  llama_context: freq_scale    = 1
+02-26 21:12:12.938  9827 10793 I python  :  llama_context: n_ctx_per_seq (2048) < n_ctx_train (40960) -- the full capacity of the model will not be utilized
+02-26 21:12:12.938  9827 10793 I python  :  set_abort_callback: call
+02-26 21:12:12.938  9827 10793 I python  :  llama_context:        CPU  output buffer size =     0.58 MiB
+02-26 21:12:12.938  9827 10793 I python  :  create_memory: n_ctx = 2048 (padded)
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   0: dev = CPU
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   1: dev = CPU
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   2: dev = CPU
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   3: dev = CPU
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   4: dev = CPU
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   5: dev = CPU
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   6: dev = CPU
+02-26 21:12:12.938  9827 10793 I python  :  llama_kv_cache_unified: layer   7: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer   8: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer   9: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  10: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  11: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  12: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  13: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  14: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  15: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  16: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  17: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  18: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  19: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  20: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  21: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  22: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  23: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  24: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  25: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  26: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified: layer  27: dev = CPU
+02-26 21:12:12.939  9827 10793 I python  :  llama_kv_cache_unified:        CPU KV buffer size =   224.00 MiB
+02-26 21:12:13.043  9827 10793 I python  :  llama_kv_cache_unified: size =  224.00 MiB (  2048 cells,  28 layers,  1/1 seqs), K (f16):  112.00 MiB, V (f16):  112.00 MiB
+02-26 21:12:13.043  9827 10793 I python  :  llama_context: enumerating backends
+02-26 21:12:13.043  9827 10793 I python  :  llama_context: backend_ptrs.size() = 1
+02-26 21:12:13.043  9827 10793 I python  :  llama_context: max_nodes = 2480
+02-26 21:12:13.044  9827 10793 I python  :  llama_context: worst-case: n_tokens = 512, n_seqs = 1, n_outputs = 0
+02-26 21:12:13.044  9827 10793 I python  :  graph_reserve: reserving a graph for ubatch with n_tokens =  512, n_seqs =  1, n_outputs =  512
+02-26 21:12:13.045  9827 10793 I python  :  graph_reserve: reserving a graph for ubatch with n_tokens =    1, n_seqs =  1, n_outputs =    1
+02-26 21:12:13.045  9827 10793 I python  :  graph_reserve: reserving a graph for ubatch with n_tokens =  512, n_seqs =  1, n_outputs =  512
+02-26 21:12:13.046  9827 10793 I python  :  llama_context:        CPU compute buffer size =   300.75 MiB
+02-26 21:12:13.046  9827 10793 I python  :  llama_context: graph nodes  = 1098
+02-26 21:12:13.046  9827 10793 I python  :  llama_context: graph splits = 1
+02-26 21:12:13.046  9827 10793 I python  :  CPU : NEON = 1 | ARM_FMA = 1 | LLAMAFILE = 1 | REPACK = 1 | 
+02-26 21:12:13.049  9827 10793 I python  :  Model metadata: {'general.quantization_version': '2', 'tokenizer.ggml.padding_token_id': '151643', 'qwen3.context_length': '40960', 'tokenizer.ggml.eos_token_id': '151645', 'tokenizer.ggml.pre': 'qwen2', 'tokenizer.ggml.model': 'gpt2', 'tokenizer.ggml.add_bos_token': 'false', 'general.name': 'Qwen3 1.7B Instruct', 'qwen3.attention.value_length': '128', 'qwen3.attention.key_length': '128', 'qwen3.attention.layer_norm_rms_epsilon': '0.000001', 'qwen3.rope.freq_base': '1000000.000000', 'general.architecture': 'qwen3', 'qwen3.attention.head_count_kv': '8', 'tokenizer.chat_template': '{%- if tools %}\n    {{- \'<|im_start|>system\\n\' }}\n    {%- if messages[0].role == \'system\' %}\n        {{- messages[0].content + \'\\n\\n\' }}\n    {%- endif %}\n    {{- "# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>" }}\n    {%- for tool in tools %}\n        {{- "\\n" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- "\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\"name\\": <function-name>, \\"arguments\\": <args-json-object>}\\n</tool_call><|im_end|>\\n" }}\n{%- else %}\n    {%- if messages[0].role == \'system\' %}\n        {{- \'<|im_start|>system\\n\' + messages[0].content + \'<|im_end|>\\n\' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for index in range(ns.last_query_index, -1, -1) %}\n    {%- set message = messages[index] %}\n    {%- if ns.multi_step_tool and message.role == "user" and not(\'<tool_response>\' in message.content and \'</tool_response>\' in message.content) %}\n        {%- set ns.multi_step_tool = false %}\n        {%- set ns.last_query_index = index %}\n    {%- endif %}\n{%- endfor %}\n{%- for message in messages %}\n    {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}\n        {{- \'<|im_start|>\' + message.role + \'\\n\' + message.content + \'<|im_end|>\' + \'\\n\' }}\n    {%- elif message.role == "assistant" %}\n        {%- set content = message.content %}\n        {%- set reasoning_content = \'\' %}\n        {%- if message.reasoning_content is defined and message.reasoning_content is not none %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if \'</think>\' in message.content %}\n                {%- set content = message.content.split(\'</think>\')[-1].lstrip(\'\\n\') %}\n                {%- set reasoning_content = message.content.split(\'</think>\')[0].rstrip(\'\\n\').split(\'<think>\')[-1].lstrip(\'\\n\') %}\n            {%- endif %}\n        {%- endif %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {%- if loop.last or (not loop.last and reasoning_content) %}\n                {{- \'<|im_start|>\' + message.role + \'\\n<think>\\n\' + reasoning_content.strip(\'\\n\') + \'\\n</think>\\n\\n\' + content.lstrip(\'\\n\') }}\n            {%- else %}\n                {{- \'<|im_start|>\' + message.role + \'\\n\' + content }}\n            {%- endif %}\n        {%- else %}\n            {{- \'<|im_start|>\' + message.role + \'\\n\' + content }}\n        {%- endif %}\n        {%- if message.tool_calls %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if (loop.first and content) or (not loop.first) %}\n                    {{- \'\\n\' }}\n                {%- endif %}\n                {%- if tool_call.function %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {{- \'<tool_call>\\n{"name": "\' }}\n                {{- tool_call.name }}\n                {{- \'", "arguments": \' }}\n                {%- if tool_call.arguments is string %}\n                    {{- tool_call.arguments }}\n                {%- else %}\n                    {{- tool_call.arguments | tojson }}\n
+02-26 21:12:13.049  9827 10793 I python  :  Available chat formats from metadata: chat_template.default
+02-26 21:12:13.063  9827 10793 I python  :  Using gguf chat template: {%- if tools %}
+02-26 21:12:13.063  9827 10793 I python  :      {{- '<|im_start|>system\n' }}
+02-26 21:12:13.063  9827 10793 I python  :      {%- if messages[0].role == 'system' %}
+02-26 21:12:13.063  9827 10793 I python  :          {{- messages[0].content + '\n\n' }}
+02-26 21:12:13.063  9827 10793 I python  :      {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :      {{- "# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
+02-26 21:12:13.063  9827 10793 I python  :      {%- for tool in tools %}
+02-26 21:12:13.063  9827 10793 I python  :          {{- "\n" }}
+02-26 21:12:13.063  9827 10793 I python  :          {{- tool | tojson }}
+02-26 21:12:13.063  9827 10793 I python  :      {%- endfor %}
+02-26 21:12:13.063  9827 10793 I python  :      {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }}
+02-26 21:12:13.063  9827 10793 I python  :  {%- else %}
+02-26 21:12:13.063  9827 10793 I python  :      {%- if messages[0].role == 'system' %}
+02-26 21:12:13.063  9827 10793 I python  :          {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
+02-26 21:12:13.063  9827 10793 I python  :      {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :  {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :  {%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}
+02-26 21:12:13.063  9827 10793 I python  :  {%- for index in range(ns.last_query_index, -1, -1) %}
+02-26 21:12:13.063  9827 10793 I python  :      {%- set message = messages[index] %}
+02-26 21:12:13.063  9827 10793 I python  :      {%- if ns.multi_step_tool and message.role == "user" and not('<tool_response>' in message.content and '</tool_response>' in message.content) %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- set ns.multi_step_tool = false %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- set ns.last_query_index = index %}
+02-26 21:12:13.063  9827 10793 I python  :      {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :  {%- endfor %}
+02-26 21:12:13.063  9827 10793 I python  :  {%- for message in messages %}
+02-26 21:12:13.063  9827 10793 I python  :      {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}
+02-26 21:12:13.063  9827 10793 I python  :          {{- '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>' + '\n' }}
+02-26 21:12:13.063  9827 10793 I python  :      {%- elif message.role == "assistant" %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- set content = message.content %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- set reasoning_content = '' %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- if message.reasoning_content is defined and message.reasoning_content is not none %}
+02-26 21:12:13.063  9827 10793 I python  :              {%- set reasoning_content = message.reasoning_content %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- else %}
+02-26 21:12:13.063  9827 10793 I python  :              {%- if '</think>' in message.content %}
+02-26 21:12:13.063  9827 10793 I python  :                  {%- set content = message.content.split('</think>')[-1].lstrip('\n') %}
+02-26 21:12:13.063  9827 10793 I python  :                  {%- set reasoning_content = message.content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
+02-26 21:12:13.063  9827 10793 I python  :              {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- if loop.index0 > ns.last_query_index %}
+02-26 21:12:13.063  9827 10793 I python  :              {%- if loop.last or (not loop.last and reasoning_content) %}
+02-26 21:12:13.063  9827 10793 I python  :                  {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content.strip('\n') + '\n</think>\n\n' + content.lstrip('\n') }}
+02-26 21:12:13.063  9827 10793 I python  :              {%- else %}
+02-26 21:12:13.063  9827 10793 I python  :                  {{- '<|im_start|>' + message.role + '\n' + content }}
+02-26 21:12:13.063  9827 10793 I python  :              {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- else %}
+02-26 21:12:13.063  9827 10793 I python  :              {{- '<|im_start|>' + message.role + '\n' + content }}
+02-26 21:12:13.063  9827 10793 I python  :          {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :          {%- if message.tool_calls %}
+02-26 21:12:13.063  9827 10793 I python  :              {%- for tool_call in message.tool_calls %}
+02-26 21:12:13.063  9827 10793 I python  :                  {%- if (loop.first and content) or (not loop.first) %}
+02-26 21:12:13.063  9827 10793 I python  :                      {{- '\n' }}
+02-26 21:12:13.063  9827 10793 I python  :                  {%- endif %}
+02-26 21:12:13.063  9827 10793 I python  :                  {%- if tool_call.function %}
+02-26 21:12:13.063  9827 10793 I python  :                      {%- set tool_call = tool_call.function %}
+02-26 21:12:13.063  9827 10793 I python  :                  {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :                  {{- '<tool_call>\n{"name": "' }}
+02-26 21:12:13.064  9827 10793 I python  :                  {{- tool_call.name }}
+02-26 21:12:13.064  9827 10793 I python  :                  {{- '", "arguments": ' }}
+02-26 21:12:13.064  9827 10793 I python  :                  {%- if tool_call.arguments is string %}
+02-26 21:12:13.064  9827 10793 I python  :                      {{- tool_call.arguments }}
+02-26 21:12:13.064  9827 10793 I python  :                  {%- else %}
+02-26 21:12:13.064  9827 10793 I python  :                      {{- tool_call.arguments | tojson }}
+02-26 21:12:13.064  9827 10793 I python  :                  {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :                  {{- '}\n</tool_call>' }}
+02-26 21:12:13.064  9827 10793 I python  :              {%- endfor %}
+02-26 21:12:13.064  9827 10793 I python  :          {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :          {{- '<|im_end|>\n' }}
+02-26 21:12:13.064  9827 10793 I python  :      {%- elif message.role == "tool" %}
+02-26 21:12:13.064  9827 10793 I python  :          {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}
+02-26 21:12:13.064  9827 10793 I python  :              {{- '<|im_start|>user' }}
+02-26 21:12:13.064  9827 10793 I python  :          {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :          {{- '\n<tool_response>\n' }}
+02-26 21:12:13.064  9827 10793 I python  :          {{- message.content }}
+02-26 21:12:13.064  9827 10793 I python  :          {{- '\n</tool_response>' }}
+02-26 21:12:13.064  9827 10793 I python  :          {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}
+02-26 21:12:13.064  9827 10793 I python  :              {{- '<|im_end|>\n' }}
+02-26 21:12:13.064  9827 10793 I python  :          {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :      {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :  {%- endfor %}
+02-26 21:12:13.064  9827 10793 I python  :  {%- if add_generation_prompt %}
+02-26 21:12:13.064  9827 10793 I python  :      {{- '<|im_start|>assistant\n' }}
+02-26 21:12:13.064  9827 10793 I python  :      {%- if enable_thinking is defined and enable_thinking is false %}
+02-26 21:12:13.064  9827 10793 I python  :          {{- '<think>\n\n</think>\n\n' }}
+02-26 21:12:13.064  9827 10793 I python  :      {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :  {%- endif %}
+02-26 21:12:13.064  9827 10793 I python  :  Using chat eos_token: <|im_end|>
+02-26 21:12:13.064  9827 10793 I python  :  Using chat bos_token: <|endoftext|>
+02-26 21:12:13.064  9827 10793 I python  : [MobileGemma] PRINT DEBUG: Llama Init Success! (CPU-ONLY MODE)
+02-26 21:12:13.064  9827 10793 I python  : [INFO   ] [MobileGemma] Model loaded successfully.
+02-26 21:12:13.064  9827 10793 I python  : [INFO   ] ✅ Mobile Engine (Gemma) Activated & Linked to Reasoning Engine.
+02-26 21:12:13.068  9827 10793 I python  : [INFO   ] 📜 [Conversation History] Injecting 0 turns into context
+02-26 21:12:13.068  9827 10793 I python  : [INFO   ] [MobileGemma] Generating response (Stream=False, Seed=1156808854)
+02-26 21:12:26.322  9827 10793 I python  :  llama_perf_context_print:        load time =    5526.68 ms
+02-26 21:12:26.322  9827 10793 I python  :  llama_perf_context_print: prompt eval time =    5526.32 ms /   151 tokens (   36.60 ms per token,    27.32 tokens per second)
+02-26 21:12:26.322  9827 10793 I python  :  llama_perf_context_print:        eval time =    7669.93 ms /   127 runs   (   60.39 ms per token,    16.56 tokens per second)
+02-26 21:12:26.323  9827 10793 I python  :  llama_perf_context_print:       total time =   13252.01 ms /   278 tokens
+02-26 21:12:26.323  9827 10793 I python  :  llama_perf_context_print:    graphs reused =        122
+02-26 21:12:26.323  9827 10793 I python  : [INFO   ] [MobileGemma] Generating response (Stream=False, Seed=359198824)
+02-26 21:12:36.190  9827 10793 I python  :  llama_perf_context_print:        load time =    5526.68 ms
+02-26 21:12:36.191  9827 10793 I python  :  llama_perf_context_print: prompt eval time =    1220.90 ms /    81 tokens (   15.07 ms per token,    66.34 tokens per second)
+02-26 21:12:36.191  9827 10793 I python  :  llama_perf_context_print:        eval time =    8586.79 ms /   127 runs   (   67.61 ms per token,    14.79 tokens per second)
+02-26 21:12:36.191  9827 10793 I python  :  llama_perf_context_print:       total time =    9866.77 ms /   208 tokens
+02-26 21:12:36.191  9827 10793 I python  :  llama_perf_context_print:    graphs reused =        122
+02-26 21:12:36.193  9827 10793 I python  : ✅ Emotion LLM OK: neutral conf=0.95
+02-26 21:12:36.197  9827 10793 I python  : [DEBUG  ] Memorizzazione interazione per user_id=user_default
+02-26 21:12:36.197  9827 10793 I python  : [DEBUG  ] Contenuto=Ciao...
+02-26 21:12:36.207  9827 10793 I python  : [DEBUG  ] Interazione memorizzata con ID=1
+02-26 21:12:36.207  9827 10793 I python  : [INFO   ] [🔍 Topic estratto] 'technical'
+02-26 21:12:36.207  9827 10793 I python  : [INFO   ] [🔍 Knowledge trovata per 'technical'] 0 items
+02-26 21:12:36.207  9827 10793 I python  : [INFO   ] [🔍 Fallback  ] cerco in tutti i topic disponibili...
+02-26 21:12:36.208  9827 10793 I python  : [INFO   ] 🧠 Pulsing Deep Mind (Legacy Modules)...
+02-26 21:12:36.208  9827 10793 I python  : [INFO   ] [🧠 Deep Mind Active Systems] ['Curiosity', 'Ethics', 'Metacognition', 'Social', 'MetaLearning']
+02-26 21:12:36.208  9827 10793 I python  : Raffinamento ruolo per: Ciao -> ruolo attuale: complemento
+02-26 21:12:36.208  9827 10793 I python  : Nuovo ruolo: soggetto
+02-26 21:12:36.208  9827 10793 I python  : [INFO   ] [🔍 Rich Context] {'entities': {'persons': ['Ciao'], 'organizations': [], 'locations': []}, 'topics': ['artificial_intelligence'], 'timestamp': 1772136756.2075286}
+02-26 21:12:36.208  9827 10793 I python  : [INFO   ] [🧠 Understanding] Intent=saluto, Syntax=['Ciao(soggetto)']
+02-26 21:12:36.208  9827 10793 I python  : [INFO   ] [⚡ Query semplice] Skip Reasoning Chain.
+02-26 21:12:36.208  9827 10793 I python  : [INFO   ] [🧠 PENSIERO  ] Query semplice rilevata (Fast Path). Rispondere direttamente.
+02-26 21:12:36.209  9827 10793 I python  : [INFO   ] [✨ Soul Integrated State] Moody, Ti senti lucida, strutturata e calma.
+02-26 21:12:36.209  9827 10793 I python  : [DEBUG  ] [🧠 IdentityState Computed] M=0.50 S=0.90 E=1.00
+02-26 21:12:36.209  9827 10793 I python  : [DEBUG  ] Module 'emotional_adaptation' executed in 0.1ms
+02-26 21:12:36.209  9827 10793 I python  : [DEBUG  ] Module 'curiosity' executed in 0.0ms
+02-26 21:12:36.209  9827 10793 I python  : [DEBUG  ] Module 'creativity' executed in 0.0ms
+02-26 21:12:36.209  9827 10793 I python  : [DEBUG  ] Module 'planning' executed in 0.0ms
+02-26 21:12:36.212  9827 10793 I python  : [DEBUG  ] Module 'perception' executed in 2.4ms
+02-26 21:12:36.216  9827 10793 I python  : [INFO   ] [🧠 Meta-Learning Result] {'intent': 'meta_learning', 'suggested_style': 'visual', 'suggested_comm': 'direct', 'confidence': 0.5}
+02-26 21:12:36.216  9827 10793 I python  : [DEBUG  ] Module 'meta_learning' executed in 3.7ms
+02-26 21:12:36.216  9827 10793 I python  : [INFO   ] Orchestrator executed 6 modules in 6.5ms (6/500ms budget)
+02-26 21:12:36.216  9827 10793 I python  : [INFO   ] [Generating response for] Ciao... (Len: 973)
+02-26 21:12:36.242  9827 10793 I python  : [INFO   ] [MobileGemma] Generating response (Stream=True, Seed=1867129451)
+02-26 21:13:10.179  9827 10793 I python  :  llama_perf_context_print:        load time =    5526.68 ms
+02-26 21:13:10.180  9827 10793 I python  :  llama_perf_context_print: prompt eval time =    6501.49 ms /   335 tokens (   19.41 ms per token,    51.53 tokens per second)
+02-26 21:13:10.180  9827 10793 I python  :  llama_perf_context_print:        eval time =   24252.58 ms /   140 runs   (  173.23 ms per token,     5.77 tokens per second)
+02-26 21:13:10.180  9827 10793 I python  :  llama_perf_context_print:       total time =   33932.41 ms /   475 tokens
+02-26 21:13:10.180  9827 10793 I python  :  llama_perf_context_print:    graphs reused =        135
+02-26 21:13:10.208  9827 10793 I python  : [DEBUG  ] [🔒 StructuralCore] Snapshot creato/aggiornato.
+02-26 21:13:10.209  9827 10793 I python  : [INFO   ] [🧠 State Update] Entropy=1.00, Stability=0.91 (Violations: 0)
+02-26 21:13:10.209  9827 10793 I python  : [INFO   ] [✅ Final Answer] Ciao! Come stai?...
+02-26 21:13:10.231  9827 10793 I python  : [INFO   ] [🧠 PERMANENT LEARNING] Concetto 'ciao' salvato nel Database (SQL).
+02-26 21:13:10.233  9827 10793 I python  : 💾 MEMORY SAVED (ATOMIC) to /data/data/org.allma.allma_prime/files/app/allma_memory.json
+02-26 21:13:18.423  9827  9827 I python  : Message from WebView: Come ti chiami?
+02-26 21:13:18.425  9827 15877 I python  : Processing message: Come ti chiami?
+02-26 21:13:18.441  9827 15877 I python  : [INFO   ] 📜 [Conversation History] Injecting 1 turns into context
+02-26 21:13:18.441  9827 15877 I python  : [INFO   ] [MobileGemma] Generating response (Stream=False, Seed=1873791323)
+02-26 21:13:18.457  9827 15877 I python  :  Llama.generate: 5 prefix-match hit, remaining 148 prompt tokens to eval
+02-26 21:13:28.568  9827 15877 I python  :  llama_perf_context_print:        load time =    5526.68 ms
+02-26 21:13:28.568  9827 15877 I python  :  llama_perf_context_print: prompt eval time =    2736.89 ms /   148 tokens (   18.49 ms per token,    54.08 tokens per second)
+02-26 21:13:28.568  9827 15877 I python  :  llama_perf_context_print:        eval time =    7313.11 ms /   127 runs   (   57.58 ms per token,    17.37 tokens per second)
+02-26 21:13:28.568  9827 15877 I python  :  llama_perf_context_print:       total time =   10112.00 ms /   275 tokens
+02-26 21:13:28.568  9827 15877 I python  :  llama_perf_context_print:    graphs reused =        122
+02-26 21:13:28.569  9827 15877 I python  : [INFO   ] [MobileGemma] Generating response (Stream=False, Seed=1747570950)
+02-26 21:13:38.618  9827 15877 I python  :  llama_perf_context_print:        load time =    5526.68 ms
+02-26 21:13:38.618  9827 15877 I python  :  llama_perf_context_print: prompt eval time =    1324.73 ms /    83 tokens (   15.96 ms per token,    62.65 tokens per second)
+02-26 21:13:38.618  9827 15877 I python  :  llama_perf_context_print:        eval time =    8655.82 ms /   127 runs   (   68.16 ms per token,    14.67 tokens per second)
+02-26 21:13:38.618  9827 15877 I python  :  llama_perf_context_print:       total time =   10047.16 ms /   210 tokens
+02-26 21:13:38.618  9827 15877 I python  :  llama_perf_context_print:    graphs reused =        122
+02-26 21:13:38.618  9827 15877 I python  : ✅ Emotion LLM OK: neutral conf=0.95
+02-26 21:13:38.619  9827 15877 I python  : [DEBUG  ] Memorizzazione interazione per user_id=user_default
+02-26 21:13:38.619  9827 15877 I python  : [DEBUG  ] Contenuto=Come ti chiami?...
+02-26 21:13:38.632  9827 15877 I python  : [DEBUG  ] Interazione memorizzata con ID=2
+02-26 21:13:38.632  9827 15877 I python  : [INFO   ] [🔍 Topic estratto] 'technical'
+02-26 21:13:38.633  9827 15877 I python  : [INFO   ] [🔍 Knowledge trovata per 'technical'] 0 items
+02-26 21:13:38.633  9827 15877 I python  : [INFO   ] [🔍 Fallback  ] cerco in tutti i topic disponibili...
+02-26 21:13:38.634  9827 15877 I python  : [INFO   ] 🧠 Pulsing Deep Mind (Legacy Modules)...
+02-26 21:13:38.640  9827 15877 I python  : [INFO   ] [🧠 Deep Mind Active Systems] ['Curiosity', 'Ethics', 'Metacognition', 'Social', 'MetaLearning']
+02-26 21:13:38.640  9827 15877 I python  : Raffinamento ruolo per: Come -> ruolo attuale: interrogativo
+02-26 21:13:38.640  9827 15877 I python  : Nuovo ruolo: interrogativo
+02-26 21:13:38.640  9827 15877 I python  : Raffinamento ruolo per: ti -> ruolo attuale: soggetto
+02-26 21:13:38.640  9827 15877 I python  : Nuovo ruolo: soggetto
+02-26 21:13:38.640  9827 15877 I python  : Raffinamento ruolo per: chiami -> ruolo attuale: verbo
+02-26 21:13:38.640  9827 15877 I python  : Nuovo ruolo: verbo
+02-26 21:13:38.640  9827 15877 I python  : [INFO   ] [🔍 Rich Context] {'entities': {'persons': ['Come'], 'organizations': [], 'locations': []}, 'topics': ['artificial_intelligence'], 'timestamp': 1772136818.6335213}
+02-26 21:13:38.640  9827 15877 I python  : [INFO   ] [🧠 Understanding] Intent=domanda, Syntax=['Come(interrogativo)', 'ti(soggetto)', 'chiami(verbo)']
+02-26 21:13:38.642  9827 15877 I python  : [INFO   ] [⚡ Query semplice] Skip Reasoning Chain.
+02-26 21:13:38.642  9827 15877 I python  : [INFO   ] [🧠 PENSIERO  ] Query semplice rilevata (Fast Path). Rispondere direttamente.
+02-26 21:13:38.644  9827 15877 I python  : [INFO   ] [✨ Soul Integrated State] Energetic/Enthusiastic, 
+02-26 21:13:38.644  9827 15877 I python  : [DEBUG  ] [🧠 IdentityState Computed] M=0.50 S=0.91 E=1.00
+02-26 21:13:38.645  9827 15877 I python  : [DEBUG  ] Module 'emotional_adaptation' executed in 0.2ms
+02-26 21:13:38.648  9827 15877 I python  : [DEBUG  ] Module 'curiosity' executed in 3.1ms
+02-26 21:13:38.648  9827 15877 I python  : [DEBUG  ] Module 'creativity' executed in 0.1ms
+02-26 21:13:38.648  9827 15877 I python  : [DEBUG  ] Module 'planning' executed in 0.0ms
+02-26 21:13:38.650  9827 15877 I python  : [DEBUG  ] Module 'perception' executed in 2.2ms
+02-26 21:13:38.655  9827 15877 I python  : [INFO   ] [🧠 Meta-Learning Result] {'intent': 'meta_learning', 'suggested_style': 'visual', 'suggested_comm': 'direct', 'confidence': 0.5}
+02-26 21:13:38.655  9827 15877 I python  : [DEBUG  ] Module 'meta_learning' executed in 4.5ms
+02-26 21:13:38.655  9827 15877 I python  : [INFO   ] Orchestrator executed 6 modules in 10.8ms (10/500ms budget)
+02-26 21:13:38.656  9827 15877 I python  : [INFO   ] [Generating response for] Come ti chiami?... (Len: 966)
+02-26 21:13:38.658  9827 15877 I python  : [INFO   ] [MobileGemma] Generating response (Stream=True, Seed=1153456161)
+02-26 21:14:18.574  9827 15877 I python  :  llama_perf_context_print:        load time =    5526.68 ms
+02-26 21:14:18.574  9827 15877 I python  :  llama_perf_context_print: prompt eval time =    9744.93 ms /   331 tokens (   29.44 ms per token,    33.97 tokens per second)
+02-26 21:14:18.575  9827 15877 I python  :  llama_perf_context_print:        eval time =   25942.05 ms /   186 runs   (  139.47 ms per token,     7.17 tokens per second)
+02-26 21:14:18.575  9827 15877 I python  :  llama_perf_context_print:       total time =   39903.80 ms /   517 tokens
+02-26 21:14:18.575  9827 15877 I python  :  llama_perf_context_print:    graphs reused =        179
+02-26 21:14:18.600  9827 15877 I python  : [DEBUG  ] [🔒 StructuralCore] Snapshot creato/aggiornato.
+02-26 21:14:18.600  9827 15877 I python  : [INFO   ] [🧠 State Update] Entropy=0.90, Stability=0.92 (Violations: 0)
+02-26 21:14:18.601  9827 15877 I python  : [INFO   ] [✅ Final Answer] [[TH:I=Saluto|S=Caldo|M=Nulla]]  Ciao! Mi chiamo L...
+02-26 21:14:18.621  9827 15877 I python  : [INFO   ] [🧠 PERMANENT LEARNING] Concetto 'come' salvato nel Database (SQL).
+02-26 21:14:18.622  9827 15877 I python  : 💾 MEMORY SAVED (ATOMIC) to /data/data/org.allma.allma_prime/files/app/allma_memory.json

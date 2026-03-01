@@ -309,7 +309,7 @@ class WebViewBridge:
                 # Patch JS for polling
                 js_patch = """
                 console.log("ALLMA_DEBUG: Starting Bridge Patch...");
-                window.msgQueue = [];
+                window.msgQueue = window.msgQueue || [];
                 // API called by UI
                 function sendMessage(text) {
                      window.msgQueue.push(text);

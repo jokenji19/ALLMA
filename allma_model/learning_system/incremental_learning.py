@@ -47,7 +47,7 @@ class KnowledgeState:
 class IncrementalLearner:
     """Sistema di apprendimento incrementale."""
     
-    def __init__(self):
+    def __init__(self, storage_path: str = None):
         """Inizializza il sistema di apprendimento."""
         self.knowledge_base = {}  # topic -> List[LearningUnit]
         self.knowledge_states: Dict[str, KnowledgeState] = {}
@@ -61,7 +61,88 @@ class IncrementalLearner:
         self.topic_vectors = {}
         self.success_counters: Dict[str, int] = {}  # topic -> count of successful independent responses
         self._lock = threading.Lock()
+        # Pool di varianti per i topic HIGH confidence (raffinato dal Dream)
+        self.responses_pool: Dict[str, List[str]] = {}  # topic → [variant1, variant2, ...]
+        # Persistenza su disco
+        self.storage_path = storage_path
+        if self.storage_path:
+            self.load_state()
         
+    def save_state(self) -> None:
+        """Serializza knowledge_states e success_counters su JSON per la persistenza."""
+        if not self.storage_path:
+            return
+        import json, os
+        try:
+            data = {
+                "knowledge_states": {
+                    t: {
+                        "topic": s.topic,
+                        "content": s.content,
+                        "confidence": s.confidence.value,
+                        "sources": list(s.sources),
+                        "last_updated": s.last_updated.isoformat(),
+                        "metadata": s.metadata
+                    }
+                    for t, s in self.knowledge_states.items()
+                },
+                "success_counters": self.success_counters,
+                "responses_pool": self.responses_pool
+            }
+            os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+            with open(self.storage_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False)
+            logging.info(f"[IncrementalLearner] State saved ({len(self.knowledge_states)} topics).")
+        except Exception as e:
+            logging.warning(f"[IncrementalLearner] save_state failed: {e}")
+
+    def load_state(self) -> None:
+        """Carica knowledge_states da JSON se esiste."""
+        if not self.storage_path:
+            return
+        import json, os
+        if not os.path.exists(self.storage_path):
+            return
+        try:
+            with open(self.storage_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            for t, d in data.get("knowledge_states", {}).items():
+                self.knowledge_states[t] = KnowledgeState(
+                    topic=d["topic"],
+                    content=d["content"],
+                    confidence=ConfidenceLevel(d["confidence"]),
+                    sources=set(d.get("sources", [])),
+                    feedback_history=[],
+                    improvement_areas=set(),
+                    last_updated=datetime.fromisoformat(d["last_updated"]),
+                    metadata=d.get("metadata", {})
+                )
+            self.success_counters = data.get("success_counters", {})
+            self.responses_pool = data.get("responses_pool", {})
+            logging.info(f"[IncrementalLearner] State loaded ({len(self.knowledge_states)} topics, {len(self.responses_pool)} pooled).")
+        except Exception as e:
+            logging.warning(f"[IncrementalLearner] load_state failed: {e}")
+
+    def add_response_variants(self, topic: str, variants: List[str]) -> None:
+        """Aggiunge varianti di risposta per un topic (usato dal Dream)."""
+        topic = topic.lower().strip()
+        existing = self.responses_pool.get(topic, [])
+        # Mantieni originale + nuove varianti, max 5
+        merged = list(dict.fromkeys(existing + variants))[:5]
+        self.responses_pool[topic] = merged
+        logging.info(f"[responses_pool] Topic '{topic}': {len(merged)} varianti disponibili.")
+
+    def get_response_variant(self, topic: str) -> Optional[str]:
+        """Restituisce una variante casuale per un topic (fast-path variabile)."""
+        import random
+        topic = topic.lower().strip()
+        pool = self.responses_pool.get(topic, [])
+        if pool:
+            return random.choice(pool)
+        # fallback: usa il content dal knowledge_state
+        state = self.knowledge_states.get(topic)
+        return state.content if state else None
+
     def add_learning_unit(
         self,
         unit: LearningUnit
@@ -193,6 +274,8 @@ class IncrementalLearner:
                         old_confidence = state.confidence
                         state.confidence = ConfidenceLevel(min(state.confidence.value + 1, 3))
                         logging.info(f"🎓 EVOLUZIONE: Topic '{topic}' confidenza {old_confidence.name} → {state.confidence.name}")
+                        # Persisti subito
+                        self.save_state()
                         return True
             
             return False
@@ -300,12 +383,15 @@ class IncrementalLearner:
         response = interaction.get('response', '')
         feedback = interaction.get('feedback', '')
         
-        # Estrai il topic dal testo
-        # In questo caso semplice, prendiamo la prima parola significativa
-        words = input_text.lower().split()
-        topic = next((word for word in words 
-                     if len(word) > 3 and word not in {'want', 'need', 'help', 'please', 'could', 'would'}), 
-                    'general')
+        # Usa il topic fornito dal chiamante (già estratto con topic_extractor)
+        # Fallback: prima parola significativa dal testo
+        topic = interaction.get('topic') or ''
+        if not topic:
+            words = input_text.lower().split()
+            topic = next((word for word in words 
+                         if len(word) > 3 and word not in {'want', 'need', 'help', 'please', 'could', 'would'}), 
+                        'general')
+        topic = topic.lower().strip()
         
         # Crea una nuova unità di apprendimento
         unit = LearningUnit(

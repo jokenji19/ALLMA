@@ -208,6 +208,18 @@ class ChatView(MDScreen):
                         self.bridge.execute_js(f"window.updateDiagnostics({json.dumps(diag_data)})")
                     return
 
+                if message == "__REQUEST_MEMORY_UPDATE__":
+                    if self.bridge:
+                        try:
+                            # Use existing api instance (AllmaAndroidBridge) initialized in ChatView
+                            memory_data = self.api.get_memory_data(self.user_id)
+                            import json
+                            safe_data = json.dumps(memory_data)
+                            self.bridge.execute_js(f"window.updateMemory({safe_data})")
+                        except Exception as e:
+                            print(f"[ChatView] Error fetching memory: {e}")
+                    return
+
                 # Send to Core (Standard Chat)
                 Thread(target=self.process_message, args=(message,)).start()
                 
@@ -525,15 +537,40 @@ class ChatView(MDScreen):
             # MOCK TEMP for now if 0
             stats["resources"]["temp"] = 38.0 + random.uniform(-0.5, 0.5)
 
-            # 2. Soul State
-            if self.core and hasattr(self.core, 'soul'):
+            # 2. V5 Identity State (Metabolic)
+            if self.core and hasattr(self.core, 'identity_engine_v5') and self.core.identity_engine_v5:
+                eng = self.core.identity_engine_v5
+                # Access internal state directly for diagnostics (lightweight)
+                stats["soul"] = {
+                    "energy": getattr(eng, '_maturity', 0.0), # Reusing energy bar for Maturity
+                    "chaos": getattr(eng, '_base_stability', 0.5), # Reusing chaos bar for Stability 
+                    "entropy": 0.0, # Placeholder, computed below
+                    "state_label": f"Maturity: {getattr(eng, '_maturity', 0):.2f}"
+                }
+                
+                # Entropy is tracked in the tracker
+                if hasattr(eng, 'entropy_tracker'):
+                    # We can't easily get 'current' entropy without text, 
+                    # but we can get the average variance or similar if exposed.
+                    # For now, let's use stability inverted as a proxy for visual feedback if entropy not available
+                    stats["soul"]["entropy"] = 1.0 - getattr(eng, '_base_stability', 0.5)
+
+            # Legacy/Fallback Soul (if V5 not active)
+            elif self.core and hasattr(self.core, 'soul'):
                 s = self.core.soul.state
                 stats["soul"] = {
                     "energy": getattr(s, 'energy', 0.5),
                     "chaos": getattr(s, 'chaos', 0.1),
                     "entropy": 1.0 - getattr(s, 'stability', 0.5),
-                    "state_label": "Active" # Could infer from values
+                    "state_label": "Legacy Soul"
                 }
+            
+            # 3. Neuroplasticity Stats
+            if self.core and hasattr(self.core, 'neuroplasticity_v5') and self.core.neuroplasticity_v5:
+                # Add a specific field for frontend if it supports it, or append to logs
+                active_rules = len(self.core.neuroplasticity_v5.rules)
+                stats["neuro"] = {"active_rules": active_rules}
+
             
             # 3. Recent Logs (Mock or recent memory)
             # If we had a log buffer. For now, show last interactions from memory
@@ -587,9 +624,14 @@ class ChatView(MDScreen):
             elif msg_type == 'status':
                 # Handle Status Updates (e.g. Dreaming)
                 for key, value in content.items():
-                    # Convert python bool to js bool string
                     js_val = 'true' if value else 'false'
                     self.bridge.execute_js(f"window.updateStatus('{key}', {js_val})")
-                
+
+            elif msg_type == 'dream_log':
+                # Stream dream reasoning to the Dream Journal panel
+                import json
+                self.bridge.execute_js(f"window.handleDreamLog && window.handleDreamLog({json.dumps(content)})")
+
+
         except Exception as e:
             print(f"ChatView: Error handling core output: {e}")

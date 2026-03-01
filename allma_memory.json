@@ -11,6 +11,64 @@
           "priority": "high"
         }
       }
+    ],
+    "test_user": [
+      {
+        "id": "test_user_1771759660.397083",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:27:40.397090",
+        "content": "Test memory",
+        "metadata": {}
+      },
+      {
+        "id": "test_user_1771759664.207506",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:27:44.207515",
+        "content": "Test memory",
+        "metadata": {}
+      },
+      {
+        "id": "test_user_1771759680.711823",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:28:00.711843",
+        "content": "Test memory",
+        "metadata": {}
+      },
+      {
+        "id": "test_user_1771759684.9901",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:28:04.990109",
+        "content": "Test memory",
+        "metadata": {}
+      },
+      {
+        "id": "test_user_1771759701.666305",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:28:21.666314",
+        "content": "Test memory",
+        "metadata": {}
+      },
+      {
+        "id": "test_user_1771759705.748117",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:28:25.748132",
+        "content": "Test memory",
+        "metadata": {}
+      },
+      {
+        "id": "test_user_1771759769.552727",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:29:29.552735",
+        "content": "Test memory",
+        "metadata": {}
+      },
+      {
+        "id": "test_user_1771759773.391681",
+        "user_id": "test_user",
+        "timestamp": "2026-02-22T12:29:33.391694",
+        "content": "Test memory",
+        "metadata": {}
+      }
     ]
   },
   "messages": [
@@ -150,6 +208,98 @@
         "timestamp": "2026-02-10T21:53:15.576523"
       },
       "user_id": null
+    },
+    {
+      "conversation_id": "test_conv",
+      "role": "system",
+      "content": "Ho ricevuto il tuo messaggio: 'All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.'.\nTuttavia, il mio modulo LLM (Cervello) non è raggiungibile.\nNon posso generare una risposta complessa ora.",
+      "timestamp": "2026-02-21T21:18:06.252885",
+      "metadata": {
+        "emotion": "joy",
+        "topics": [
+          "technical"
+        ],
+        "timestamp": "2026-02-21T21:18:06.252881"
+      },
+      "user_id": null
+    },
+    {
+      "conversation_id": "test_conv",
+      "role": "system",
+      "content": "Ciao! Sono ALLMA. La mia rete neurale è attualmente offline (Safe Mode), ma sono qui.",
+      "timestamp": "2026-02-21T21:18:06.331164",
+      "metadata": {
+        "emotion": "anger",
+        "topics": [
+          "technical"
+        ],
+        "timestamp": "2026-02-21T21:18:06.331145"
+      },
+      "user_id": null
+    },
+    {
+      "conversation_id": "test_user_1771759660.397083",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:27:40.397090",
+      "metadata": {},
+      "user_id": "test_user"
+    },
+    {
+      "conversation_id": "test_user_1771759664.207506",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:27:44.207515",
+      "metadata": {},
+      "user_id": "test_user"
+    },
+    {
+      "conversation_id": "test_user_1771759680.711823",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:28:00.711843",
+      "metadata": {},
+      "user_id": "test_user"
+    },
+    {
+      "conversation_id": "test_user_1771759684.9901",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:28:04.990109",
+      "metadata": {},
+      "user_id": "test_user"
+    },
+    {
+      "conversation_id": "test_user_1771759701.666305",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:28:21.666314",
+      "metadata": {},
+      "user_id": "test_user"
+    },
+    {
+      "conversation_id": "test_user_1771759705.748117",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:28:25.748132",
+      "metadata": {},
+      "user_id": "test_user"
+    },
+    {
+      "conversation_id": "test_user_1771759769.552727",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:29:29.552735",
+      "metadata": {},
+      "user_id": "test_user"
+    },
+    {
+      "conversation_id": "test_user_1771759773.391681",
+      "role": "user",
+      "content": "Test memory",
+      "timestamp": "2026-02-22T12:29:33.391694",
+      "metadata": {},
+      "user_id": "test_user"
     }
   ],
   "trauma_log": []

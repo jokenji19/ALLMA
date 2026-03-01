@@ -299,7 +299,7 @@
         <div class="sidebar-header">
             <div class="brand">
                 <span class="logo-text">ALLMA</span>
-                <span class="version-tag">v0.47</span>
+                <span class="version-tag">v0.80</span>
             </div>
         </div>
 
@@ -323,6 +323,11 @@
                 <button class="nav-item" onclick="openPanel('memory')">
                     <span class="icon icon-purple">🧠</span>
                     <span class="nav-text">Memoria</span>
+                </button>
+
+                <button class="nav-item" id="dream-journal-btn" onclick="openPanel('dream')">
+                    <span class="icon icon-indigo">🌙</span>
+                    <span class="nav-text">Diario Sogni</span>
                 </button>
 
                 <button class="nav-item" onclick="openPanel('voice')">
@@ -364,25 +369,55 @@
         </div>
     </aside>
 
+    <!-- 5b. Dream Journal Panel -->
+    <div id="panel-dream" class="sidebar-panel hidden">
+        <div class="panel-header">
+            <h3>🌙 Diario dei Sogni</h3>
+            <button class="close-panel-btn" onclick="closePanel('dream')">×</button>
+        </div>
+        <div class="panel-body dream-journal-body">
+            <div class="dream-journal-meta" id="dream-journal-meta">
+                <span id="dream-status-badge" class="dream-badge dream-badge--idle">In attesa...</span>
+                <button class="dream-clear-btn" onclick="clearDreamJournal()">🗑 Pulisci</button>
+            </div>
+            <div id="dream-journal-entries" class="dream-journal-entries">
+                <div class="dream-empty-state">
+                    <span>🌙</span>
+                    <p>Nessun sogno registrato.<br>Attiva i Sogni & Iniziativa nelle impostazioni.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 6. Memory Panel (Overlay Modal) -->
+
     <div id="panel-memory" class="sidebar-panel hidden">
         <div class="panel-header">
             <h3>Memoria Cognitiva</h3>
             <button class="close-panel-btn" onclick="closePanel('memory')">×</button>
         </div>
-        <div class="panel-body">
-            <div class="memory-section">
-                <h4>👤 Profilo Utente</h4>
-                <div id="memory-user-facts" class="memory-grid">
-                    <!-- Facts here -->
+        <div class="panel-body memory-layout">
+
+            <div class="memory-flex-container">
+                <!-- User Profile Facts -->
+                <div class="memory-section facts-section">
+                    <h4>👤 Profilo Utente</h4>
+                    <p class="section-desc">Fatti e preferenze apprese permanentemente</p>
+                    <div id="memory-user-facts" class="memory-grid">
+                        <div class="memory-empty-state">Analisi in corso...</div>
+                    </div>
+                </div>
+
+                <!-- Conversation Flow -->
+                <div class="memory-section logs-section">
+                    <h4>💭 Flusso Conversazione</h4>
+                    <p class="section-desc">Ultimi scambi e pensieri registrati</p>
+                    <div id="memory-logs" class="log-list">
+                        <div class="memory-empty-state">Nessun log recente</div>
+                    </div>
                 </div>
             </div>
-            <div class="memory-section">
-                <h4>💭 Flusso Pensieri</h4>
-                <div id="memory-logs" class="log-list">
-                    <!-- Logs here -->
-                </div>
-            </div>
+
         </div>
     </div>
 
@@ -454,6 +489,15 @@
                     <span>Mostra pensieri</span>
                     <span class="setting-value">✅ Attivo</span>
                 </div>
+                <!-- Status Chips moved here -->
+                <div class="setting-item">
+                    <span>Stato Sottosistemi</span>
+                    <div class="status-badges" id="voice-stack-status">
+                        <span id="status-stt" class="status-chip status-unknown">STT</span>
+                        <span id="status-tts" class="status-chip status-unknown">TTS</span>
+                        <span id="status-llm" class="status-chip status-unknown">LLM</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Diagnostics Section -->
@@ -506,11 +550,6 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
             </svg>
         </button>
-        <div class="status-badges" id="voice-stack-status">
-            <span id="status-stt" class="status-chip status-unknown">STT</span>
-            <span id="status-tts" class="status-chip status-unknown">TTS</span>
-            <span id="status-llm" class="status-chip status-unknown">LLM</span>
-        </div>
     </div>
 
     <!-- VIEW: CHAT -->
@@ -588,29 +627,29 @@
                 </div>
             </div>
 
-            <!-- Soul Monitor -->
+            <!-- Identity Monitor (V5) -->
             <div class="diag-section">
-                <h4>🔮 Stato Anima (Soul Core)</h4>
+                <h4>🧠 Stato Identità (V5 Limbico)</h4>
                 <div class="soul-viz-container">
                     <div class="soul-metric">
-                        <span>Energy</span>
+                        <span>Maturity</span>
                         <div class="soul-bar">
                             <div class="soul-fill energy" id="soul-energy-bar" style="width:50%"></div>
                         </div>
                     </div>
                     <div class="soul-metric">
-                        <span>Chaos</span>
+                        <span>Stability</span>
                         <div class="soul-bar">
                             <div class="soul-fill chaos" id="soul-chaos-bar" style="width:50%"></div>
                         </div>
                     </div>
                     <div class="soul-metric">
-                        <span>Entropia</span>
+                        <span>Entropy</span>
                         <div class="soul-bar">
                             <div class="soul-fill entropy" id="soul-entropy-bar" style="width:10%"></div>
                         </div>
                     </div>
-                    <div class="soul-status-text" id="soul-status-text">Stato: Stabile</div>
+                    <div class="soul-status-text" id="soul-status-text">Stato: Analisi...</div>
                 </div>
             </div>
 

@@ -15,10 +15,11 @@ class ModelDownloader:
         
         # URL dei modelli (GGUF quantizzati per mobile)
         # Nota: Usiamo link diretti a HuggingFace GGUF
+        # NOTA: Il repo ufficiale Qwen/Qwen3-1.7B-GGUF contiene SOLO Q8_0
         self.models = {
             "gemma": {
                 "url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf?download=true",
-                "filename": "qwen3-1.7b-q8_0.gguf", 
+                "filename": "qwen3-1.7b-q8_0.gguf",
                 "size_mb": 1650
             }
         }

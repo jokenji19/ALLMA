@@ -431,23 +431,29 @@ class AllmaAndroidBridge:
         try:
             # 1. Recupera i "Fatti Cognitivi" (Persistente)
             # Accessing internal memory structure safely
-            if hasattr(self.allma, 'memory') and hasattr(self.allma.memory, 'user_data'):
-                facts = self.allma.memory.user_data.get(user_id, {})
+            if hasattr(self.allma, 'conversational_memory') and hasattr(self.allma.conversational_memory, 'user_data'):
+                facts = self.allma.conversational_memory.user_data.get(user_id, {})
             else:
                 facts = {}
 
             # 2. Recupera i Log recenti (Pensieri + Risposte)
-            # Utilizziamo get_conversation_history ma arricchito se possibile
             logs = []
             try:
-                raw_history = self.allma.memory.get_conversation_history(user_id)
+                all_msgs = self.allma.conversational_memory.messages
+                # Filter by user if possible, else take all (mobile typically has 1 user)
+                user_msgs = [m for m in all_msgs if getattr(m, 'user_id', None) == user_id]
+                if not user_msgs and all_msgs:
+                    user_msgs = all_msgs
+                
                 # Prendiamo gli ultimi 10 scambi
-                for msg in raw_history[-10:]:
+                for msg in user_msgs[-10:]:
+                    content = getattr(msg, 'content', '')
+                    timestamp = getattr(msg, 'timestamp', None)
                     logs.append({
-                        "role": msg.role,
-                        "content": msg.content,
-                        "timestamp": msg.timestamp.isoformat() if msg.timestamp else "",
-                        "is_thought": "[[TH:" in msg.content # Flag per UI
+                        "role": getattr(msg, 'role', 'assistant'),
+                        "content": content,
+                        "timestamp": timestamp.isoformat() if timestamp else "",
+                        "is_thought": "[[TH:" in content
                     })
             except:
                 pass
