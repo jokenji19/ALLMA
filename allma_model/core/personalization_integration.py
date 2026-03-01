@@ -589,18 +589,19 @@ class PersonalizationIntegration:
         return style_adaptations.get(relationship_level, style_adaptations['initial'])
 
     def _cleanup_memory(self):
-        """Libera spazio nella memoria eliminando i nodi meno importanti"""
+        """Ottimizza lo spazio nella memoria spostando i nodi vecchi ma SENZA mai cancellarli"""
         try:
             stats = self.memory_system.get_memory_stats()
-            # If memory is getting full or we have many nodes
-            if stats.get('memory_usage', 0) > 0.8 or stats.get('total_nodes', 0) > 1000:
-                logging.info(f"🧹 Pulizia Memoria Avviata (Nodi: {stats.get('total_nodes')}, Uso: {stats.get('memory_usage'):.2f})")
+            # If we have many nodes, just trigger a lifecycle sweep to move them to cold storage (long_term)
+            if stats.get('total_nodes', 0) > 1000:
+                logging.info(f"💾 Ottimizzazione Memoria Avviata (Nodi: {stats.get('total_nodes')}) - Nessun dato verrà cancellato.")
                 
-                # Consolida memorie a lungo termine sotto soglia di conservazione 0.7 (più aggressivo)
-                if hasattr(self.memory_system, 'consolidate_long_term_memories'):
-                    self.memory_system.consolidate_long_term_memories(retention_threshold=0.7)
+                # Invece di consolidare/cancellare, forziamo il lifecycle
+                # che sposta i nodi vecchi nel layer 'long_term'
+                if hasattr(self.memory_system, '_manage_memory_lifecycle'):
+                    self.memory_system._manage_memory_lifecycle()
                 
                 new_stats = self.memory_system.get_memory_stats()
-                logging.info(f"🧹 Pulizia Completata (Nodi rimanenti: {new_stats.get('total_nodes')})")
+                logging.info(f"💾 Ottimizzazione Completata. Nodi spostati in Deep Storage. (Totale nodi intatto: {new_stats.get('total_nodes')})")
         except Exception as e:
-            logging.error(f"Errore durante il _cleanup_memory: {e}")
+            logging.error(f"Errore durante l'ottimizzazione memoria: {e}")
