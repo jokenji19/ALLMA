@@ -8,6 +8,14 @@ from collections import defaultdict, Counter
 from dataclasses import dataclass
 import numpy as np
 from allma_model.utils.text_processing import SimpleTfidf, cosine_similarity
+# V6 Sprint 3: Vector Engine
+try:
+    from allma_model.core.vector_memory_engine import VectorMemoryEngine
+    _VECTOR_ENGINE_AVAILABLE = True
+except ImportError:
+    _VECTOR_ENGINE_AVAILABLE = False
+    import logging
+    logging.getLogger(__name__).warning("[V6.3] VectorMemoryEngine non disponibile, fallback a TF-IDF classico.")
 
 
 
@@ -45,6 +53,21 @@ class ConversationalMemory:
         # Concurrency safety
         import threading
         self.lock = threading.RLock()
+        
+        # V6 Sprint 3: Vector Engine (SQLite-backed)
+        if _VECTOR_ENGINE_AVAILABLE:
+            try:
+                self.vector_engine = VectorMemoryEngine(db_path="data/allma_vectors.db")
+                import logging
+                logging.getLogger(__name__).info(
+                    f"[V6.3] VectorMemoryEngine attivo: {self.vector_engine.count()} memorie in DB."
+                )
+            except Exception as e:
+                self.vector_engine = None
+                import logging
+                logging.getLogger(__name__).warning(f"[V6.3] VectorMemoryEngine init failed: {e}")
+        else:
+            self.vector_engine = None
         
         if load_persistent:
             self.load_memory()
@@ -113,7 +136,7 @@ class ConversationalMemory:
             metadata=metadata
         )
         
-        # Calcola embedding
+        # Calcola embedding (fallback TF-IDF classico)
         try:
             vectors = self.vectorizer.fit_transform([content])
             if hasattr(vectors, "toarray"):
@@ -138,7 +161,20 @@ class ConversationalMemory:
         self.messages.append(message)
         self.save_memory()
         
-        # Aggiorna vettori conversazione
+        # V6 Sprint 3: aggiungi anche al VectorEngine
+        if self.vector_engine is not None:
+            try:
+                self.vector_engine.add(
+                    user_id=user_id,
+                    content=content,
+                    metadata=metadata,
+                    timestamp=conversation.timestamp,
+                )
+            except Exception as ve:
+                import logging
+                logging.getLogger(__name__).warning(f"[V6.3] VectorEngine.add failed: {ve}")
+        
+        # Aggiorna vettori conversazione (legato a TF-IDF classico)
         if conversation.embeddings is not None:
             self.conversation_vectors[conversation_id] = conversation.embeddings
             
@@ -164,12 +200,10 @@ class ConversationalMemory:
         results = []
         
         # 1. FACT CHECK (Priority High)
-        # Search in extracted User Data first
         if user_id and hasattr(self, 'user_data') and user_id in self.user_data:
             user_facts = self.user_data[user_id]
             for key, value in user_facts.items():
                 if key in current_topic.lower() or value in current_topic.lower():
-                    # Create a synthetic conversation for the fact
                     fact_conv = Conversation(
                         id=f"fact_{key}",
                         user_id=user_id,
@@ -177,12 +211,36 @@ class ConversationalMemory:
                         content=f"FACT: Il tuo {key} è {value}.",
                         metadata={'type': 'fact'}
                     )
-                    results.append((1.0, fact_conv)) # Max score for facts
+                    results.append((1.0, fact_conv))
 
         if not current_topic.strip():
             return results
-            
-        # Filtra conversazioni per utente se specificato
+
+        # 2. V6 Sprint 3: Vector Engine fast-path (SQLite-backed)
+        if self.vector_engine is not None:
+            try:
+                hits = self.vector_engine.search(
+                    user_id=user_id or "user_default",
+                    query=current_topic,
+                    top_k=max_results,
+                )
+                for hit in hits:
+                    synth = Conversation(
+                        id=f"vec_{hit['id']}",
+                        user_id=user_id or "user_default",
+                        timestamp=datetime.fromisoformat(hit['timestamp']) if hit.get('timestamp') else datetime.now(),
+                        content=hit['content'],
+                        metadata=hit.get('metadata', {}),
+                    )
+                    results.append((hit['score'], synth))
+                if results:
+                    results.sort(key=lambda x: x[0], reverse=True)
+                    return results[:max_results]
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"[V6.3] VectorEngine.search failed, fallback TF-IDF: {e}")
+
+        # 3. Fallback: TF-IDF classico O(n)
         conversations = (
             self.conversations[user_id] if user_id
             else [c for convs in self.conversations.values() for c in convs]

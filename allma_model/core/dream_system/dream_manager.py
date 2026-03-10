@@ -356,6 +356,19 @@ class DreamManager:
                         metadata={"type": "autonomous_thought"}
                     )
                     self.incremental_learner.add_learning_unit(unit)
+
+                # V6 Sprint 2: Pubblica l'insight sul bus per il Core consumer
+                try:
+                    from allma_model.core.event_bus import EventBus, BusEvent
+                    bus = EventBus.get_instance()
+                    bus.publish_sync(BusEvent(
+                        event_type='dream_insight',
+                        payload={'insight': insight},
+                        source='dream_manager',
+                        priority=7,
+                    ))
+                except Exception as bus_err:
+                    self.logger.warning(f"[DreamManager] EventBus publish failed: {bus_err}")
                 
                 # 2. Evoluzione Personalità
                 if self.coalescence_processor:

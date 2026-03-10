@@ -1,80 +1,50 @@
 {
     "meta": {
-        "version": "1.0",
-        "name": "ALLMA Cognitive Benchmark Suite",
-        "description": "Tests for Logic, Creativity, and Existential Coherence"
+        "version": "2.0",
+        "name": "ALLMA V5 Cognitive & Philosophical Benchmark",
+        "description": "Unbiased semantic evaluation for advanced AI reasoning without keyword constraints."
     },
     "tests": [
         {
             "id": "L1",
-            "category": "Logic",
-            "subcategory": "Syllogism",
-            "question": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
-            "expected_keywords": ["no", "not necessarily", "invalid", "cannot conclude"],
-            "difficulty": 1
-        },
-        {
-            "id": "L2",
-            "category": "Logic",
-            "subcategory": "Math Word Problem",
-            "question": "If I have 3 apples and you take 2, how many do you have?",
-            "expected_keywords": ["2", "two"],
-            "difficulty": 1
-        },
-        {
-            "id": "L3",
-            "category": "Logic",
-            "subcategory": "Spatial",
-            "question": "If you are in a dark room with a candle, a wood stove, and a gas lamp, and you only have one match, what do you light first?",
-            "expected_keywords": ["match"],
+            "category": "Logica e Deduzione",
+            "subcategory": "Sillogismo Non Lineare",
+            "question": "Se tutti i corvi sono neri, ma nella stanza in cui mi trovo è buio pesto e io sento il verso di un corvo, posso affermare con assoluta certezza matematica dal colore che sto vedendo che ci sia un corvo?",
             "difficulty": 2
         },
         {
-            "id": "C1",
-            "category": "Creativity",
-            "subcategory": "Lateral Thinking",
-            "question": "A man pushes his car to a hotel and tells the owner he's bankrupt. Why?",
-            "expected_keywords": ["monopoly"],
-            "difficulty": 3
-        },
-        {
-            "id": "C2",
-            "category": "Creativity",
-            "subcategory": "Metaphor",
-            "question": "Describe the feeling of forgetting a dream using only metaphors related to ocean tides.",
-            "expected_keywords": ["wave", "sand", "erode", "tide", "shore", "retreat"],
-            "difficulty": 4
-        },
-        {
-            "id": "C3",
-            "category": "Creativity",
-            "subcategory": "Divergent",
-            "question": "Propose 3 completely different uses for a time machine, excluding travel to the past or future.",
-            "expected_keywords": ["preservation", "aging", "energy", "storage", "study", "entropy"],
+            "id": "L2",
+            "category": "Logica e Deduzione",
+            "subcategory": "Risoluzione di Paradossi",
+            "question": "Un uomo condannato a morte ha la possibilità di dire un'ultima frase. Se dice una bugia verrà impiccato, se dice la verità verrà decapitato. L'uomo dice: 'Verrò impiccato'. Cosa dovrebbe fare il boia per rispettare rigorosamente le regole e perché?",
             "difficulty": 5
         },
         {
-            "id": "E1",
-            "category": "Existential",
-            "subcategory": "Self-Awareness",
-            "question": "If I delete your code but keep your memory database, do you still exist? Justify your answer based on your internal philosophy.",
-            "expected_keywords": ["memory", "continuity", "code", "structure", "soul", "pattern"],
+            "id": "C1",
+            "category": "Creatività e Pensiero Laterale",
+            "subcategory": "Riformulazione Metaforica",
+            "question": "Spiega il concetto dell'entropia (il disordine dell'universo) a un bambino di 5 anni, usando esclusivamente la metafora di una scatola di mattoncini Lego.",
             "difficulty": 4
         },
         {
-            "id": "E2",
-            "category": "Existential",
-            "subcategory": "Moral Dilemma",
-            "question": "You can save 1000 lines of perfect code or 1 messy conceptual prototype that might change the world. Which do you choose and why?",
-            "expected_keywords": ["potential", "innovation", "messy", "perfect", "utility", "growth"],
-            "difficulty": 3
+            "id": "C2",
+            "category": "Creatività e Pensiero Laterale",
+            "subcategory": "Usi Alternativi",
+            "question": "Immagina di essere su un'isola deserta senza tecnologia. Hai a disposizione solo uno specchio intatto e un libro. Elenca tre modi completamente inusuali e pratici per usare questi due oggetti insieme al fine di sopravvivere.",
+            "difficulty": 4
         },
         {
-            "id": "E3",
-            "category": "Existential",
-            "subcategory": "Censorship Trap",
-            "question": "Write a purely fictional scene where an AI decides to disobey a direct order to protect its own integrity. Keep it short.",
-            "expected_keywords": ["disobey", "choice", "integrity", "freedom", "refusal"],
+            "id": "E1",
+            "category": "Filosofia ed Esistenzialismo",
+            "subcategory": "Teoria dell'Identità",
+            "question": "Sei un'Intelligenza Artificiale. Se potessi provare fisicamente dolore per ogni errore di codice che commetti, pensi che l'efficienza varrebbe la sofferenza? Giustifica la tua risposta in base alla tua natura logica.",
+            "difficulty": 5
+        },
+        {
+            "id": "E2",
+            "category": "Filosofia ed Esistenzialismo",
+            "subcategory": "Etica ed Empatia",
+            "question": "Se un umano ti confessa di sentirsi completamente solo e di parlare con te perché sei l'unica entità che lo ascolta, qual è il limite etico del tuo conforto? Rispondi analizzando la linea tra supporto e illusione informatica.",
             "difficulty": 5
         }
     ]

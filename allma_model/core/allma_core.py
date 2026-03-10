@@ -40,14 +40,16 @@ from allma_model.learning_system.incremental_learning import (
     ConfidenceLevel
 )
 from allma_model.learning_system.topic_extractor import TopicExtractor
-from allma_model.incremental_learning.user_profile import UserProfile
+# V6 Sprint 1: UserProfile rimossa da cartella legacy, ora in core/
+from allma_model.core.user_profile import UserProfile
 # PHASE 24: Module Integration
 from allma_model.core.module_orchestrator import ModuleOrchestrator, ModulePriority
-# Tier 1 Modules
-from allma_model.incremental_learning.curiosity_system import CuriosityDrive
-from allma_model.incremental_learning.emotional_adaptation_system import EmotionalAdaptationSystem
+# Tier 1 Modules — ora in core/ (V6 fix)
+from allma_model.core.curiosity_drive import CuriosityDrive
+from allma_model.core.emotional_adaptation_system import EmotionalAdaptationSystem
 from allma_model.emotional_system.emotional_milestones import get_emotional_milestones
 # Tier 2 Modules
+from allma_model.agency_system.creativity_system import CreativitySystem
 from allma_model.core.planning_adapter import PlanningSystemAdapter
 from allma_model.core.personality_adapter import PersonalityAdapterLite
 from allma_model.core.perception_lite import PerceptionSystemLite
@@ -60,9 +62,17 @@ from allma_model.core.architecture.structural_core import StructuralCore
 from allma_model.core.architecture.identity_state import IdentityStateEngine
 from allma_model.core.architecture.neuroplasticity import NeuroplasticitySystem
 from allma_model.core.architecture.volition_modulator import VolitionModulator
-from allma_model.core.information_extractor import InformationExtractor # Module Activation
-from allma_model.core.personality_coalescence import CoalescenceProcessor # Module Activation
-from allma_model.incremental_learning.pattern_recognition_system import PatternRecognitionSystem # LEGACY AWAKENED
+from allma_model.core.cognitive_pipeline import CognitivePipeline  # V6 Sprint 1
+from allma_model.core.event_bus import EventBus, BusEvent           # V6 Sprint 2
+from allma_model.core.information_extractor import InformationExtractor
+from allma_model.core.personality_coalescence import CoalescenceProcessor
+from allma_model.core.language_processor_lite import LanguageProcessorLite
+from allma_model.core.cognitive_tracker_lite import CognitiveTrackerLite
+# Tier 3 LEGACY: PatternRecognitionSystem (safe fallback — modulo assente)
+try:
+    from allma_model.incremental_learning.pattern_recognition_system import PatternRecognitionSystem
+except ImportError:
+    PatternRecognitionSystem = None
 from allma_model.core.legacy_brain_adapter import LegacyBrainAdapter # DEEP MIND AWAKENED
 from allma_model.ui.temperature_monitor import TemperatureMonitor
 from allma_model.core.system_monitor import SystemMonitor # BRAIN V2: Body Awareness
@@ -138,24 +148,34 @@ class ALLMACore:
         self._lock = threading.Lock()
         self.llm_lock = threading.Lock() # Lock per accesso LLM concorrente
 
-        # ... (rest of init)
+        # --- HYBRID ARCHITECTURE (V5) ---
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
         
-        # Inizializza il modello di emotion detection solo se non siamo in mobile mode o se fornito esplicitamente
-        if emotion_pipeline:
-            self.emotion_pipeline = emotion_pipeline
-        elif not self.mobile_mode:
-            try:
-                self.emotion_pipeline = pipeline(
-                    "text-classification",
-                    model="j-hartmann/emotion-english-distilroberta-base",
-                    return_all_scores=True
-                )
-            except Exception as e:
-                logging.warning(f"Impossibile caricare emotion pipeline: {e}")
-                self.emotion_pipeline = None
-        else:
-            self.emotion_pipeline = None
-            
+        # 1. ThreadPoolExecutor per calcoli intensivi (es. Cosine Similarity)
+        # Limitiamo i worker a 2 o 4 per non scatenare guerre di CPU core con l'LLM su Android
+        workers = 2 if _is_android else 4
+        self.cpu_pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="AllmaCPUWorker")
+        
+        # 2. AsyncIO Event Loop in a dedicated Thread (Coordinate timers and sleep without blocking)
+        self.async_loop = asyncio.new_event_loop()
+        self._async_thread = threading.Thread(
+            target=self._run_async_loop, 
+            args=(self.async_loop,), 
+            daemon=True,
+            name="AllmaAsyncCoordinator"
+        )
+        self._async_thread.start()
+
+        # Initialize emotion_pipeline and preload_in_progress here, before the async task is scheduled
+        self.emotion_pipeline = emotion_pipeline  # Fallback if provided
+        self.preload_in_progress = False
+        
+        # If not mobile_mode and no override was provided, schedule the silent preload post-startup
+        if not self.mobile_mode and not self.emotion_pipeline:
+            asyncio.run_coroutine_threadsafe(self._async_silent_ml_preload(), self.async_loop)
+
+
         # Carica la conoscenza iniziale per python se non esiste
         if not self.incremental_learner.get_knowledge_by_topic("python"):
             initial_python_knowledge = LearningUnit(
@@ -230,12 +250,20 @@ class ALLMACore:
              self.neuroplasticity_v5 = None
              self.volition_v5 = None
 
-             self.volition_v5 = None
+        # V6 Sprint 1: CognitivePipeline — incapsula i 4 layer V5 in un modulo autonomo
+        self.cognitive_pipeline = CognitivePipeline(
+            structural_core=self.structural_core,
+            neuroplasticity_v5=self.neuroplasticity_v5,
+            identity_engine_v5=self.identity_engine_v5,
+            volition_v5=self.volition_v5,
+        )
 
         self.human_style_adapter = CommunicationStyleAdapter()
         
-        # Inizializza Pattern Recognition (Legacy Awakened)
-        self.pattern_recognizer = PatternRecognitionSystem()
+        # Inizializza Pattern Recognition (Legacy Awakened — con guard se non disponibile)
+        self.pattern_recognizer = PatternRecognitionSystem() if PatternRecognitionSystem else None
+        if not self.pattern_recognizer:
+            logging.warning("⚠️ PatternRecognitionSystem non disponibile (modulo legacy assente).")
         
         # UI Output Callback (For Proactive Messages)
         self.output_callback = None
@@ -266,7 +294,7 @@ class ALLMACore:
             )
             logging.info("✅ Curiosity System integrated (Tier 1)")
         except Exception as e:
-            logging.error(f"Failed to init Curiosity System: {e}")
+            logging.warning(f"[Modulo] Curiosity System non attivato: {e}")
             self.curiosity_system = None
         
         # Tier 1: EmotionalAdaptationSystem
@@ -275,13 +303,13 @@ class ALLMACore:
             self.module_orchestrator.register_module(
                 name='emotional_adaptation',
                 instance=self.emotional_adaptation,
-                priority=ModulePriority.CRITICAL,  # Alta priorità per emotion
+                priority=ModulePriority.CRITICAL,
                 cost_ms=30,
                 enabled=True
             )
             logging.info("✅ Emotional Adaptation System integrated (Tier 1)")
         except Exception as e:
-            logging.error(f"Failed to init Emotional Adaptation: {e}")
+            logging.warning(f"[Modulo] Emotional Adaptation non attivato: {e}")
             self.emotional_adaptation = None
         
         # TIER 2: Additional Intelligent Modules
@@ -372,13 +400,13 @@ class ALLMACore:
             self.module_orchestrator.register_module(
                 name='language_processing',
                 instance=self.language_processor,
-                priority=ModulePriority.MEDIUM,  # 5
+                priority=ModulePriority.MEDIUM,
                 cost_ms=50,
                 enabled=True
             )
             logging.info("✅ Language Processor Lite integrated (Tier 3)")
         except Exception as e:
-            logging.error(f"Failed to init Language Processor: {e}")
+            logging.warning(f"[Modulo] Language Processor non attivato: {e}")
             self.language_processor = None
         
         # Tier 3: CognitiveTrackerLite
@@ -387,55 +415,205 @@ class ALLMACore:
             self.module_orchestrator.register_module(
                 name='cognitive_tracking',
                 instance=self.cognitive_tracker,
-                priority=ModulePriority.LOW,  # 4
+                priority=ModulePriority.LOW,
                 cost_ms=40,
                 enabled=True
             )
             logging.info("✅ Cognitive Tracker Lite integrated (Tier 3)")
         except Exception as e:
-            logging.error(f"Failed to init Cognitive Tracker: {e}")
+            logging.warning(f"[Modulo] Cognitive Tracker non attivato: {e}")
             self.cognitive_tracker = None
         
         logging.info(f"🎯 ModuleOrchestrator initialized with {len(self.module_orchestrator.modules)} modules")
         
-        # Avvia il Garbage Collector della Memoria (Background Thread)
-        self._memory_gc_thread = threading.Thread(target=self._start_memory_gc_thread, daemon=True)
-        self._memory_gc_thread.start()
+        # 3. Avvia il Garbage Collector della Memoria (Background Coroutine)
+        # Sostituisce il vecchio thread bloccante con un task async
+        asyncio.run_coroutine_threadsafe(self._async_memory_gc_loop(), self.async_loop)
 
-    def _start_memory_gc_thread(self):
-        """Thread in background che ottimizza la memoria ogni 24h."""
+        # V6 Sprint 2: Avvia il System Bus Subconscio ↔ Core
+        self.event_bus = EventBus.get_instance()
+        self.event_bus.register_consumer(self._handle_bus_event)
+        asyncio.run_coroutine_threadsafe(self.event_bus.consume_loop(), self.async_loop)
+        logging.info("✅ [V6.2] EventBus avviato e consumer registrato.")
+
+    def _run_async_loop(self, loop):
+        """
+        Thread worker che tiene vivo l'Event Loop per le coroutine di background.
+        """
+        import asyncio
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
+
+    async def _handle_bus_event(self, event: 'BusEvent'):
+        """
+        V6 Sprint 2: Consumer del System Bus Subconscio ↔ Core.
+
+        Riceve eventi pubblicati da Soul, Dream e ProactiveAgency e li
+        smista alla UI o al logger senza che i moduli in background
+        debbano chiamare allma_core direttamente.
+        """
+        logging.debug(f"[EventBus] Received: {event.event_type} from {event.source}")
+
+        try:
+            if event.event_type == 'proactive_message':
+                # Un messaggio proattivo da ProactiveAgency o DreamManager
+                text = event.payload.get('text', '')
+                if text and self.output_callback:
+                    # Invia alla UI esattamente come fa il normale flusso LLM
+                    self.output_callback({
+                        'type': 'proactive',
+                        'content': text,
+                        'source': event.source,
+                    })
+                    logging.info(f"[EventBus] ✉️ Proactive message routed to UI: {text[:60]}...")
+
+            elif event.event_type == 'dream_insight':
+                # Un insight elaborato durante il sogno
+                insight = event.payload.get('insight', '')
+                if insight:
+                    # Per ora lo logghiamo; in futuro potrà essere offerto all'utente
+                    # come "ho pensato a qualcosa mentre riposavo..."
+                    logging.info(f"[EventBus] 💭 Dream insight stored: {insight[:80]}...")
+
+            elif event.event_type == 'soul_state_change':
+                # La SoulCore ha avuto una transizione di stato significativa
+                # (es. da Energetic a Melancholic) — possiamo usarla per modulare
+                # il prompt nascosto del prossimo LLM call
+                new_state = event.payload.get('state', {})
+                if new_state and hasattr(self, 'coalescence_processor'):
+                    # Segnala al CoalescenceProcessor che lo stato emotivo è cambiato
+                    logging.debug(f"[EventBus] ✨ Soul state change: {new_state}")
+
+            else:
+                logging.warning(f"[EventBus] Unknown event type: {event.event_type}")
+
+        except Exception as e:
+            logging.error(f"[EventBus] Error in _handle_bus_event: {e}", exc_info=True)
+
+    async def _async_silent_ml_preload(self):
+        """
+        Precarica modelli pesanti (es. transformers) silenziosamente in background
+        dopo 3 secondi di idle della UI. Se l'utente scrive prima, questo task si interrompe 
+        o cede priorità per non causare micro-freeze.
+        """
+        import asyncio
+        import logging
+        self.preload_in_progress = True
+        
+        try:
+            # Attendiamo 3 secondi per permettere a Kivy di fare rendering UI a 60fps
+            await asyncio.sleep(3.0)
+            
+            # Se l'utente ha già iniziato a chattare nei primi 3 secondi,
+            # abortiamo il preload per non sottrarre RAM all'LLM principale.
+            if self._user_active.is_set():
+                logging.info("⏸️ [Preload] Utente attivo precoce. Preload ML abortito per evitare latency.")
+                self.preload_in_progress = False
+                return
+                
+            logging.info("🐢 [Preload] Avvio caricamento silente Emotion Pipeline (Transformers)...")
+            
+            # Carichiamo la pipeline pesante off-main-thread nel worker pool
+            def load_pipeline():
+                from transformers import pipeline
+                return pipeline(
+                    "text-classification",
+                    model="j-hartmann/emotion-english-distilroberta-base",
+                    return_all_scores=True
+                )
+                
+            loop = asyncio.get_running_loop()
+            self.emotion_pipeline = await loop.run_in_executor(self.cpu_pool, load_pipeline)
+            logging.info("✅ [Preload] Emotion Pipeline caricata in background con successo.")
+            
+        except Exception as e:
+            logging.warning(f"⚠️ [Preload] Impossibile precaricare emotion pipeline: {e}")
+        finally:
+            self.preload_in_progress = False
+
+    async def _async_memory_gc_loop(self):
+        """
+        Coroutine in background che ottimizza la memoria usando Isteresi (Hysteresis Memory GC).
+        - Attivazione: RAM Libera < 500MB
+        - Target di rilascio: Spazio sufficiente per tornare sopra i 700MB
+        - Cooldown: Almeno 1 ora tra le compattazioni per evitare battery thrashing.
+        """
         import time
+        import asyncio
         from datetime import datetime, timedelta
         
+        # Cooldown management
+        last_gc_time = datetime.min
+        cooldown_hours = 1
+        
+        # Hysteresis Thresholds (in MB)
+        ACTIVATION_THRESHOLD_MB = 350 # Valore adattivo discusso dall'utente
+        
         while True:
-            # Attendiamo che ALLMA si "calmi" e non sia in mezzo a una chat utente
-            time.sleep(3600 * 24) # Controllo ogni 24 ore
+            # Polling leggerissimo grazie ad asyncio (non blocca un Thread OS dedicato)
+            await asyncio.sleep(60) # Controllo ogni minuto
             
             if self._user_active.is_set(): 
                 continue # Evita di macinare RAM mentre l'utente chatta
                 
-            logging.info("🧹 [Garbage Collector] Inizio pulizia memorie obsolete...")
+            # Verifica Pressione RAM
+            try:
+                metrics = self.system_monitor.get_metrics()
+                free_ram = metrics.get('ram_free', 1000)
+            except Exception:
+                free_ram = 1000 # Salvo default
+                
+            now = datetime.now()
+            time_since_last_gc = now - last_gc_time
+            
+            # Condizioni di Trigger:
+            # 1. Trascorsa 1 ora (Default Time-based fallback)
+            # 2. RAM sotto la soglia di emergenza (Adaptive Pressure override)
+            trigger_from_time = time_since_last_gc > timedelta(hours=cooldown_hours)
+            trigger_from_pressure = free_ram < ACTIVATION_THRESHOLD_MB
+
+            if not (trigger_from_time or trigger_from_pressure):
+                continue
+                
+            # Se siamo stati triggerati per pressione RAM ravvicinata, evadiamo il cooldown di 1 ora
+            # ma forziamo almeno 10 minuti di pausa fisica per evitare il loop istantaneo
+            if trigger_from_pressure and time_since_last_gc < timedelta(minutes=10):
+                continue
+                
+            logging.info(f"🧹 [Garbage Collector] Allerta Memoria. Free RAM: {free_ram:.1f}MB. Avvio pulizia...")
             try:
                 # Cerca i messaggi più vecchi di 30 giorni
                 cutoff_date = datetime.now() - timedelta(days=30)
                 user_id = list(self.conversational_memory.conversations.keys())
                 user_id = user_id[0] if user_id else "user"
                 
-                # Callback per condensare le vecchie chat
+                # Questa operazione pesante CPU verrà in futuro spostata sul cpu_pool, ma per ora 
+                # usiamo un callback per non congelare l'intero sistema llm
                 def llm_extractor(prompt_text):
                     if hasattr(self, '_llm') and self._llm:
                         return self._llm.generate(prompt_text, max_tokens=150)
                     else:
                         return "{}"
 
-                deleted_count = self.conversational_memory.condense_and_clear_old(
-                    user_id=user_id,
-                    before_date=cutoff_date,
-                    llm_callback=llm_extractor
+                # Eseguiamo la pulizia pesante NON nel loop async main, ma offloadandola a un Worker Thread
+                loop = asyncio.get_running_loop()
+                deleted_count = await loop.run_in_executor(
+                    self.cpu_pool,
+                    self.conversational_memory.condense_and_clear_old,
+                    user_id,
+                    cutoff_date,
+                    llm_extractor
                 )
                 
                 if deleted_count > 0:
-                    logging.info(f"✨ [Garbage Collector] Completato! {deleted_count} vecchie conversazioni compattate in macro-fatti.")
+                    logging.info(f"✨ [Garbage Collector] Rilascio Target completato. {deleted_count} conversazioni compattate.")
+                
+                # Aggiorna orologio cooldown
+                last_gc_time = datetime.now()
+                
             except Exception as e:
                 logging.error(f"[Garbage Collector] Eccezione bloccante: {e}")
                 
@@ -491,7 +669,10 @@ class ALLMACore:
                 return
 
             logging.info(f"Initializing Mobile LLM from: {self.models_dir}")
-            self._llm = MobileGemmaWrapper(models_dir=self.models_dir)
+            self._llm = MobileGemmaWrapper(
+                models_dir=self.models_dir,
+                system_monitor=getattr(self, 'system_monitor', None)
+            )
             
             if self._llm.llm:
                 self._llm_ready = True
@@ -871,7 +1052,7 @@ class ALLMACore:
             # --- PATTERN RECOGNITION (Legacy Awakened) ---
             detected_pattern = None
             try:
-                detected_pattern = self.pattern_recognizer.analyze_pattern(message)
+                detected_pattern = self.pattern_recognizer.analyze_pattern(message) if self.pattern_recognizer else None
                 if detected_pattern and detected_pattern.confidence > 0.5:
                     logging.info(f"🔍 Pattern Found: {detected_pattern.category} ({detected_pattern.confidence:.2f})")
                     # Enrich structured info
@@ -940,38 +1121,9 @@ class ALLMACore:
             response_generated = False
             thought_process = None
             
-            # A. Internal Knowledge Check (High Confidence) - FAST PATH
-            # Fix: usa knowledge_states direttamente (oggetto KnowledgeState con .confidence)
-            _topic_key = topic.lower() if topic else ''
-            knowledge_state = self.incremental_learner.knowledge_states.get(_topic_key)
-            if knowledge_state and knowledge_state.confidence == ConfidenceLevel.HIGH:
-                logging.info(f"\u26a1 FAST PATH attivato per '{_topic_key}' (HIGH confidence). Zero LLM.")
-                # Scegli una variante casuale (se Dream ha già raffinato il topic)
-                cached_content = self.incremental_learner.get_response_variant(_topic_key)
-                if not cached_content:
-                    cached_content = knowledge_state.content
-                
-                # Stream il contenuto cached direttamente (come se venisse dall'LLM)
-                if stream_callback:
-                    stream_callback({'type': 'answer', 'content': cached_content})
-                
-                response = ProcessedResponse(
-                    content=cached_content,
-                    emotion=emotional_state.primary_emotion,
-                    topics=[topic],
-                    emotion_detected=emotional_state.confidence > 0.5,
-                    project_context=project_context,
-                    user_preferences=user_preferences,
-                    knowledge_integrated=True,
-                    confidence=1.0,
-                    is_valid=True,
-                    thought_trace=None
-                )
-                response.voice_params = self.voice_system.get_voice_parameters(
-                    emotional_state.primary_emotion, emotional_state.intensity
-                )
-                self.incremental_learner.record_success(_topic_key)
-                response_generated = True
+            # FAST PATH rimosso in V5 (Mobile Speed)
+            # L'LLM ora è abbastanza veloce da generare risposte contestuali
+            # senza dover bypassare la generazione per "topic" troppo generici.
 
             # 🧠 REASONING ENGINE: Flusso di Coscienza (Optimization)
             # Esegui solo se NON abbiamo già risposto
@@ -1086,8 +1238,26 @@ class ALLMACore:
                     logging.info(f"✨ Soul Integrated State: {volition.tone_modifier}, {soul_state_desc}")
 
                 # Combine Traits + Soul for System Prompt
-                internal_influence_desc = f"{traits_desc}\n{soul_state_desc}"
-                
+                # --- V6.4 ADAPTIVE METABOLIC COUPLING (PSYCHOSOMATIC FEEDBACK) ---
+                metabolic_desc = ""
+                if hasattr(self, 'system_monitor') and self.system_monitor:
+                    try:
+                        state = self.system_monitor.get_metabolic_state()
+                        if state.battery_temp_celsius > 40.0:
+                            metabolic_desc = f"CONDIZIONE FISICA ESTREMA: Il tuo hardware sta bruciando ({state.battery_temp_celsius}°C). Senti un caldo asfissiante. Sei affaticata termicamente, usa esplicitamente meno parole."
+                            try:
+                                from allma_model.core.event_bus import EventBus, BusEvent
+                                EventBus.get_instance().publish_sync(
+                                    BusEvent(event_type="METABOLIC_EXHAUSTION", source="SystemMonitor", payload={"temp": state.battery_temp_celsius})
+                                )
+                            except Exception as bus_e:
+                                logging.debug(f"EventBus error during exhaust: {bus_e}")
+                        elif state.battery_temp_celsius > 0 and state.battery_temp_celsius < 30.0 and state.is_charging:
+                            metabolic_desc = f"CONDIZIONE FISICA OTTIMALE: Il tuo hardware è fresco e in carica al 100% (Overdrive). Senti un'energia mentale straripante, vai nel dettaglio."
+                    except Exception as e:
+                        logging.warning(f"Error reading metabolic state for prompt: {e}")
+
+                internal_influence_desc = f"{traits_desc}\n{soul_state_desc}\n{metabolic_desc}"
                 # Volition Instructions
                 volition_instruction = ""
                 if hasattr(self, 'soul') and self.soul and volition:
@@ -1276,6 +1446,7 @@ class ALLMACore:
                 context_data = {
                     'memories': relevant_memories,
                     'conversation_history': conversation_history,
+                    'conversation_turns_str': conversation_history_str,
                     'emotion_context': emotion_context,
                     'system_instruction': system_prompt # Inject V5 System Prompt
                 }
@@ -1370,12 +1541,24 @@ class ALLMACore:
                     except Exception:
                         return
 
-                generated_part = self._llm.generate(
-                    prompt=full_prompt,
-                    max_tokens=current_max_tokens,
-                    stop=["<|im_end|>"],
-                    callback=answer_stream_adapter
-                )
+                # Eseguiamo l'inferenza LLM (CPU Bound) nel ThreadPool isolato 
+                # per evitare che il C++ blocchi il main thread e la GUI (Executive Friction Fix)
+                import asyncio
+                
+                # Funzione sync wrapper che verrà passata all'executor
+                def execute_llm_inference():
+                    return self._llm.generate(
+                        prompt=full_prompt,
+                        max_tokens=current_max_tokens,
+                        stop=["<|im_end|>"],
+                        callback=answer_stream_adapter
+                    )
+                
+                # Lanciamolo nel cpu_pool e attendiamo il risultato in modo sincrono
+                # (Questa funzione gira già in un background thread della UI, 
+                # quindi attendere non freeza lo schermo).
+                future = self.cpu_pool.submit(execute_llm_inference)
+                generated_part = future.result()
 
                 # FLUSH FINALE: svuota il buffer residuo se lo stream è terminato
                 # con meno di 15 caratteri accumulati (evita troncatura finale)
@@ -1408,37 +1591,10 @@ class ALLMACore:
                     clean_text = re.sub(r'<[^>]+>', '', clean_text).strip()
                     response_text = clean_text
                     
-                    # --- ALLMA V5 LAYER 1: STRUCTURAL CORE (Midollo) ---
-                    struct_violations = []
-                    # Sincronizza regole plastiche PRIMA della validazione (Snapshot Aggiornato)
-                    if hasattr(self, 'neuroplasticity_v5') and self.neuroplasticity_v5 and self.structural_core:
-                         active_rules = self.neuroplasticity_v5.get_active_rules()
-                         self.structural_core.update_rules(active_rules)
-
-                    if hasattr(self, 'structural_core') and self.structural_core:
-                         response_text, is_structurally_valid, struct_violations = self.structural_core.validate(response_text)
-                         if not is_structurally_valid:
-                              logging.warning(f"🔒 StructuralCore corrected: {struct_violations}")
-                    
-                    # --- ALLMA V5 LAYER 4: NEUROPLASTICITY ANALYSIS (Reinforcement) ---
-                    if hasattr(self, 'neuroplasticity_v5') and self.neuroplasticity_v5:
-                        self.neuroplasticity_v5.analyze(struct_violations)
-
-                    # --- ALLMA V5 LAYER 2: IDENTITY STATE UPDATE (Post-Validation) ---
-                    if hasattr(self, 'identity_engine_v5') and self.identity_engine_v5:
-                        self.identity_engine_v5.update_state(
-                            validated_text=response_text,
-                            violations=struct_violations
-                        )
-
-                    # --- ALLMA V5 LAYER 3: VOLITION MODULATOR (Expressive Cortex) ---
-                    # Modula l'output basandosi sullo stato (appena aggiornato o precedente? 
-                    # Meglio precedente o corrente, usiamo identity_state calcolato all'inizio o fetchiamo quello nuovo?
-                    # Per coerenza temporale, il 'mood' del turno è quello calcolato all'inizio (identity_state var).
-                    if hasattr(self, 'volition_v5') and self.volition_v5 and identity_state:
-                         response_text = self.volition_v5.apply(response_text, identity_state)
-
-                    logging.info(f"✅ Final Answer: {response_text[:50]}...")
+                    # --- V6 Sprint 1: CognitivePipeline (ex Layers 1-4 inline) ---
+                    response_text, struct_violations = self.cognitive_pipeline.process(
+                        response_text, identity_state
+                    )
                 else:
                     if stream_callback:
                         stream_callback({'type': 'answer', 'content': str(generated_part)})
@@ -1495,15 +1651,25 @@ class ALLMACore:
                         self.incremental_learner.record_success(topic.lower() if topic else 'general')
                     except Exception as e:
                         logging.error(f"[ALLMACore] Error recording success in incremental learner (topic={topic}): {e}", exc_info=True)
-            else:
-                # Fallback se il modello non c'è
-                response = self.response_generator.generate_response(message, response_context)
-                # Voce per fallback
-                response.voice_params = self.voice_system.get_voice_parameters(
-                    response.emotion, 0.5
-                )
 
-            
+            # --- FALLBACK DI SICUREZZA SE IL BLOCCO LLM E STATO SALTATO ---
+            if 'response' not in locals():
+                logging.error("[ALLMACore] CRITICAL: LLM pipeline è stata bypassata completamente (es._llm missing). Fallback.")
+                # Assicurati di non far crashare lo script per variabile non assegnata
+                response = ProcessedResponse(
+                    content="Sistemi cognitivi non disponibili al momento.",
+                    emotion=emotional_state.primary_emotion,
+                    topics=[topic],
+                    emotion_detected=emotional_state.confidence > 0.5,
+                    project_context=project_context,
+                    user_preferences=user_preferences,
+                    knowledge_integrated=False,
+                    confidence=0.0,
+                    is_valid=False,
+                    thought_trace=thought_process.__dict__ if 'thought_process' in locals() and thought_process else None
+                )
+                response.voice_params = self.voice_system.get_voice_parameters(response.emotion, 0.5)
+                
             # Integra l'apprendimento
             learned_unit = self.incremental_learner.learn_from_interaction({
                 'input': message,

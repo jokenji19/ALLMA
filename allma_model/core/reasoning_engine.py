@@ -69,12 +69,15 @@ class ReasoningEngine:
         # Check for V5 System Instruction Override
         system_instruction = context.get('system_instruction')
         
+        history_str = context.get('conversation_turns_str', '')
+        if history_str:
+            history_str = f"\n{history_str}\n"
+            
         if system_instruction:
             # Use the injected V5 prompt (which already includes ALLMA identity & V5 state)
             return f"""<|im_start|>system
 {system_instruction}
-<|im_end|>
-<|im_start|>user
+<|im_end|>{history_str}<|im_start|>user
 {safe_input}<|im_end|>
 <|im_start|>assistant
 """

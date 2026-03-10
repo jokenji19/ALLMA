@@ -59,7 +59,7 @@ icon.filename = icon.png
 orientation = portrait
 
 # (list) List of service to declare
-#services = NAME:ENTRYPOINT_TO_PY,NAME2:ENTRYPOINT2_TO_PY
+services = allma_brain:service.py:foreground
 
 #
 # Android specific
@@ -79,7 +79,7 @@ android.softinput_mode = adjustPan
 android.presplash_color = #FFFFFF
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE,ACCESS_NETWORK_STATE,MODIFY_AUDIO_SETTINGS,BLUETOOTH,BLUETOOTH_CONNECT
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE,ACCESS_NETWORK_STATE,MODIFY_AUDIO_SETTINGS,BLUETOOTH,BLUETOOTH_CONNECT,FOREGROUND_SERVICE,POST_NOTIFICATIONS
 
 # (int) Target Android API, should be as high as possible.
 android.api = 34

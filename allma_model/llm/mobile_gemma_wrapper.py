@@ -22,7 +22,7 @@ class MobileGemmaWrapper:
     Ottimizzato per Android/Mobile.
     """
 
-    def __init__(self, models_dir: str, model_name: str = _DEFAULT_MODEL_NAME, n_ctx: int = 2048):  # Optimized: was 2048, keeping for performance
+    def __init__(self, models_dir: str, model_name: str = _DEFAULT_MODEL_NAME, n_ctx: int = 2048, system_monitor=None):  # Optimized: was 2048, keeping for performance
         """
         Inizializza il wrapper mobile.
         
@@ -30,10 +30,12 @@ class MobileGemmaWrapper:
             models_dir: Directory contenente i file .gguf
             model_name: Nome del file del modello
             n_ctx: Context window size
+            system_monitor: Istanza per Adaptive Metabolic Coupling (V6.4)
         """
         self.models_dir = models_dir
         self.model_path = os.path.join(models_dir, model_name)
         self.n_ctx = n_ctx
+        self.system_monitor = system_monitor
         self.llm = None
         self.inference_lock = threading.Lock() # <--- CRITICAL FIX: Global Lock
         
@@ -310,10 +312,13 @@ class MobileGemmaWrapper:
                     from llama_cpp import Llama
                     print("[MobileGemma] RECOVERY SUCCESS: Llama class imported after reset.", flush=True)
                     
+                    # Limit threads based on environment
+                    max_threads = 4 if getattr(self, 'models_dir', "").startswith("/data") else 8
+                    
                     self.llm = Llama(
                         model_path=self.model_path,
                         n_ctx=self.n_ctx,
-                        n_threads=8, 
+                        n_threads=max_threads, 
                         n_gpu_layers=0, # DEBUG: Force CPU to check if Vulkan is crashing
                         verbose=True
                     )
@@ -359,10 +364,32 @@ class MobileGemmaWrapper:
             # os.environ["GGML_VK_DISABLE_COOPMAT"] = "1"  # Stability
             # ------------------------------------------
 
+            # Limit threads based on environment to avoid OS freezing
+            # If we're on android (/data/...), give 4 threads to LLM, keep 4 for OS/Async
+            is_mobile = getattr(self, '_is_android', True) # Assumed true if not explicitly mock
+            try:
+                if "/Users/" in self.model_path: is_mobile = False
+            except: pass
+            
+            safe_threads = 4 if is_mobile else 8
+            
+            # --- V6.4 ADAPTIVE METABOLIC COUPLING (OVERDRIVE INIT) ---
+            if is_mobile and getattr(self, 'system_monitor', None):
+                try:
+                    state = self.system_monitor.get_metabolic_state()
+                    # Overdrive: < 30C and charging
+                    if state.battery_temp_celsius > 0 and state.battery_temp_celsius < 30.0 and state.is_charging:
+                        safe_threads = 6
+                        print(f"[MobileGemma] 🚀 OVERDRIVE Attivato! Temp: {state.battery_temp_celsius}°C. Threads: {safe_threads}", flush=True)
+                    else:
+                        print(f"[MobileGemma] 🏎️ Comfort Mode. Temp: {state.battery_temp_celsius}°C. Threads: {safe_threads}", flush=True)
+                except Exception as e:
+                    print(f"[MobileGemma] Errore lettura SystemMonitor per Overdrive: {e}", flush=True)
+
             self.llm = Llama(
                 model_path=self.model_path,
-                n_ctx=2048,
-                n_threads=8,        # Performance: 8 threads for Snapdragon 8 Elite CPU
+                n_ctx=2048, # Manteniamo a 2048 fisso (Ottimizzazione RAM)
+                n_threads=safe_threads,   # Hybrid Arch: leave cores for AsyncIO and OS
                 n_batch=512,        # Performance: High batch for CPU
                 n_gpu_layers=0,     # CPU FALLBACK: Disabled GPU to eliminate OpenCL dispatch latency
                 flash_attn=False,
@@ -435,6 +462,24 @@ class MobileGemmaWrapper:
                 if stream_mode:
                     full_text = ""
                     import time
+                    
+                    # --- V6.5 DECOUPLED THERMAL PACING (RACE TO SLEEP) ---
+                    # Il vero pacing ora vive nell'UI JS (Buffer Sinuoso).
+                    # Qui rimuoviamo quasi totalmente i freni per fare finire la CPU 
+                    # il prima possibile ("Race to Sleep"), raffreddandola in anticipo.
+                    pacing_delay = 0.0  # Massima velocità, 0ms
+                    if getattr(self, 'system_monitor', None):
+                        try:
+                            state = self.system_monitor.get_metabolic_state()
+                            if state.battery_temp_celsius > 40.0:
+                                pacing_delay = 0.02  # Leggero underclock di sicurezza (20ms)
+                                # Avoid log spam on every generation, log only at start
+                                logging.info(f"[MobileGemma] 🥵 PACING TERMICO RIDOTTO: {state.battery_temp_celsius}°C. Pacing: {pacing_delay}s")
+                            elif state.battery_temp_celsius > 0 and state.battery_temp_celsius < 30.0 and state.is_charging:
+                                pacing_delay = 0.0 # Overdrive Assoluto
+                        except Exception as e:
+                            logging.error(f"[MobileGemma] Thermal Pacing exception: {e}")
+                    
                     for chunk in output:
                         token = chunk["choices"][0]["text"]
                         full_text += token
@@ -443,7 +488,8 @@ class MobileGemmaWrapper:
                                 callback(token)
                             except Exception as cb_err:
                                 logging.error(f"[MobileGemma] Stream callback error: {cb_err}")
-                        time.sleep(0.02)
+                        if pacing_delay > 0:
+                            time.sleep(pacing_delay)
                     return strip_think(full_text)
                 else:
                     raw_text = output["choices"][0]["text"]

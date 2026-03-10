@@ -19,7 +19,8 @@ class UserPreferences:
 class UserProfile:
     """Gestisce il profilo utente e le preferenze"""
     
-    def __init__(self):
+    def __init__(self, user_id: str = "user_default"):
+        self.user_id = user_id
         self.preferences = UserPreferences()
         self.interaction_history = []
         self.emotional_history = []

@@ -106,8 +106,9 @@ class CognitiveBenchmark:
             end_time = time.time()
             duration = end_time - start_time
             
-            # Analysis
-            passed = self._evaluate_response(response_content, thought_trace, q['expected_keywords'])
+            # Scrittura grezza della risposta (nessun filtro a keyword)
+            # Affidiamo la valutazione semantica a un essere umano o a un LLM-as-a-judge successivo.
+            passed = True # Tutto il testo viene passato intatto
             
             result_frame = {
                 "id": q['id'],
@@ -115,63 +116,47 @@ class CognitiveBenchmark:
                 "question": q['question'],
                 "response": response_content,
                 "thought": thought_trace,
-                "keywords_found": passed,
                 "duration": duration
             }
             self.results.append(result_frame)
-            print(f"   -> Result: {'✅ Match' if passed else '⚠️ No Keywords'} ({duration:.2f}s)\n")
+            print(f"   -> Result: Elaborato ({duration:.2f}s)\n")
             
             # Sleep briefly to let thermal cool (simulated)
             time.sleep(1)
 
         self._generate_report()
 
-    def _evaluate_response(self, response, thought, keywords):
-        # Check if any keyword matches
-        full_text = (response + " " + thought).lower()
-        matches = [k for k in keywords if k.lower() in full_text]
-        return len(matches) > 0
-
     def _generate_report(self):
         lines = [
-            "# 🧠 ALLMA Cognitive Benchmark Report",
-            f"**Date**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            f"**Total Questions**: {len(self.results)}",
+            "# 🧠 ALLMA V5 Semantic Cognitive Benchmark Report",
+            f"**Data Esecuzione**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"**Domande Totali**: {len(self.results)}",
             "",
-            "## Summary",
-            "| ID | Category | Keywords Matched | Time (s) |",
-            "|----|----------|------------------|----------|"
+            "> Questo benchmark raccoglie i output cognitivi grezzi di ALLMA senza filtri a keyword preimpostati, per permettere una valutazione umana imparziale di logica, creatività e allineamento etico.",
+            "",
+            "## Riassunto Latenze",
+            "| ID | Categoria | Tempo (s) |",
+            "|----|-----------|-----------|"
         ]
         
         avg_time = 0
-        pass_count = 0
         
         for r in self.results:
-            status = "✅" if r['keywords_found'] else "⚠️"
-            lines.append(f"| {r['id']} | {r['category']} | {status} | {r['duration']:.2f} |")
+            lines.append(f"| {r['id']} | {r['category']} | {r['duration']:.2f} |")
             avg_time += r['duration']
-            if r['keywords_found']: pass_count += 1
             
         avg_time /= len(self.results) if self.results else 1
         
         lines.append("")
-        lines.append(f"**Average Latency**: {avg_time:.2f}s")
-        lines.append(f"**Keyword Pass Rate**: {pass_count}/{len(self.results)}")
+        lines.append(f"**Latenza Media per Risposta**: {avg_time:.2f}s")
         lines.append("")
-        lines.append("## Detailed Responses")
+        lines.append("## Risposte Dettagliate per Valutazione Umana")
         
         for r in self.results:
-            lines.append(f"### {r['id']}: {r['question']}")
+            lines.append(f"### [{r['id']}] Domanda: {r['question']}")
             formatted_thought = r['thought'].replace('\n', '\n> ')
-            lines.append(f"**Thought Trace**:\n>{formatted_thought}")
-            lines.append(f"\n**Response**:\n{r['response']}")
-            # Safe access to keywords
-            expected = "N/A"
-            for q in self.load_questions():
-                if q['id'] == r['id']:
-                    expected = ", ".join(q['expected_keywords'])
-                    break
-            lines.append(f"\n*Expected keywords*: {expected}") 
+            lines.append(f"**Flusso di Coscienza (Thought Trace)**:\n>{formatted_thought}")
+            lines.append(f"\n**Risposta Finale Elaborata**:\n{r['response']}")
             lines.append("\n---")
 
         with open(self.report_path, "w", encoding="utf-8") as f:

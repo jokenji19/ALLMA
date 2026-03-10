@@ -142,10 +142,57 @@ window.toggleMic = function () {
 window.addMessage = addMessage;
 
 
-// --- STREAMING & TIMER v24 (Text Based) ---
+// --- STREAMING & TIMER v24 (Text Based & Sinuous Buffer V6.5) ---
 let currentStreamBubble = null;
 let streamStartTime = 0;
 let timerInterval = null;
+
+// Buffer variables for decoupled rendering
+let responseBuffer = "";
+let isDraining = false;
+let isBackendFinished = true;
+
+function drainBuffer() {
+    if (!currentStreamBubble || !currentStreamBubble.content) {
+        isDraining = false;
+        return;
+    }
+
+    if (responseBuffer.length > 0) {
+        // Dynamic chunk size: if buffer gets too large (backend is VERY fast), take more chars to catch up smoothly
+        let charsToTake = 1;
+        if (responseBuffer.length > 500) charsToTake = 6;
+        else if (responseBuffer.length > 200) charsToTake = 3;
+        else if (responseBuffer.length > 50) charsToTake = 2;
+
+        const chunk = responseBuffer.substring(0, charsToTake);
+        responseBuffer = responseBuffer.substring(charsToTake);
+        currentStreamBubble.content.textContent += chunk;
+        scrollToBottom();
+    }
+
+    if (responseBuffer.length === 0 && isBackendFinished) {
+        finishStreamUI();
+    } else {
+        // Sinuous delay: ~15ms base + slight human randomizer
+        let delay = Math.random() * 10 + 15;
+        setTimeout(drainBuffer, delay);
+    }
+}
+
+function finishStreamUI() {
+    isDraining = false;
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = null;
+
+    if (currentStreamBubble && streamStartTime > 0) {
+        const duration = (Date.now() - streamStartTime) / 1000;
+        const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
+        if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (UI Finish)";
+    }
+    currentStreamBubble = null;
+    streamStartTime = 0;
+}
 
 // --- SIDEBAR LOGIC (v0.47) ---
 function toggleSidebar() {
@@ -716,6 +763,9 @@ window.startStream = function () {
     };
 
     streamStartTime = Date.now();
+    responseBuffer = "";
+    isDraining = false;
+    isBackendFinished = false;
 
     // Real-time Update
     if (timerInterval) clearInterval(timerInterval);
@@ -737,6 +787,7 @@ window.streamChunk = function (text, isThought) {
             currentStreamBubble.reasoningContainer.classList.add('open');
         }
         currentStreamBubble.reasoning.textContent += text;
+        scrollToBottom();
     } else {
         // Primo token reale in risposta: rimuovi i pallini animati
         if (!currentStreamBubble.dotsCleared) {
@@ -744,22 +795,37 @@ window.streamChunk = function (text, isThought) {
             if (dots) dots.remove();
             currentStreamBubble.dotsCleared = true;
         }
-        currentStreamBubble.content.textContent += text;
+
+        // Add text to the sinuous buffer instead of DOM
+        responseBuffer += text;
+
+        // Start draining if not already running
+        if (!isDraining) {
+            isDraining = true;
+            drainBuffer();
+        }
     }
-    scrollToBottom();
 };
 
 window.endStream = function () {
+    isBackendFinished = true;
+
+    // Stop the running timer update, as backend is done
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = null;
 
+    // Update timer text to show Backend finish time
     if (currentStreamBubble && streamStartTime > 0) {
         const duration = (Date.now() - streamStartTime) / 1000;
         const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
-        if (textSpan) textSpan.textContent = duration.toFixed(2) + "s";
+        if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (Core Done)";
     }
-    currentStreamBubble = null;
-    streamStartTime = 0;
+
+    // If the buffer is already empty and draining finished, clean up UI instantly.
+    // Otherwise, drainBuffer() will take care of finishStreamUI() when it hits 0.
+    if (responseBuffer.length === 0) {
+        finishStreamUI();
+    }
 };
 
 // --- SYNERGY GRAPH UPDATE ---

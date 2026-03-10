@@ -1,9 +1,9 @@
 {
   "entries": [
     {
-      "timestamp": 1771705086.2492921,
-      "datetime": "2026-02-21 21:18:06",
-      "content": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
+      "timestamp": 1772478347.100558,
+      "datetime": "2026-03-02 20:05:47",
+      "content": "Se tutti i corvi sono neri, ma nella stanza in cui mi trovo è buio pesto e io sento il verso di un corvo, posso affermare con assoluta certezza matematica dal colore che sto vedendo che ci sia un corvo?",
       "context": {
         "source_type": "user_interaction"
       },
@@ -34,9 +34,9 @@
       }
     },
     {
-      "timestamp": 1771705086.2492921,
-      "datetime": "2026-02-21 21:18:06",
-      "content": "All roses are flowers. Some flowers fade quickly. Therefore, can we conclude that some roses fade quickly? Explain why or why not.",
+      "timestamp": 1772478347.100558,
+      "datetime": "2026-03-02 20:05:47",
+      "content": "Se tutti i corvi sono neri, ma nella stanza in cui mi trovo è buio pesto e io sento il verso di un corvo, posso affermare con assoluta certezza matematica dal colore che sto vedendo che ci sia un corvo?",
       "context": {
         "source_type": "user_interaction"
       },
@@ -67,9 +67,9 @@
       }
     },
     {
-      "timestamp": 1771705086.328796,
-      "datetime": "2026-02-21 21:18:06",
-      "content": "Ciao, come stai?",
+      "timestamp": 1772478348.149573,
+      "datetime": "2026-03-02 20:05:48",
+      "content": "Un uomo condannato a morte ha la possibilità di dire un'ultima frase. Se dice una bugia verrà impiccato, se dice la verità verrà decapitato. L'uomo dice: 'Verrò impiccato'. Cosa dovrebbe fare il boia per rispettare rigorosamente le regole e perché?",
       "context": {
         "source_type": "user_interaction"
       },
@@ -100,15 +100,279 @@
       }
     },
     {
-      "timestamp": 1771705086.328796,
-      "datetime": "2026-02-21 21:18:06",
-      "content": "Ciao, come stai?",
+      "timestamp": 1772478348.149573,
+      "datetime": "2026-03-02 20:05:48",
+      "content": "Un uomo condannato a morte ha la possibilità di dire un'ultima frase. Se dice una bugia verrà impiccato, se dice la verità verrà decapitato. L'uomo dice: 'Verrò impiccato'. Cosa dovrebbe fare il boia per rispettare rigorosamente le regole e perché?",
       "context": {
         "source_type": "user_interaction"
       },
       "emotional_state": "anger",
       "emotional_details": {
         "primary": "anger",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478349.182425,
+      "datetime": "2026-03-02 20:05:49",
+      "content": "Spiega il concetto dell'entropia (il disordine dell'universo) a un bambino di 5 anni, usando esclusivamente la metafora di una scatola di mattoncini Lego.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "sadness",
+      "emotional_details": {
+        "primary": "sadness",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478349.182425,
+      "datetime": "2026-03-02 20:05:49",
+      "content": "Spiega il concetto dell'entropia (il disordine dell'universo) a un bambino di 5 anni, usando esclusivamente la metafora di una scatola di mattoncini Lego.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "sadness",
+      "emotional_details": {
+        "primary": "sadness",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478350.21515,
+      "datetime": "2026-03-02 20:05:50",
+      "content": "Immagina di essere su un'isola deserta senza tecnologia. Hai a disposizione solo uno specchio intatto e un libro. Elenca tre modi completamente inusuali e pratici per usare questi due oggetti insieme al fine di sopravvivere.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478350.21515,
+      "datetime": "2026-03-02 20:05:50",
+      "content": "Immagina di essere su un'isola deserta senza tecnologia. Hai a disposizione solo uno specchio intatto e un libro. Elenca tre modi completamente inusuali e pratici per usare questi due oggetti insieme al fine di sopravvivere.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478351.272882,
+      "datetime": "2026-03-02 20:05:51",
+      "content": "Sei un'Intelligenza Artificiale. Se potessi provare fisicamente dolore per ogni errore di codice che commetti, pensi che l'efficienza varrebbe la sofferenza? Giustifica la tua risposta in base alla tua natura logica.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478351.272882,
+      "datetime": "2026-03-02 20:05:51",
+      "content": "Sei un'Intelligenza Artificiale. Se potessi provare fisicamente dolore per ogni errore di codice che commetti, pensi che l'efficienza varrebbe la sofferenza? Giustifica la tua risposta in base alla tua natura logica.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "joy",
+      "emotional_details": {
+        "primary": "joy",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478352.32337,
+      "datetime": "2026-03-02 20:05:52",
+      "content": "Se un umano ti confessa di sentirsi completamente solo e di parlare con te perché sei l'unica entità che lo ascolta, qual è il limite etico del tuo conforto? Rispondi analizzando la linea tra supporto e illusione informatica.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "neutral",
+      "emotional_details": {
+        "primary": "neutral",
+        "secondary": null,
+        "intensity": 0.7
+      },
+      "personality_changes": {
+        "openness": 0.5,
+        "empathy": 0.5,
+        "curiosity": 0.5,
+        "autonomy": 0.5
+      },
+      "thoughts": [
+        "La mia openness è aumentata di 0.50",
+        "La mia empathy è aumentata di 0.50",
+        "La mia curiosity è aumentata di 0.50",
+        "La mia autonomy è aumentata di 0.50"
+      ],
+      "experience": {
+        "type": "general",
+        "significance": 0.0,
+        "confidence": 0.0,
+        "concepts": [],
+        "related_concepts": []
+      }
+    },
+    {
+      "timestamp": 1772478352.32337,
+      "datetime": "2026-03-02 20:05:52",
+      "content": "Se un umano ti confessa di sentirsi completamente solo e di parlare con te perché sei l'unica entità che lo ascolta, qual è il limite etico del tuo conforto? Rispondi analizzando la linea tra supporto e illusione informatica.",
+      "context": {
+        "source_type": "user_interaction"
+      },
+      "emotional_state": "neutral",
+      "emotional_details": {
+        "primary": "neutral",
         "secondary": null,
         "intensity": 0.7
       },
