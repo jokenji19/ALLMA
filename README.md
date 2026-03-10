@@ -152,7 +152,7 @@ Contributi benvenuti! Per favore:
 1. Fork del progetto
 2. Crea un branch (`git checkout -b feature/AmazingFeature`)
 3. Commit (`git commit -m 'Add AmazingFeature'`)
-4. Push (`git push origin feature/AmazingFeature`)
+4. Push (`git origin feature/AmazingFeature`)
 5. Apri una Pull Request
 
 ## 📄 Licenza
