@@ -1,8 +1,8 @@
-# ALLMA - Advanced Learning and Emotional Memory Architecture
+# ALLMA - Advanced Learning and Memory Architecture
 
 <div align="center">
 
-**Un'IA con Memoria, Emozioni e Apprendimento Evolutivo**
+**An AI with Long-Term Memory, Emotional Intelligence, and Evolutionary Learning**
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://www.android.com/)
@@ -10,165 +10,141 @@
 
 </div>
 
-## 🧠 Cos'è ALLMA?
+## Overview
 
-ALLMA è un sistema di intelligenza artificiale avanzato che combina:
-- **Memoria a Lungo Termine**: Ricorda tutto ciò che apprende
-- **Sistema Emotivo**: Reagisce emotivamente alle conversazioni
-- **Apprendimento Incrementale**: Impara dall'utente in tempo reale
-- **Simbiosi Evolutiva**: Diventa progressivamente indipendente da modelli esterni
+ALLMA is an advanced artificial intelligence system designed for local, offline execution, specifically optimized for mobile environments (Android). It transcends standard conversational models by integrating persistent memory, emotional awareness, and a unique self-evolving architecture.
 
-### 🤝 La Simbiosi con Gemma 3n E2B
+The core philosophy of ALLMA is **Evolutionary Symbiosis**:
+- **Long-Term Memory**: Retains knowledge from all past interactions using a SQLite-backed Vector Memory Engine.
+- **Emotional System**: Recognizes user emotions and adapts its own internal psychological state (Chaos/Stability vectors) to provide empathetic and context-aware responses.
+- **Incremental Learning**: Extracts topics and semantic networks in real-time, building a permanent internal knowledge base.
+- **Symbiotic Independence**: Progressively transitions from relying entirely on the underlying Large Language Model (LLM) to answering autonomously based on its consolidated high-confidence memory.
 
-ALLMA utilizza un approccio unico chiamato **Simbiosi Evolutiva**:
+### The Symbiotic Process with Qwen 2.5 Coder 3B / Qwen 3 1.7B
 
-1. **Fase Iniziale (Simbiosi)**: ALLMA usa Gemma come "cervello linguistico"
-   - Inietta le proprie emozioni e ricordi nel prompt
-   - Apprende dalle risposte generate
+ALLMA currently utilizes the Qwen model architecture (specifically optimized versions like Qwen 2.5 Coder 3B or the lightweight Qwen 3 1.7B) as its initial linguistic reasoning engine.
 
-2. **Fase Evolutiva (Indipendenza)**: 
-   - ALLMA controlla la propria memoria prima di chiamare Gemma
-   - Se possiede conoscenza con alta confidenza → **Risponde da solo**
-   - Altrimenti → Usa Gemma e impara
+1. **Initial Phase (Symbiosis)**: ALLMA relies on Qwen to process complex queries. It injects its current emotional state, relevant past memories, and system directives into a highly optimized ChatML prompt.
+2. **Evolutionary Phase (Independence)**: Before querying the LLM, ALLMA scans its internal knowledge base. If an answer exists with high confidence, it can respond directly or drastically reduce the LLM workload.
+3. **Advanced Phase (Autonomy)**: Continuous successful interactions automatically increase the confidence of stored knowledge, making ALLMA progressively faster and more autonomous over time.
 
-3. **Fase Avanzata (Autonomia)**:
-   - Dopo N risposte indipendenti di successo, la confidenza aumenta automaticamente
-   - ALLMA diventa sempre più veloce e autonomo
+## Key Features
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Simbiosi   │ --> │  Evoluzione  │ --> │  Autonomia  │
-│ (usa Gemma) │     │ (controllo   │     │ (indipenden-│
-│             │     │  memoria)    │     │  te)        │
-└─────────────┘     └──────────────┘     └─────────────┘
-```
+- **Temporal Memory**: Recalls past conversations, understanding the temporal context of interactions.
+- **Emotional Analysis**: Actively detects textual sentiment and adjusts its response trajectory based on its continuous "Soul" state.
+- **Topic Extraction**: Automatically identifies and categorizes key concepts using TF-IDF and NLP techniques.
+- **Confidence Check Engine**: Bypasses costly LLM generation when internal knowledge is sufficient.
+- **Android Native Deployment**: Fully ported to mobile using Kivy and Buildozer, running 100% offline on the device.
 
-## 🚀 Features Principali
+## Mobile Operating System Survival Architecture (V7)
 
-- ✅ **Memoria Temporale**: Ricorda conversazioni nel tempo
-- ✅ **Analisi Emotiva**: Rileva e reagisce alle emozioni
-- ✅ **Topic Extraction**: Estrae automaticamente i concetti chiave (TF-IDF)
-- ✅ **Confidence Check**: Risponde autonomamente quando "sa" la risposta
-- ✅ **Feedback Automatico**: La confidenza aumenta con l'uso
-- ✅ **Android Ready**: Porting completo su mobile con Kivy/Buildozer
+ALLMA is engineered to survive and thrive within the strict resource constraints of the Android operating system:
 
-## 📱 Android APK
+1. **Subconscious Daemon (Foreground Service)**: Utilizes Android Intent and `jnius` to run a persistent background service. This prevents the OS from killing the memory-building processes during Doze Mode or when the screen is off.
+2. **Adaptive Metabolic Coupling**: Features a dynamic CPU/Thermal pacing system. It monitors battery temperature and automatically throttles token generation (Micro-sleep injects) to prevent device overheating and thermal shutdown.
+3. **SQLite Concurrency (WAL Mode)**: The Vector Memory Engine is configured with Write-Ahead Logging (`PRAGMA journal_mode=WAL`) to allow simultaneous read/write operations between the UI and background reasoning threads without database locks.
+4. **LLM Fast-Wake (mmap)**: Leverages memory-mapped files (`mmap=True` via `llama-cpp-python`) to bypass RAM cold-starts, allowing the OS to page the model directly from storage for instantaneous wake-ups.
 
-Il progetto include una **versione Android** completa che funziona 100% offline sul dispositivo.
+## Android APK Build Guide
 
-### Come Buildare l'APK
+The project includes the necessary configurations to build an optimized Android application.
 
-1. **Download del modello**:
-```bash
-python3 download_model.py
-```
+### Prerequisites
 
-2. **Build APK**:
-```bash
-buildozer android debug
-```
+- Python 3.10+
+- Buildozer
+- Android SDK/NDK (managed by Buildozer)
+- Qwen 3 1.7B GGUF Model (Quantized Q4_K_M or similar, approx. 1-2GB)
 
-Per istruzioni dettagliate, consulta [README_ANDROID.md](README_ANDROID.md).
+### Build Steps
 
-## 🛠️ Requisiti
+1. **Download the Language Model**:
+   Ensure the GGUF model is placed in the designated `models/` directory.
+   ```bash
+   python3 download_model.py
+   ```
 
-### Desktop
+2. **Compile the APK**:
+   ```bash
+   buildozer android debug
+   ```
+
+3. **Deploy to Device**:
+   ```bash
+   buildozer android debug deploy run
+   ```
+
+For detailed mobile deployment instructions, please consult [README_ANDROID.md](README_ANDROID.md).
+
+## Desktop Installation
+
+To run ALLMA in a desktop environment for development or testing:
+
 ```bash
 pip install -r requirements.txt
+python3 main.py
 ```
 
-### Mobile (Android)
-- Modello Gemma 3n E2B (quantizzato Q4_K_M, ~2.6GB)
-- Android SDK 28+
-- 4GB+ RAM
+## System Architecture
 
-## 📊 Architettura
-
-```
+```text
 ALLMA/
 ├── allma_model/
-│   ├── core/
-│   ├── emotional_system/
-│   ├── incremental_learning/
-│   ├── learning_system/
-│   └── response_system/
-├── ui/
-├── assets/
-└── docs/
+│   ├── core/                  # Core runtime, Event Bus, Cognitive Pipeline
+│   ├── emotional_system/      # Emotional state management and adaptation
+│   ├── learning_system/       # Meta-learning and topic extraction
+│   └── memory_system/         # Vector Memory Engine, Temporal Memory
+├── ui/                        # Kivy Interface components
+├── assets/                    # Webviews, CSS, JavaScript
+└── service.py                 # Android Foreground Subconscious Daemon
 ```
 
-### Fonte di verità
-La sorgente primaria è `allma_model/`.  
-`unpacked_brain/` è un artefatto di build locale e non va usato per lo sviluppo.
+### Source of Truth
+The primary source code is located in `allma_model/`.
 
-### Core runtime
-Il core runtime è `allma_model/core/allma_core.py`.  
-`allma_model/incremental_learning/allma_core.py` è riservato a scenari legacy/training.
+### Core Runtime
+The application's main processing loop is managed by `allma_model/core/allma_core.py`.
 
-### Guardrail
-I moduli attivi e sperimentali sono tracciati in `ALLMACore` tramite:
-- `active_modules`
-- `experimental_modules`
+## Documentation
 
-## 🎯 Esempio di Evoluzione
+Comprehensive documentation covering system architecture, module interactions, and implementation details:
 
-```python
-# Conversazione 1 - Simbiosi
-User: "Cos'è Python?"
-ALLMA: [Chiama Gemma] → "Python è un linguaggio..." [Memorizza]
+- [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md) - Complete system overview
+- [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) - In-depth technical architecture
+- [README_ANDROID.md](README_ANDROID.md) - Android specific guidelines
+- [docs/](docs/) - Implementation guides and references
 
-# Conversazione 2-4 - Simbiosi con Memoria
-User: "Cos'è Python?"
-ALLMA: [Confidenza MEDIUM, usa Gemma] → Risposta + successo registrato
+## Testing Framework
 
-# Conversazione 5+ - Indipendenza
-User: "Cos'è Python?"
-ALLMA: 💡 [Confidenza HIGH, memoria interna] → Risposta IMMEDIATA!
-```
-
-## 📖 Documentazione
-
-- [SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md) - Documentazione completa del sistema
-- [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md) - Architettura tecnica
-- [README_ANDROID.md](README_ANDROID.md) - Build Android
-- [docs/](docs/) - Guide di implementazione
-
-## 🧪 Test
+ALLMA includes a robust test suite covering memory, emotional logic, and evolutionary systems:
 
 ```bash
-# Test Simbiosi Evolutiva
+# Test Evolutionary Symbiosis
 python3 test_evolution.py
 
-# Test Feedback Automatico
+# Test Automatic Confidence Boosting
 python3 test_confidence_boost.py
 
-# Test Completo
+# Run Full Pytest Suite
 python3 -m pytest -q
 ```
 
-## 🤝 Contribuire
+## Contributing
 
-Contributi benvenuti! Per favore:
-1. Fork del progetto
-2. Crea un branch (`git checkout -b feature/AmazingFeature`)
-3. Commit (`git commit -m 'Add AmazingFeature'`)
-4. Push (`git origin feature/AmazingFeature`)
-5. Apri una Pull Request
+Contributions are welcome to enhance ALLMA's cognitive capabilities.
 
-## 📄 Licenza
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingCognitiveFeature`)
+3. Commit your Changes (`git commit -m 'Add AmazingCognitiveFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingCognitiveFeature`)
+5. Open a Pull Request
 
-Vedi il file [LICENSE](LICENSE) per i dettagli.
+## License
 
-## 🙏 Riconoscimenti
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
 
-- **Gemma 3n E2B** (Google) - Modello LLM per la generazione del linguaggio
-- **Kivy** - Framework UI per Android
-- **llama.cpp** - Inferenza efficiente dei modelli GGUF
+## Acknowledgments
 
----
-
-<div align="center">
-
-**Creato con ❤️ per esplorare l'evoluzione dell'intelligenza artificiale**
-
-</div>
+- **Qwen (Alibaba Cloud)** - For the highly capable lightweight LLM foundations
+- **Kivy Framework** - For enabling python-based mobile UI deployments
+- **llama.cpp** - For providing the highly optimized C++ inference engine for GGUF models
