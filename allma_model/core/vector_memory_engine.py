@@ -47,6 +47,81 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────
+#  Query Expander Light (Sprint V8.1)
+# ─────────────────────────────────────────────────────────
+
+class QueryExpander:
+    """
+    Espande la query per migliorare il recall (Max-Score Algorithm)
+    senza usare pesanti modelli LLM o Sentence-Transformers.
+    """
+    
+    # Dizionario statico leggero per sinonimi comuni (espandibile)
+    SYNONYMS = {
+        "auto": ["automobile", "macchina", "veicolo", "vettura"],
+        "macchina": ["automobile", "auto", "veicolo", "vettura"],
+        "film": ["cinema", "pellicola", "movie"],
+        "libro": ["romanzo", "lettura", "volume"],
+        "cibo": ["mangiare", "pasto", "piatto", "cucina"],
+        "paura": ["timore", "spavento", "terrore", "ansia"],
+        "felice": ["contento", "gioioso", "allegro"],
+        "triste": ["infelice", "malinconico", "depresso"],
+        "problema": ["difficoltà", "ostacolo", "guasto", "errore"],
+        "aiuto": ["supporto", "assistenza", "soccorso"]
+    }
+    
+    # Pattern comuni per l'astrazione del topic
+    TOPIC_MARKERS = {
+        "cosa penso di": "",
+        "cosa ne pensi di": "",
+        "ti ricordi": "",
+        "ho detto che": "",
+        "qual è il mio": "",
+        "qual e il mio": "",
+        "mi piace": "preferenza",
+        "adoro": "preferenza",
+        "odio": "avversione"
+    }
+
+    @classmethod
+    def expand(cls, query: str) -> List[str]:
+        """Restituisce una lista di query varianti (originale + espansioni)."""
+        variants = [query.lower()]
+        words = query.lower().split()
+        
+        # 1. Sinonimi
+        synonym_query = []
+        has_synonym = False
+        for w in words:
+            if w in cls.SYNONYMS:
+                synonym_query.append(cls.SYNONYMS[w][0]) # Prendi il primo sinonimo
+                has_synonym = True
+            else:
+                synonym_query.append(w)
+        
+        if has_synonym:
+            variants.append(" ".join(synonym_query))
+            
+        # 2. Topic Abstraction (Rimuove il "rumore" conversazionale)
+        clean_query = query.lower()
+        topic_changed = False
+        for marker, replacement in cls.TOPIC_MARKERS.items():
+            if marker in clean_query:
+                clean_query = clean_query.replace(marker, replacement).strip()
+                topic_changed = True
+                
+        if topic_changed and clean_query and clean_query not in variants:
+            variants.append(clean_query)
+            
+        # 3. Parafrasi basilare
+        if "come" in words and "fare" in words:
+            variants.append(query.lower().replace("come fare", "istruzioni"))
+            
+        return list(set(variants)) # Rimuove duplicati
+
+
+
+# ─────────────────────────────────────────────────────────
 #  TF-IDF leggiero (drop-in replacement di SimpleTfidf)
 # ─────────────────────────────────────────────────────────
 
@@ -249,6 +324,7 @@ class VectorMemoryEngine:
         user_id: str,
         query: str,
         top_k: int = 5,
+        use_expansion: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Ricerca semantica: restituisce le `top_k` memorie più simili alla query.
@@ -271,20 +347,31 @@ class VectorMemoryEngine:
             ids = [e[0] for e in user_entries]
             matrix = np.vstack([e[1] for e in user_entries])  # shape: (n, vocab)
 
-            # Encode query
-            q_vec = self._tfidf.encode(query)
+            # Genera varianti della query (Query Expansion)
+            query_variants = QueryExpander.expand(query) if use_expansion else [query]
+            
+            # Max-Score Algorithm: Calcola i cosine_scores per ogni variante e prendi il massimo per ogni documento
+            max_scores = np.zeros(matrix.shape[0])
+            
+            for qv in query_variants:
+                q_vec = self._tfidf.encode(qv)
+                
+                # Allinea dimensioni (il vocab potrebbe essere cresciuto)
+                if q_vec.shape[0] != matrix.shape[1]:
+                    min_dim = min(q_vec.shape[0], matrix.shape[1])
+                    q_vec = q_vec[:min_dim]
+                    mat_aligned = matrix[:, :min_dim]
+                else:
+                    mat_aligned = matrix
+                    
+                # Cosine similarity per questa variante
+                scores_variant = mat_aligned @ q_vec
+                
+                # Element-wise maximum
+                max_scores = np.maximum(max_scores, scores_variant)
 
-            # Allinea dimensioni (il vocab potrebbe essere cresciuto)
-            if q_vec.shape[0] != matrix.shape[1]:
-                min_dim = min(q_vec.shape[0], matrix.shape[1])
-                q_vec = q_vec[:min_dim]
-                matrix = matrix[:, :min_dim]
-
-            # Cosine similarity: dot product (vettori già normalizzati)
-            scores = matrix @ q_vec  # shape: (n,)
-
-            # Top-k
-            top_indices = np.argsort(scores)[::-1][:top_k]
+            # Top-k basato sul Max-Score
+            top_indices = np.argsort(max_scores)[::-1][:top_k]
 
         # Fetch da DB i record selezionati
         selected_ids = [ids[i] for i in top_indices]
@@ -304,7 +391,7 @@ class VectorMemoryEngine:
                     results.append({
                         "id": r[0],
                         "content": r[1],
-                        "score": float(scores[i]),
+                        "score": float(max_scores[i]),
                         "metadata": json.loads(r[2] or "{}"),
                         "timestamp": r[3],
                     })

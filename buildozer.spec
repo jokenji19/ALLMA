@@ -59,7 +59,7 @@ icon.filename = icon.png
 orientation = portrait
 
 # (list) List of service to declare
-services = allma_brain:service.py:foreground
+services = allma_brain:service.py:foreground:foregroundServiceType=dataSync
 
 #
 # Android specific
@@ -79,7 +79,7 @@ android.softinput_mode = adjustPan
 android.presplash_color = #FFFFFF
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE,ACCESS_NETWORK_STATE,MODIFY_AUDIO_SETTINGS,BLUETOOTH,BLUETOOTH_CONNECT,FOREGROUND_SERVICE,POST_NOTIFICATIONS
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE,ACCESS_NETWORK_STATE,MODIFY_AUDIO_SETTINGS,BLUETOOTH,BLUETOOTH_CONNECT,FOREGROUND_SERVICE,POST_NOTIFICATIONS,FOREGROUND_SERVICE_DATA_SYNC
 
 # (int) Target Android API, should be as high as possible.
 android.api = 34
@@ -91,7 +91,8 @@ android.minapi = 24
 #android.sdk = 20
 
 # (str) Android NDK version to use
-android.ndk_path = /Users/erikahu/.buildozer/android/platform/android-ndk-r27d
+android.sdk_path = ./.buildozer_local/android/platform/android-sdk
+android.ndk_path = ./.buildozer_local/android/platform/android-ndk-r27d
 
 # (str) Android Build Tools version to use (force stable version)
 android.build_tools_version = 34.0.0
@@ -148,7 +149,7 @@ p4a.local_recipes = ./libs/recipes
 # Rollback: buildozer.spec.backup_vulkan if fails
 # env_vars = CMAKE_ARGS="-DGGML_OPENCL=ON -DGGML_OPENMP=ON -DGGML_NATIVE=ON -DGGML_PERF=ON -DANDROID_PLATFORM=android-24",FORCE_CMAKE=1,CPATH="/Users/erikahu/ALLMA/ALLMA_V4/.buildozer/android/platform/android-ndk-r25b/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include"
 # CLEAN ENV FOR RECIPE CONTROL
-env_vars = FORCE_CMAKE=1
+env_vars = FORCE_CMAKE=1,PYTHONUSERBASE=./.buildozer_local/pythonuserbase,PIP_CACHE_DIR=./.buildozer_local/pipcache
 
 #
 # iOS specific
@@ -172,7 +173,7 @@ log_level = 2
 warn_on_root = 1
 
 # (str) Path to build artifact storage, absolute or relative to spec file
-# build_dir = ./.buildozer
+build_dir = ./.buildozer_local
 
 # (str) Path to build output storage, absolute or relative to spec file
 # bin_dir = ./bin

@@ -183,12 +183,43 @@ class DreamManager:
             # Fallback (non dovrebbe accadere se user_id è passato correttamente)
             return []
             
-        start_time = datetime.now() - timedelta(hours=24)
-        memories = self.memory_system.get_interactions(
-            user_id=self.current_user_id,
-            start_time=start_time
-        )
-        return memories
+        # Duck typing per memoria: Temporal vs Conversational
+        if hasattr(self.memory_system, 'get_interactions'):
+            start_time = datetime.now() - timedelta(hours=24)
+            raw_mems = self.memory_system.get_interactions(
+                user_id=self.current_user_id,
+                start_time=start_time
+            )
+            memories = []
+            for m in raw_mems:
+                text = m.get('content', '')
+                if text:
+                    memories.append({
+                        'text': text,
+                        'content': text,
+                        'role': m.get('role', 'user'),
+                        'timestamp': str(m.get('timestamp', ''))
+                    })
+            return memories
+            
+        elif hasattr(self.memory_system, 'get_recent_interactions'):
+            recent_msgs = self.memory_system.get_recent_interactions(
+                user_id=self.current_user_id,
+                limit=20
+            )
+            memories = []
+            for m in recent_msgs:
+                if getattr(m, 'role', 'user') == 'user':
+                    ts = getattr(m, 'timestamp', datetime.now())
+                    memories.append({
+                        'text': m.content, 
+                        'content': m.content, 
+                        'role': 'user', 
+                        'timestamp': ts.isoformat() if hasattr(ts, 'isoformat') else str(ts)
+                    })
+            return memories
+            
+        return []
 
     def _run_tree_of_thoughts(self, memories: List[Dict]) -> List[str]:
         self.logger.info("🧠 Tree of Thoughts: Analisi profonda delle connessioni...")
@@ -370,6 +401,10 @@ class DreamManager:
                 except Exception as bus_err:
                     self.logger.warning(f"[DreamManager] EventBus publish failed: {bus_err}")
                 
+                # V8.2: Notifiche Push Proattive Android dal Background
+                self._push_android_notification("Intuizione Spontanea (" + str(int(confidence*100)) + "%)", insight)
+
+                
                 # 2. Evoluzione Personalità
                 if self.coalescence_processor:
                     self.coalescence_processor.process_droplet(text=insight)
@@ -445,13 +480,59 @@ class DreamManager:
         finally:
             self.is_dreaming = False
 
+    def _push_android_notification(self, title: str, text: str):
+        """
+        Sveglia l'utente proattivamente mostrando una notifica di sistema locale.
+        Richiama le librerie Android JNI se siamo su dispositivo mobile.
+        """
+        try:
+            from jnius import autoclass
+            from android import api_version
+            
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            PythonService = autoclass('org.kivy.android.PythonService')
+            mContext = PythonActivity.mActivity or PythonService.mService
+            
+            if not mContext:
+                self.logger.warning("Push Notification fallback: Nessun Context Android trovato.")
+                return
+
+            Context = autoclass('android.content.Context')
+            NotificationBuilder = autoclass('android.app.Notification$Builder')
+            
+            # Setup del builder (Canale per API >= 26)
+            if api_version >= 26:
+                builder = NotificationBuilder(mContext, 'allma_brain_channel')
+            else:
+                builder = NotificationBuilder(mContext)
+                
+            builder.setContentTitle(f"ALLMA: {title}")
+            builder.setContentText(text)
+            builder.setAutoCancel(True)
+            
+            # Recupera icona dell'app
+            app_context = mContext.getApplicationContext()
+            icon_id = app_context.getResources().getIdentifier('icon', 'drawable', app_context.getPackageName())
+            if icon_id:
+                builder.setSmallIcon(icon_id)
+            
+            notification = builder.build()
+            notification_manager = mContext.getSystemService(Context.NOTIFICATION_SERVICE)
+            # Usa un ID fisso per i sogni: 42
+            notification_manager.notify(42, notification)
+            self.logger.info(f"Notifica Android Inviata: {text}")
+            
+        except ImportError:
+            self.logger.info(f"Mock Notification (Not on Android): {title} - {text}")
+        except Exception as e:
+            self.logger.error(f"Errore generazione notifica Push: {e}")
+
     def _stream_to_ui(self, text: str, is_thought: bool = False):
         if hasattr(self, 'webview_bridge') and self.webview_bridge:
             # Format as a system message or thought bubble
             # We use '[THOUGHT]' prefix which script.js might style differently
             formatted = f"💭 {text}" if is_thought else text
             self.webview_bridge.send_message_to_js(formatted, sender='system')
-    
     def get_and_clear_pending_verification(self) -> Optional[Dict]:
         """
         Recupera un insight in attesa di validazione e lo rimuove dalla coda.

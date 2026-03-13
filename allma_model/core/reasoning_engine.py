@@ -13,6 +13,7 @@ class ThoughtTrace:
     strategy: str
     confidence: float
     raw_thought: str
+    tool_calls: List[Dict[str, str]] = None  # [{tool: 'GET_BATTERY', args: ''}]
     needs_clarification: bool = False
 
 class ReasoningEngine:
@@ -43,7 +44,7 @@ class ReasoningEngine:
                 prompt, 
                 max_tokens=300, 
                 temperature=0.1, 
-                stop=["]]"], # Stop at end of thought block
+                stop=["</think>", "<|im_end|>"], # Stop at end of thought block
                 callback=callback
             )
             
@@ -74,13 +75,13 @@ class ReasoningEngine:
             history_str = f"\n{history_str}\n"
             
         if system_instruction:
-            # Use the injected V5 prompt (which already includes ALLMA identity & V5 state)
+            # Use the injected V5 prompt
             return f"""<|im_start|>system
 {system_instruction}
 <|im_end|>{history_str}<|im_start|>user
 {safe_input}<|im_end|>
 <|im_start|>assistant
-"""
+<think>\n"""
 
         # Fallback to default if no instruction provided
         memories = context.get('relevant_memories', [])
@@ -94,11 +95,12 @@ MEMORIA A LUNGO TERMINE:
 {memory_text}
 
 Usa il tuo processo di pensiero interno per analizzare la richiesta prima di rispondere.
+Se hai bisogno di usare un sensore o tool, scrivi [TOOL: NOME_TOOL()].
 <|im_end|>
 <|im_start|>user
 {safe_input}<|im_end|>
 <|im_start|>assistant
-"""
+<think>\n"""
 
     def _parse_thought(self, raw_output: str) -> ThoughtTrace:
         """Estrae la struttura dal testo generato (Unified Format)"""
@@ -122,6 +124,15 @@ Usa il tuo processo di pensiero interno per analizzare la richiesta prima di ris
         strategy = self._extract_field(content, "S")
         memory_val = self._extract_field(content, "M")
         
+        # Estrazione OFFLINE TOOL CALLS (es: [TOOL: SYSTEM_TIME()], [TOOL: READ_BATTERY()])
+        tool_calls = []
+        tool_matches = re.finditer(r"\[TOOL:\s*(\w+)(?:\((.*?)\))?\]", content, re.IGNORECASE)
+        for match in tool_matches:
+            tool_calls.append({
+                "tool": match.group(1).upper().strip(),
+                "args": match.group(2).strip() if match.group(2) else ""
+            })
+        
         return ThoughtTrace(
             timestamp=datetime.now(),
             intent=intent or "Risposta Generale",
@@ -130,6 +141,7 @@ Usa il tuo processo di pensiero interno per analizzare la richiesta prima di ris
             strategy=strategy or "Diretta",
             confidence=1.0,
             raw_thought=content,
+            tool_calls=tool_calls if tool_calls else None,
             needs_clarification=False
         )
 

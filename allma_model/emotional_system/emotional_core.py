@@ -224,25 +224,24 @@ class EmotionalCore:
             def parse_json(json_str: str) -> Dict:
                 import json
                 import re
-                clean_json = re.sub(r'```json\s*', '', json_str)
-                clean_json = re.sub(r'```', '', clean_json).strip()
-                if not clean_json:
-                    raise ValueError("Empty emotion JSON")
-                start = None
-                depth = 0
-                for i, ch in enumerate(clean_json):
-                    if ch == "{":
-                        if depth == 0:
-                            start = i
-                        depth += 1
-                    elif ch == "}" and depth > 0:
-                        depth -= 1
-                        if depth == 0 and start is not None:
-                            try:
-                                return json.loads(clean_json[start:i + 1])
-                            except Exception:
-                                start = None
-                return json.loads(clean_json)
+                
+                # Primo tentativo diretto
+                try:
+                    return json.loads(json_str)
+                except Exception:
+                    pass
+                
+                # Secondo tentativo: Cerca il primo blocco simil-JSON
+                try:
+                    match = re.search(r'\{.*\}', json_str, re.DOTALL)
+                    if match:
+                        return json.loads(match.group(0))
+                except Exception:
+                    pass
+                
+                # Se fallisce tutto, usa un fallback neutro forzato
+                raise ValueError(f"Could not extract JSON from: {json_str[:50]}...")
+
 
             last_error = None
             try:

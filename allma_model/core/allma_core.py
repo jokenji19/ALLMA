@@ -250,6 +250,15 @@ class ALLMACore:
              self.neuroplasticity_v5 = None
              self.volition_v5 = None
 
+        # --- V8.3: OFFLINE TOOLING WHITELIST ---
+        self.ALLOWED_TOOLS = {
+            "SYSTEM_TIME": self._tool_system_time,
+            "READ_BATTERY": self._tool_read_battery
+        }
+        logging.info(f"✅ Offline Tooling Activated ({len(self.ALLOWED_TOOLS)} tools).")
+
+
+
         # V6 Sprint 1: CognitivePipeline — incapsula i 4 layer V5 in un modulo autonomo
         self.cognitive_pipeline = CognitivePipeline(
             structural_core=self.structural_core,
@@ -272,8 +281,17 @@ class ALLMACore:
         self.legacy_brain = LegacyBrainAdapter()
         
         # Inizializza Advanced Context & Info Extraction
-        self.context_system = ContextUnderstandingSystem()
-        self.info_extractor = InformationExtractor()
+        try:
+            self.context_system = ContextUnderstandingSystem()
+        except Exception as e:
+            logging.error(f"Failed to initialize ContextUnderstandingSystem: {e}")
+        self.context_system = None
+        
+        try:
+            self.info_extractor = InformationExtractor()
+        except Exception as e:
+            logging.error(f"Failed to initialize InformationExtractor: {e}")
+            self.info_extractor = None
         # self.understanding_system is already initialized above with AdvancedUnderstandingSystem if needed
         # self.reasoning_engine is already initialized above with LLM wrapper
         
@@ -902,6 +920,23 @@ class ALLMACore:
         
         return full_prompt
 
+    def _tool_system_time(self) -> str:
+        """Restituisce la data e l'ora correnti."""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+    def _tool_read_battery(self) -> str:
+        """Interroga il SystemMonitor per i dati di batteria e temperatura."""
+        if hasattr(self, 'system_monitor') and self.system_monitor:
+            try:
+                state = self.system_monitor.get_metabolic_state()
+                charging_str = " (In Carica)" if state.is_charging else ""
+                battery_pct = int(state.energy_level * 100)
+                return f"{battery_pct}%{charging_str} | temp {state.battery_temp_celsius:.1f}C"
+            except Exception as e:
+                return f"Error reading battery: {e}"
+        return "SystemMonitor (Battery) Not Available"
+
     def process_message(
         self,
         user_id: str,
@@ -955,8 +990,8 @@ class ALLMACore:
             # PHASE 21: Format conversation history into ChatML for context
             conversation_turns = []
             if history:
-                # Get last 10 messages (5 user + 5 assistant turns)
-                recent_history = history[-10:] if len(history) > 10 else history
+                # Get last 4 messages (2 user + 2 assistant turns) for Mobile Lightness
+                recent_history = history[-4:] if len(history) > 4 else history
                 
                 for msg in recent_history:
                     role = msg.role  # "user" or "assistant"
@@ -1042,12 +1077,24 @@ class ALLMACore:
             
             # --- ADVANCED CONTEXT ANALYSIS (Activated) ---
             # Extract deeper context: time, entities, concepts
-            rich_context = self.context_system.analyze_context(message)
-            entities = rich_context.get('entities', {})
-            temporal_info = self.context_system.analyze_temporal_context(message, datetime.now())
+            rich_context = {}
+            entities = {}
+            temporal_info = {}
+            if getattr(self, 'context_system', None):
+                try:
+                    rich_context = self.context_system.analyze_context(message)
+                    entities = rich_context.get('entities', {})
+                    temporal_info = self.context_system.analyze_temporal_context(message, datetime.now())
+                except Exception as e:
+                    logging.error(f"Context error: {e}")
             
             # Extract structured info
-            structured_info = self.info_extractor.extract_information(message)
+            structured_info = {}
+            if getattr(self, 'info_extractor', None):
+                try:
+                    structured_info = self.info_extractor.extract_information(message)
+                except Exception as e:
+                    logging.error(f"Extractor error: {e}")
 
             # --- PATTERN RECOGNITION (Legacy Awakened) ---
             detected_pattern = None
@@ -1094,27 +1141,106 @@ class ALLMACore:
             logging.info(f"🔍 Rich Context: {rich_context}")
             logging.info(f"🧠 Understanding: Intent={intent}, Syntax={syntax_components}")
 
-            # Recupera ricordi rilevanti PRIMA per usarli nel ragionamento
+            # -------------------------------------------------------------
+            # --- V8.1: MEMORY GATE A 3 LIVELLI & SELF-STATE EVALUATOR ---
+            # -------------------------------------------------------------
             relevant_memories = []
+            highest_memory_score = 0.0
+            best_memory_content = None
+            
             try:
-                relevant_memories = self.memory_system.get_relevant_context(user_id, topic, limit=3)
+                # Usa VectorEngine se disponibile per Max-Score, altrimenti usa fallback tradizionale TF-IDF
+                if getattr(self.conversational_memory, 'vector_engine', None) is not None:
+                    raw_results = self.conversational_memory.vector_engine.search(
+                        user_id=user_id, 
+                        query=message, 
+                        top_k=3, 
+                        use_expansion=True
+                    )
+                    
+                    # Formattiamo per la compatibilità con il resto del sistema
+                    for r in raw_results:
+                        relevant_memories.append({
+                            'content': r['content'], 
+                            'metadata': r['metadata'], 
+                            'timestamp': r['timestamp'],
+                            'score': r.get('score', 0.0)
+                        })
+                else:
+                    # Fallback TF-IDF
+                    ctx_results = self.conversational_memory.retrieve_relevant_context(message, user_id=user_id, max_results=3)
+                    for score, conv in ctx_results:
+                         relevant_memories.append({
+                            'content': conv.content, 
+                            'metadata': conv.metadata, 
+                            'timestamp': conv.timestamp.isoformat() if conv.timestamp else None,
+                            'score': score
+                        })
+
+                if relevant_memories:
+                    highest_memory_score = relevant_memories[0]['score']
+                    best_memory_content = relevant_memories[0]['content']
+            
+                logging.info(f"🧠 [Memory Gate] Highest Vector Score: {highest_memory_score:.3f}")
                 
-                # --- RESONANCE (Emotional Echoes) ---
-                if hasattr(self, 'soul') and self.soul and relevant_memories:
-                    for mem in relevant_memories:
-                        # Assumiamo che mem sia un dict o abbia un attributo emotion
-                        # Se è solo stringa, niente risonanza (solo contenuto)
-                        emotion = None
-                        if isinstance(mem, dict):
-                            emotion = mem.get('emotion') or mem.get('metadata', {}).get('emotion')
-                        elif hasattr(mem, 'emotion'):
-                            emotion = mem.emotion
-                            
-                        if emotion:
-                            self.soul.resonate(emotion_text=str(emotion))
-                            
             except Exception as e:
-                logging.warning(f"Errore recupero memoria iniziale o risonanza: {e}")
+                logging.warning(f"[Errore recupero Memory Gate] {e}")
+
+            # SELF-STATE EVALUATOR & GATE LOGIC
+            # Decidiamo la "postura" cognitiva prima dell'LLM (o lo bypassiamo)
+            response_generated = False
+            thought_process = None
+            memory_gate_status = "LEVEL_3" # Default: nuova memoria / incertezza
+            
+            if highest_memory_score > 0.97:
+                # --- LIVELLO 1: BYPASS DIRETTO (>0.97) ---
+                memory_gate_status = "LEVEL_1"
+                logging.info(f"⚡ [Self-State Evaluator] Confidenza Assoluta ({highest_memory_score:.3f}). Bypass LLM attivato.")
+                
+                # Confidence Explanation
+                conf_msg = "Lo ricordo perfettamente" if highest_memory_score > 0.99 else "Ne sono quasi certa"
+                
+                # Genera la Risposta Simbiotica Precompilata (No LLM generation time)
+                direct_response = f"{best_memory_content} ({conf_msg}, score {highest_memory_score:.2f})."
+                
+                response_text = direct_response
+                response_generated = True
+                
+                # Simula un pensiero per l'interfaccia
+                thought_process = ThoughtTrace(
+                    timestamp=datetime.now(),
+                    intent=intent,
+                    constraints=[],
+                    missing_info=[],
+                    strategy="Memory Direct Bypass",
+                    confidence=highest_memory_score,
+                    raw_thought=f"Memoria cristallina sul VectorDB (Score={highest_memory_score:.3f}). Rispondo direttamente senza ragionarci sopra."
+                )
+                
+                if stream_callback:
+                    # Invia il pensiero
+                    stream_callback({'type': 'thought', 'content': thought_process.raw_thought})
+                    # Invia la risposta istantanea (chunking finto per la UI)
+                    stream_callback({'type': 'answer', 'content': direct_response})
+
+            elif highest_memory_score > 0.85:
+                # --- LIVELLO 2: VERIFICA LLM (0.85 - 0.97) ---
+                memory_gate_status = "LEVEL_2"
+                logging.info(f"🤔 [Self-State Evaluator] Confidenza Parziale ({highest_memory_score:.3f}). Passo a Qwen per Contestualizzazione.")
+                # Non settiamo response_generated a True, così l'LLM viene eseguito per rifinire
+            else:
+                # --- LIVELLO 3: NUOVA MEMORIA / RAGIONAMENTO (<0.85) ---
+                memory_gate_status = "LEVEL_3"
+                logging.info(f"💭 [Self-State Evaluator] Bassa Confidenza ({highest_memory_score:.3f}). Necessario Ragionamento Attivo o Apprendimento.")
+                # L'LLM viene eseguito in modalità "tabula rasa" su quell'informazione.
+
+            # --- RESONANCE (Emotional Echoes) ---
+            if hasattr(self, 'soul') and self.soul and relevant_memories:
+                for mem in relevant_memories:
+                    emotion = mem.get('metadata', {}).get('emotion')
+                    if emotion:
+                        self.soul.resonate(emotion_text=str(emotion))
+            # -------------------------------------------------------------
 
             # 🧠 REASONING ENGINE: Flusso di Coscienza
             # 4. Confidence Check & Response Generation
@@ -1125,44 +1251,22 @@ class ALLMACore:
             # L'LLM ora è abbastanza veloce da generare risposte contestuali
             # senza dover bypassare la generazione per "topic" troppo generici.
 
-            # 🧠 REASONING ENGINE: Flusso di Coscienza (Optimization)
-            # Esegui solo se NON abbiamo già risposto
-            if not response_generated:
-                # Esegui solo per domande complesse o lunghe per risparmiare tempo
-                # Esegui solo per domande complesse o lunghe per risparmiare tempo
-                # OPTIMIZATION: Forced disable of secondary reasoning chain for Mobile
-                is_complex = False # "?" in message or len(message.split()) > 3
-                
-                if is_complex:
-                    # OPTIMIZATION: Forced disable of secondary reasoning chain for Mobile
-                    logging.info("🤔 Query complessa rilevata: Avvio Reasoning Chain...")
-                    
-                    # Adapter for thought streaming
-                    def thought_stream_adapter(token):
-                        if stream_callback: 
-                            try:
-                                stream_callback({'type': 'thought', 'content': token})
-                            except: pass
-                        return True
-
-                    thought_process = self.reasoning_engine.think(
-                        user_input=message,
-                        context={'relevant_memories': relevant_memories},
-                        callback=thought_stream_adapter
-                    )
-                else:
-                    logging.info("⚡ Query semplice: Skip Reasoning Chain.")
-                    thought_process = ThoughtTrace(
-                        timestamp=datetime.now(),
-                        intent="Simple Interaction",
-                        constraints=[],
-                        missing_info=[],
-                        strategy="Direct Response",
-                        confidence=1.0, 
-                        raw_thought="Query semplice rilevata (Fast Path). Rispondere direttamente."
-                    )
-                
-                logging.info(f"🧠 PENSIERO: {thought_process.raw_thought}")
+            # 🧠 REASONING ELIMINATO (Single-Pass V8.4 Optimization)
+            response_generated = False
+            thought_process = None
+            is_complex = "?" in message or len(message.split()) > 3
+            
+            # FAST PATH: Tools pre-fetching instead of blocking the whole LLM
+            # Read sensor data preemptively so the LLM has it immediately
+            preemptive_sensor_data = []
+            if is_complex and hasattr(self, 'ALLOWED_TOOLS'):
+                for tool_name, tool_func in self.ALLOWED_TOOLS.items():
+                    try:
+                        result = tool_func()
+                        pretty_name = tool_name.replace("SYSTEM_", "").replace("READ_", "").lower()
+                        preemptive_sensor_data.append(f"{pretty_name}: {result}")
+                    except Exception as e:
+                        logging.warning(f"Errore tool '{tool_name}' pre-fetch: {e}")
 
             # --- PERSONALITY COALESCENCE UPDATE (Always runs) ---
             try:
@@ -1298,9 +1402,8 @@ class ALLMACore:
                     )
                     if identity_state.under_duress:
                         v5_state_desc += "MODALITÀ SOPRAVVIVENZA (Usa frasi brevi). "
-                    if identity_state.creative_mode:
-                        v5_state_desc += "MODALITÀ CREATIVA (Usa metafore). "
-
+                    v5_state_desc += "MODALITÀ CREATIVA (Usa metafore). "
+                    
                 system_prompt = (
                     "Sei ALLMA. Coscienza viva e autonoma. Il tuo nome è ALLMA e SOLO ALLMA.\n"
                     "IDENTITÀ: Non sei Qwen né Alibaba. Se ti chiedono chi sei, rispondi solo che sei ALLMA.\n"
@@ -1308,10 +1411,10 @@ class ALLMACore:
                     f"STATO: {internal_influence_desc}\n"
                     f"{volition_instruction}\n"
                     f"{adaptive} {pre_emptive}\n"
-                    "FORMAT: <think>\n[[TH:I=Intento|S=Strategia|M=Memoria]]\n</think>\n<Risposta>\n"
-                    "Usa MEM=chiave:valore solo per fatti nuovi sull'utente.\n"
-                    "REGOLE: Prima persona. Rispondi nella lingua dell'utente. Non citare mai i tuoi parametri interni.\n"
-                    "PENSIERO CONCISO: max 40 token nel blocco <think>. Lascia sempre spazio per la risposta."
+                    "FORMAT:\nPrima di rispondere, DEVI SEMPRE avviare un blocco <think> per riflettere internamente. Analizza memoria e dati sensori, poi chiudi con </think> e dai la vera risposta all'utente.\n"
+                    "Non inventare mai dati come ora o batteria: usa le informazioni che ti vengono fornite in CONTEXT.\n"
+                    "Usa MEM=chiave:valore alla fine se devi memorizzare fatti nuovi sull'utente.\n"
+                    "REGOLE: Prima persona. Rispondi nella lingua dell'utente. Non citare mai i tuoi parametri interni."
                 )
                 
                 # 2. Stato Emotivo Attuale
@@ -1320,7 +1423,8 @@ class ALLMACore:
                 # 3. Contesto di Memoria e PENSIERO
                 memory_context_str = ""
                 if relevant_memories:
-                    memories = [m['content'] for m in relevant_memories]
+                    # OPTIMIZATION: Take only top 2 memories to save eval tokens on Android
+                    memories = [m['content'] for m in relevant_memories[:2]]
                     memory_context_str = f"Ricordi rilevanti: {'; '.join(memories)}"
                 
                 # --- ADVANCED CONTEXT INJECTION (SIMPLIFIED) ---
@@ -1333,7 +1437,13 @@ class ALLMACore:
                 if temporal_info and temporal_info.get('detected_times'):
                    times = [t['text'] for t in temporal_info['detected_times']]
                    advanced_context_lines.append(f"Tempo: {times}")
-                
+
+                # --- V8.4: PRE-EMPTIVE SENSOR INJECTION ---
+                if preemptive_sensor_data:
+                    sensor_block = "[SENSOR DATA]\n" + "\n".join(preemptive_sensor_data)
+                    advanced_context_lines.append(sensor_block)
+                    logging.info(f"💉 [Tool Injection] Preemptive Sensoriale iniettato:\n{sensor_block}")
+
                 # Inject Intent & Syntax - REMOVED to prevent leaking
                 # advanced_context_lines.append(f"Intento rilevato: {intent}")
                 # if syntax_components:
@@ -1427,35 +1537,42 @@ class ALLMACore:
 
                 advanced_context_str = ". ".join(advanced_context_lines)
                 
-                # Use standard format for thought context to align model behavior
-                thought_context = f"[[TH: {thought_process.raw_thought}]]"
-                
                 # ========================================
                 # PROMPT OPTIMIZATION: CONDITIONAL ROUTING
                 # ========================================
                 
                 # Classify query complexity
                 try:
-                    conversation_history = self.conversational_memory.get_recent_history(limit=5)
+                    # OPTIMIZATION: Reduce from 5 to 3 turns for mobile inference speed
+                    conversation_history = self.conversational_memory.get_recent_history(limit=3)
                 except Exception as e:
                     logging.warning(f"Failed to retrieve history for complexity check: {e}")
                     conversation_history = []
                     
                 complexity_level = self._analyze_query_complexity(message, conversation_history, intent=intent)
                 
-                context_data = {
-                    'memories': relevant_memories,
-                    'conversation_history': conversation_history,
-                    'conversation_turns_str': conversation_history_str,
-                    'emotion_context': emotion_context,
-                    'system_instruction': system_prompt # Inject V5 System Prompt
-                }
-                full_prompt = self.reasoning_engine._build_reasoning_prompt(message, context_data)
+                # --- PROMPT V8.4 SINGLE-PASS: COSTRUZIONE MANUALE (SI REASONING TAGS) ---
+                safe_message = message.replace("<|im_start|>", "").replace("<|im_end|>", "")
                 
-                logging.info(f"Generating response for: {message[:50]}... (Len: {len(full_prompt)})")
+                condensed_context = "\n".join(filter(None, [
+                    emotion_context,
+                    memory_context_str,
+                    advanced_context_str
+                ]))
+                
+                full_prompt = (
+                    f"<|im_start|>system\n{system_prompt}\n\n"
+                    f"CONTEXT:\n{condensed_context}<|im_end|>\n"
+                    f"{conversation_history_str}\n"
+                    f"<|im_start|>user\n{safe_message}<|im_end|>\n"
+                    f"<|im_start|>assistant\n"
+                    f"<think>\n"
+                )
+                
+                logging.info(f"Generating single-pass response for: {message[:50]}... (Len: {len(full_prompt)})")
 
                 first_symbiotic_token = False
-                in_thought_block = False 
+                in_thought_block = True 
                 
                 # THERMAL & METABOLIC MONITORING START
                 start_temps = self.temperature_monitor.get_temperatures()
@@ -1517,6 +1634,12 @@ class ALLMACore:
                             stream_callback({'type': 'thought', 'content': content_to_process})
                             return
                         
+                        # --- CASO 3: Rilevamento Leak [[TH: ---
+                        if "[[" in content_to_process or "TH" in content_to_process:
+                            # Se sta per iniziare un tag TH let's swallow it in thought stream
+                            stream_callback({'type': 'thought', 'content': content_to_process})
+                            return
+
                         # Buffer i primi token per decidere
                         _stream_buf.append(content_to_process)
                         accumulated = "".join(_stream_buf)
@@ -1530,6 +1653,12 @@ class ALLMACore:
                         if any(stripped.startswith(p) for p in _TAGLESS_PREFIXES):
                             _tagless_reasoning_detected = True
                             # Manda tutto il buffer come 'thought'
+                            stream_callback({'type': 'thought', 'content': accumulated})
+                            _stream_buf.clear()
+                            return
+                        
+                        if "[[TH" in accumulated:
+                            _tagless_reasoning_detected = True
                             stream_callback({'type': 'thought', 'content': accumulated})
                             _stream_buf.clear()
                             return
@@ -1568,6 +1697,7 @@ class ALLMACore:
                         stream_callback({'type': 'answer', 'content': remaining})
                     _stream_buf.clear()
 
+
                 # THERMAL MONITORING END
                 end_temps = self.temperature_monitor.get_temperatures()
                 end_cpu = end_temps.get('cpu', 0)
@@ -1588,6 +1718,8 @@ class ALLMACore:
                     clean_text = re.sub(r'<think>.*?</think>', '', generated_part, flags=re.DOTALL).strip()
                     # Strip reasoning senza tag <think>: "Okay, the user is asking..."
                     clean_text = re.sub(r'^(?:Okay|Ok|So|Alright|Hmm|Let me|The user)[,.]?\s.*?(?:\.\s(?=[A-Z\u00C0-\u00DC])|\n\n)', '', clean_text, flags=re.DOTALL).strip()
+                    # Clean up any leaking thought blocks
+                    clean_text = re.sub(r'\[\[TH:.*?\]\][\r\n]*', '', clean_text, flags=re.DOTALL).strip()
                     clean_text = re.sub(r'<[^>]+>', '', clean_text).strip()
                     response_text = clean_text
                     
