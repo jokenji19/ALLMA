@@ -59,14 +59,15 @@ function toggleReasoning(header) {
     header.parentElement.classList.toggle('open');
 }
 
-function scrollToBottom() {
-    // Scroll to the very bottom of the chat container
+function scrollToBottom(force = false) {
+    const distanceFromBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+    if (!force && distanceFromBottom > 120) return;
     chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
 messageInput.addEventListener('focus', () => {
-    setTimeout(scrollToBottom, 100);
-    setTimeout(scrollToBottom, 300);
+    setTimeout(() => scrollToBottom(true), 100);
+    setTimeout(() => scrollToBottom(true), 300);
 });
 
 // Explicit Key Handler (better for mobile)
@@ -84,7 +85,7 @@ window.handleInputKey = function (e) {
 function handleViewportResizing() {
     // Normal resize handling
     document.body.style.height = window.visualViewport.height + 'px';
-    scrollToBottom();
+    scrollToBottom(true);
     if (document.activeElement === messageInput) {
         messageInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -107,7 +108,7 @@ if (window.visualViewport) {
 
 // Focus handling - reduced to just scroll checks
 messageInput.addEventListener('focus', () => {
-    setTimeout(scrollToBottom, 300);
+    setTimeout(() => scrollToBottom(true), 300);
 });
 
 // Expose action for Python to set input text
@@ -165,10 +166,10 @@ function drainBuffer() {
         else if (responseBuffer.length > 200) charsToTake = 3;
         else if (responseBuffer.length > 50) charsToTake = 2;
 
-        const chunk = responseBuffer.substring(0, charsToTake);
-        responseBuffer = responseBuffer.substring(charsToTake);
-        currentStreamBubble.content.textContent += chunk;
-        scrollToBottom();
+            const chunk = responseBuffer.substring(0, charsToTake);
+            responseBuffer = responseBuffer.substring(charsToTake);
+            currentStreamBubble.content.textContent += chunk;
+            scrollToBottom();
     }
 
     if (responseBuffer.length === 0 && isBackendFinished) {
@@ -185,7 +186,7 @@ function finishStreamUI() {
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = null;
 
-    if (currentStreamBubble && streamStartTime > 0) {
+    if (currentStreamBubble && streamStartTime > 0 && !currentStreamBubble.timerFrozen) {
         const duration = (Date.now() - streamStartTime) / 1000;
         const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
         if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (UI Finish)";
@@ -701,6 +702,15 @@ window.updateVoiceStackStatus = function (status) {
 document.addEventListener("DOMContentLoaded", () => {
     try {
         document.body.classList.add('pro-mode');
+        const splash = document.getElementById('boot-splash');
+        if (splash) {
+            requestAnimationFrame(() => {
+                setTimeout(() => {
+                    document.body.classList.remove('boot-loading');
+                    splash.classList.add('hidden');
+                }, 300);
+            });
+        }
         const savedName = localStorage.getItem('allma_username');
         const savedAge = localStorage.getItem('allma_userage');
         if (savedName) {
@@ -752,14 +762,15 @@ window.startStream = function () {
     wrapper.appendChild(timerDiv);
 
     chatContainer.appendChild(wrapper);
-    scrollToBottom();
+    scrollToBottom(true);
 
     currentStreamBubble = {
         content: contentSpan,
         reasoning: reasoningContent,
         reasoningContainer: reasoningContainer,
         timer: timerDiv,
-        dotsCleared: false  // flag: pallini già rimossi?
+        dotsCleared: false,
+        timerFrozen: false
     };
 
     streamStartTime = Date.now();
@@ -775,7 +786,7 @@ window.startStream = function () {
             const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
             if (textSpan) textSpan.textContent = duration.toFixed(1) + "s";
         }
-    }, 100);
+    }, 200);
 };
 
 window.streamChunk = function (text, isThought) {
@@ -794,6 +805,16 @@ window.streamChunk = function (text, isThought) {
             const dots = currentStreamBubble.content.querySelector('.typing-dots');
             if (dots) dots.remove();
             currentStreamBubble.dotsCleared = true;
+        }
+        if (!currentStreamBubble.timerFrozen) {
+            currentStreamBubble.timerFrozen = true;
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = null;
+            if (currentStreamBubble && streamStartTime > 0) {
+                const duration = (Date.now() - streamStartTime) / 1000;
+                const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
+                if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (Thought End)";
+            }
         }
 
         // Add text to the sinuous buffer instead of DOM
@@ -815,7 +836,7 @@ window.endStream = function () {
     timerInterval = null;
 
     // Update timer text to show Backend finish time
-    if (currentStreamBubble && streamStartTime > 0) {
+    if (currentStreamBubble && streamStartTime > 0 && !currentStreamBubble.timerFrozen) {
         const duration = (Date.now() - streamStartTime) / 1000;
         const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
         if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (Core Done)";

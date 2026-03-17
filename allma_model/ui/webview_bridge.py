@@ -191,8 +191,7 @@ class WebViewBridge:
                 settings.setAllowFileAccess(True)
                 settings.setAllowContentAccess(True)
                 
-                # Transparent Background
-                self.webview.setBackgroundColor(Color.TRANSPARENT)
+                self.webview.setBackgroundColor(Color.parseColor("#0B1220"))
                 
                 # --- EDGE-TO-EDGE CONFIGURATION (v0.39: NO LIMITS + JS FALLBACK) ---
                 
@@ -459,8 +458,7 @@ class WebViewBridge:
         create_webview_ui()
 
     def _start_polling(self):
-        # Poll every 200ms
-        Clock.schedule_interval(self._poll_js, 0.2)
+        Clock.schedule_interval(self._poll_js, 0.35)
 
     def _poll_js(self, dt):
         if not self.webview or not self.poll_callback:

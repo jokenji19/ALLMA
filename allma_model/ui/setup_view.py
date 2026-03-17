@@ -149,11 +149,17 @@ class SetupView(Screen):
         if platform == 'android':
             try:
                 from jnius import autoclass, cast
+                from android.runnable import run_on_ui_thread
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 JString = autoclass('java.lang.String')
                 Toast = autoclass('android.widget.Toast')
                 context =  PythonActivity.mActivity
-                Toast.makeText(context, cast('java.lang.CharSequence', JString(text)), Toast.LENGTH_SHORT).show()
+
+                @run_on_ui_thread
+                def _toast_ui(t_text):
+                    Toast.makeText(context, cast('java.lang.CharSequence', JString(t_text)), Toast.LENGTH_SHORT).show()
+
+                _toast_ui(text)
             except Exception as e:
                 print(f"Toast Error: {e}")
         else:

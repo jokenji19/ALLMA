@@ -13,6 +13,49 @@
 
     <style>
         /* CRITICAL VIEW SYSTEM STYLES (Inlined for reliability) */
+        body.boot-loading #boot-splash {
+            opacity: 1;
+        }
+
+        #boot-splash {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 30% 20%, rgba(76, 141, 255, 0.15), transparent 50%), #0B1220;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        #boot-splash .boot-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #E8EEF9;
+            letter-spacing: 2px;
+        }
+
+        #boot-splash .boot-sub {
+            font-size: 12px;
+            color: rgba(232, 238, 249, 0.7);
+        }
+
+        #boot-splash .boot-spinner {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 3px solid rgba(232, 238, 249, 0.15);
+            border-top-color: #4C8DFF;
+            animation: bootSpin 1s linear infinite;
+        }
+
+        @keyframes bootSpin {
+            to { transform: rotate(360deg); }
+        }
+
         .app-view {
             height: 100%;
             width: 100%;
@@ -286,7 +329,13 @@
     </style>
 </head>
 
-<body>
+<body class="boot-loading">
+
+    <div id="boot-splash">
+        <div class="boot-title">ALLMA</div>
+        <div class="boot-spinner"></div>
+        <div class="boot-sub">Avvio interfaccia…</div>
+    </div>
 
     <!-- Sidebar Backdrop -->
     <div id="sidebar-backdrop" onclick="toggleSidebar()"></div>

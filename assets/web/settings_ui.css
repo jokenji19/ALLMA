@@ -60,15 +60,13 @@ body.dark-mode .settings-section {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #E5E7EB;
-    /* Neutral gray off */
+    background-color: rgba(76, 141, 255, 0.18);
     transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
     -webkit-transition: .3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 body.dark-mode .slider {
-    background-color: #4B5563;
-    /* Darker gray off */
+    background-color: rgba(122, 167, 255, 0.2);
 }
 
 .slider:before {
@@ -85,8 +83,7 @@ body.dark-mode .slider {
 }
 
 input:checked+.slider {
-    background-color: #34C759;
-    /* Apple Green */
+    background-color: #4ADE80;
 }
 
 input:focus+.slider {
