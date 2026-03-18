@@ -3,6 +3,7 @@ Modulo per l'estrazione dei topic dai messaggi.
 """
 import logging
 from typing import List, Dict
+import re
 
 import numpy as np
 from allma_model.utils.text_processing import SimpleTfidf, cosine_similarity
@@ -32,20 +33,23 @@ class TopicExtractor:
             Embeddings del testo
         """
         try:
-            # Definisci un vocabolario base per garantire dimensioni consistenti
             base_vocab = [
-                "technical", "programming", "code", "development",
-                "project", "management", "tasks", "timeline",
-                "learning", "education", "training", "study",
-                "help", "support", "assistance", "guidance",
-                "general", "conversation", "discussion", "chat"
+                "technical", "programming", "code", "development", "python", "java", "javascript", "tecnologia", "intelligenza", "artificiale",
+                "progetto", "project", "management", "tasks", "timeline", "android", "apk", "buildozer", "kivy",
+                "learning", "education", "training", "study", "imparare", "studiare", "lezione",
+                "help", "support", "assistance", "guidance", "aiuto", "supporto", "assistenza",
+                "history", "storia", "chi era", "quando", "guerra", "impero", "napoleone",
+                "emotion", "emozione", "felice", "triste", "arrabbiato", "paura", "ansia",
+                "preference", "preferisco", "mi piace", "odio", "adoro", "colore", "colori", "chiaro", "chiari", "scuro", "scuri", "vestiti", "tessuto", "estate", "sudare",
+                "general", "conversation", "discussion", "chat", "parla", "spiega"
             ]
             
             # Aggiungi il testo corrente al vocabolario
             texts = base_vocab + [text]
             
             # Calcola gli embeddings
-            self.vectorizer = SimpleTfidf(max_features=20)  # Limita a 20 features
+            max_features = 40
+            self.vectorizer = SimpleTfidf(max_features=max_features)
             embeddings = self.vectorizer.fit_transform(texts)
             
             # Restituisci l'embedding dell'ultimo testo (quello corrente)
@@ -57,7 +61,7 @@ class TopicExtractor:
             
         except Exception as e:
             logging.error(f"Errore nel calcolo embeddings: {e}")
-            return np.zeros(20)  # Restituisci un vettore di zeri con 20 dimensioni
+            return np.zeros(40)
             
     def extract_topic(
         self,
@@ -73,16 +77,23 @@ class TopicExtractor:
             Topic estratto
         """
         try:
+            rule_topic = self._extract_topic_from_text(text)
+            if rule_topic and rule_topic != "general":
+                return rule_topic
+
             # Calcola gli embeddings del testo
             embeddings = self.get_embeddings(text)
             
             # Definisci i topic predefiniti con i loro embeddings
             default_topics = {
-                "technical": self.get_embeddings("technical programming code development"),
-                "project": self.get_embeddings("project management tasks timeline"),
-                "learning": self.get_embeddings("learning education training study"),
-                "support": self.get_embeddings("help support assistance guidance"),
-                "general": self.get_embeddings("general conversation discussion chat")
+                "technical": self.get_embeddings("technical programming code development python java javascript bug errore"),
+                "project": self.get_embeddings("project management tasks timeline android apk buildozer kivy deploy"),
+                "learning": self.get_embeddings("learning education training study imparare studiare lezione"),
+                "support": self.get_embeddings("help support assistance guidance aiuto supporto assistenza come fare"),
+                "history": self.get_embeddings("history storia chi era quando guerra impero napoleone"),
+                "emotion": self.get_embeddings("emotion emozione felice triste rabbia paura ansia stress"),
+                "preference": self.get_embeddings("preference preferisco mi piace adoro odio scelta colore colori chiari scuri vestiti tessuto estate sudare"),
+                "general": self.get_embeddings("general conversation discussion chat parlare spiegare")
             }
             
             # Calcola la similarità con ogni topic
@@ -95,7 +106,10 @@ class TopicExtractor:
                 similarities[topic] = similarity
                 
             # Restituisci il topic con similarità maggiore
-            return max(similarities.items(), key=lambda x: x[1])[0]
+            best_topic, best_score = max(similarities.items(), key=lambda x: x[1])
+            if best_score < 0.05:
+                return "general"
+            return best_topic
             
         except Exception as e:
             logging.error(f"Errore nell'estrazione del topic: {e}")
@@ -139,26 +153,44 @@ class TopicExtractor:
         Returns:
             Topic estratto
         """
-        # Lista di topic comuni
-        common_topics = [
-            "python",
-            "java",
-            "javascript",
-            "programming",
-            "web",
-            "database",
-            "api",
-            "testing",
-            "deployment",
-            "security"
-        ]
-        
-        # Cerca il topic nel testo
-        text_lower = text.lower()
-        for topic in common_topics:
-            if topic in text_lower:
-                return topic
-                
+        if not text:
+            return "general"
+        t = text.lower()
+        t = re.sub(r'\s+', ' ', t).strip()
+        if len(t) <= 3:
+            return "general"
+
+        if re.search(r'\b(ciao|salve|hey|ehi|buongiorno|buonasera|buonanotte|hola|hello|hi)\b', t):
+            return "general"
+
+        if re.search(r'\b(allma|kivy|buildozer|apk|android|logcat|deploy|ndk|sdk)\b', t):
+            return "project"
+
+        if re.search(r'\b(python|java|javascript|js|typescript|ts|bug|errore|stacktrace|traceback|codice|script|funzione|classe|api|database|sql|tecnolog\w*|intelligenza artificiale|\bia\b)\b', t):
+            return "technical"
+
+        if re.search(r'\b(lezione|imparare|studiare|spiegami|spiega|insegnami|tutorial)\b', t):
+            return "learning"
+
+        if re.search(r'\b(aiuto|supporto|assistenza|come faccio|non funziona|problema|issue)\b', t):
+            return "support"
+
+        if re.search(r'\b(storia|chi era|quando|guerra|impero|napoleone|cesare|medioevo|rivoluzione)\b', t):
+            return "history"
+
+        if re.search(r'\b(mi sento|sono (felice|triste|arrabbiat[oa]?|ansios[oa]?|spaventat[oa]?)|paura|ansia|stress|depress)\b', t):
+            return "emotion"
+
+        if re.search(r'\b(preferisco|mi piace|mi piacciono|adoro|odio|scelgo|scegli|scelta|colore|colori|chiaro|chiari|scuro|scuri|tessut\w*|vestit\w*|magliett\w*|pantalon\w*|estate|sudare|caldo|fresco|rosso|blu|verde|giallo)\b', t):
+            return "preference"
+
+        if re.search(r'\bpython\b', t):
+            return "python"
+        if re.search(r'\bjava\b', t):
+            return "java"
+        if re.search(r'\bjavascript\b', t):
+            return "javascript"
+
         return "general"
 
     def get_related_topics(self, topic: str) -> List[str]:

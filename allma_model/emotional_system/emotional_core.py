@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import json
+import re
 from allma_model.soul.soul_core import SoulCore
 from allma_model.soul.soul_types import SoulState as InternalSoulState
 
@@ -117,6 +118,96 @@ class EmotionalCore:
             'python': 'python'
         }
         
+    def _heuristic_detect_emotion(self, text: str) -> Optional[EmotionalState]:
+        if not text:
+            return None
+        t = text.lower()
+        t = re.sub(r'\s+', ' ', t).strip()
+        if not t:
+            return None
+
+        patterns = {
+            "joy": [
+                "felice", "contento", "gioioso", "entusiasta", "eccitato", "soddisfatto",
+                "che bello", "evviva", "ottimo", "fantastico", "meraviglioso",
+            ],
+            "sadness": [
+                "triste", "infelice", "malincon", "depress", "deluso", "sconfort",
+                "mi manca", "solitudine", "solo", "piango",
+            ],
+            "anger": [
+                "arrabbiat", "rabbia", "furioso", "irritat", "odio", "incazz",
+                "mi dà fastidio", "che schifo", "mi fai arrabbiare",
+            ],
+            "fear": [
+                "paura", "ansia", "ansioso", "preoccup", "spavent", "terrorizz",
+                "panico", "mi spaventa", "ho paura",
+            ],
+            "surprise": [
+                "sorpres", "incredibile", "wow", "davvero", "non ci credo",
+                "impossibile", "inaspettat",
+            ],
+        }
+
+        intensifiers_hi = ["molto", "tantissimo", "estremamente", "davvero", "super", "troppo"]
+        intensifiers_lo = ["un po", "poco", "leggermente", "appena"]
+
+        best = None
+        best_score = 0.0
+
+        for emotion, keys in patterns.items():
+            score = 0.0
+            for k in keys:
+                if k in t:
+                    score += 1.0
+            if score > best_score:
+                best_score = score
+                best = emotion
+
+        if not best:
+            return EmotionalState(
+                primary_emotion="neutral",
+                confidence=0.7,
+                secondary_emotions={},
+                intensity=0.2,
+                context={"source": "heuristic"}
+            )
+
+        confidence = min(0.9, 0.6 + (best_score * 0.15))
+        intensity = min(0.95, 0.45 + (best_score * 0.15))
+
+        for w in intensifiers_hi:
+            if w in t:
+                confidence = min(0.95, confidence + 0.1)
+                intensity = min(1.0, intensity + 0.2)
+                break
+
+        for w in intensifiers_lo:
+            if w in t:
+                intensity = max(0.2, intensity - 0.2)
+                confidence = max(0.55, confidence - 0.05)
+                break
+
+        if re.search(r'\bnon\s+(sono|mi\s+sento|mi\s+sent[oe])\b', t):
+            neg_targets = {
+                "joy": "sadness",
+                "sadness": "joy",
+                "anger": "neutral",
+                "fear": "neutral",
+                "surprise": "neutral",
+            }
+            best = neg_targets.get(best, best)
+            confidence = max(0.55, confidence - 0.15)
+            intensity = max(0.2, intensity - 0.1)
+
+        return EmotionalState(
+            primary_emotion=best,
+            confidence=float(max(0.0, min(1.0, confidence))),
+            secondary_emotions={},
+            intensity=float(max(0.0, min(1.0, intensity))),
+            context={"source": "heuristic"}
+        )
+
     def _translate_to_english(self, text: str) -> str:
         """
         Traduce il testo dall'italiano all'inglese usando un dizionario semplice.
@@ -195,10 +286,15 @@ class EmotionalCore:
         try:
             # Prompt ultra-compatto: save ~85 token vs versione precedente
             compact_prompt = (
-                f'<|im_start|>system\nRispondi SOLO con JSON valido. '
+                f'<|im_start|>system\nRispondi SOLO con JSON valido. Non usare <think> e non aggiungere testo extra. '
                 f'Formato esatto: {{"e":"emotion","c":0.9,"i":0.5}} '
                 f'dove e=joy|sadness|anger|fear|surprise|neutral, c=confidence 0-1, i=intensity 0-1.\n<|im_end|>\n'
                 f'<|im_start|>user\n"{text}"\n<|im_end|>\n<|im_start|>assistant\n'
+            )
+            strict_prompt = (
+                f'<|im_start|>system\nJSON ONLY. Output deve iniziare con "{{" e finire con "}}". '
+                f'Nessun <think>, nessuna spiegazione. Schema: {{"e":"joy|sadness|anger|fear|surprise|neutral","c":0.0,"i":0.0}}\n<|im_end|>\n'
+                f'<|im_start|>user\n{text}\n<|im_end|>\n<|im_start|>assistant\n'
             )
 
             def call_llm(prompt_value: str) -> str:
@@ -206,7 +302,7 @@ class EmotionalCore:
                     output = llm_generate_function(
                         prompt_value,
                         max_tokens=64,
-                        stop=["<|im_end|>"],
+                        stop=["<|im_end|>", "</think>", "<think>"],
                         temperature=0.1,
                         echo=False
                     )
@@ -214,7 +310,7 @@ class EmotionalCore:
                     output = llm_generate_function(
                         prompt_value,
                         max_tokens=64,
-                        stop=["<|im_end|>"],
+                        stop=["<|im_end|>", "</think>", "<think>"],
                         temperature=0.1
                     )
                 if isinstance(output, dict) and 'choices' in output:
@@ -225,22 +321,30 @@ class EmotionalCore:
                 import json
                 import re
                 
+                cleaned = re.sub(r'<think>.*?</think>', '', json_str, flags=re.DOTALL).strip()
+                cleaned = cleaned.strip().strip("`").strip()
+
                 # Primo tentativo diretto
                 try:
-                    return json.loads(json_str)
+                    return json.loads(cleaned)
                 except Exception:
                     pass
                 
                 # Secondo tentativo: Cerca il primo blocco simil-JSON
                 try:
-                    match = re.search(r'\{.*\}', json_str, re.DOTALL)
+                    match = re.search(r'\{.*\}', cleaned, re.DOTALL)
                     if match:
                         return json.loads(match.group(0))
                 except Exception:
                     pass
+
+                lowered = cleaned.lower()
+                for label in ("joy", "sadness", "anger", "fear", "surprise", "neutral"):
+                    if re.search(rf'\b{label}\b', lowered):
+                        return {"e": label, "c": 0.6, "i": 0.4}
                 
                 # Se fallisce tutto, usa un fallback neutro forzato
-                raise ValueError(f"Could not extract JSON from: {json_str[:50]}...")
+                raise ValueError(f"Could not extract JSON from: {cleaned[:50]}...")
 
 
             last_error = None
@@ -261,6 +365,22 @@ class EmotionalCore:
                 )
             except Exception as e:
                 last_error = e
+                try:
+                    json_str = call_llm(strict_prompt)
+                    data = parse_json(json_str)
+                    emotion = data.get("e") or data.get("primary_emotion", "neutral")
+                    confidence = float(data.get("c") or data.get("confidence", 0.5))
+                    intensity = float(data.get("i") or data.get("intensity", 0.5))
+                    print(f"✅ Emotion LLM OK (strict): {emotion} conf={confidence}", flush=True)
+                    return EmotionalState(
+                        primary_emotion=str(emotion).lower(),
+                        confidence=float(max(0.0, min(1.0, confidence))),
+                        secondary_emotions=data.get("secondary_emotions", {}),
+                        intensity=float(max(0.0, min(1.0, intensity))),
+                        context=context
+                    )
+                except Exception as e2:
+                    last_error = e2
 
             print(f"Errore detect_emotion_via_llm: {last_error} - Input era: {text}")
             return EmotionalState(
@@ -310,8 +430,23 @@ class EmotionalCore:
             except Exception as e:
                 print(f"TinyBERT failed: {e}")
 
+        heuristic_state = None
+        try:
+            heuristic_state = self._heuristic_detect_emotion(text)
+            if heuristic_state and heuristic_state.primary_emotion != "neutral" and heuristic_state.confidence >= 0.75:
+                return heuristic_state
+        except Exception:
+            heuristic_state = None
+
         # 2. TENTATIVO CON LLM (FALLBACK / DEEP)
         if llm_client:
+            try:
+                if heuristic_state and heuristic_state.primary_emotion == "neutral":
+                    t = (text or "").lower()
+                    if not any(p in t for p in ("mi sento", "sono ", "ho paura", "ansia", "triste", "felice", "arrabbi", "rabbia", "sorpres")):
+                        return heuristic_state
+            except Exception:
+                pass
             # Se llm_client è l'istanza Llama
             if hasattr(llm_client, '__call__'):
                 return self.detect_emotion_via_llm(text, llm_client, context)
@@ -321,6 +456,8 @@ class EmotionalCore:
                 return self.detect_emotion_via_llm(text, llm_client.generate, context)
                 
         # 3. FALLBACK FINALE
+        if heuristic_state:
+            return heuristic_state
         print("DEBUG - No Emotion System available, using fallback.")
         return EmotionalState(
             primary_emotion="neutral",

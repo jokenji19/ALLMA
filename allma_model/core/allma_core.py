@@ -998,6 +998,7 @@ class ALLMACore:
             raise ValueError("User ID, conversation ID e messaggio sono richiesti")
             
         try:
+            identity_state = None
             # Segnala al Dream System: utente attivo → cedi il LLM
             self._user_active.set()
             # 0. Ensure LLM is loaded (Mobile Mode)
@@ -1010,6 +1011,7 @@ class ALLMACore:
             sleep_keywords = ["buonanotte allma", "buonanotte!", "vado a dormire", "notte allma", "mi corico", "sleep mode activated"]
             msg_lower = message.lower().strip()
             is_sleep_command = any(kw in msg_lower for kw in sleep_keywords) or (msg_lower == "buonanotte") or (msg_lower == "notte")
+            is_complex = "?" in message or len(message.split()) > 3
             
             if is_sleep_command and getattr(self, 'dream_enabled', False):
                 logging.info("🌙 Sleep keyword rilevato. Avvio Dream Cycle...")
@@ -1075,6 +1077,26 @@ class ALLMACore:
                     "soul_state": emotional_state.soul_state # Persist Soul State
                 }
             )
+
+            try:
+                emotion_value = (
+                    emotional_state.primary_emotion.value
+                    if hasattr(emotional_state.primary_emotion, "value")
+                    else str(emotional_state.primary_emotion)
+                )
+                self.conversational_memory.store_message(
+                    conversation_id=conversation_id,
+                    content=message,
+                    role="user",
+                    metadata={
+                        "emotion": emotion_value,
+                        "topics": [topic],
+                        "timestamp": datetime.now().isoformat(),
+                        "user_id": user_id,
+                    },
+                )
+            except Exception as e:
+                logging.warning(f"[ALLMACore] Failed to store user message in ConversationalMemory: {e}")
             
             # Analizza preferenze utente
             user_preferences = self.preference_analyzer.analyze_learning_style(user_id)
@@ -1294,7 +1316,15 @@ class ALLMACore:
             # 🧠 REASONING ELIMINATO (Single-Pass V8.4 Optimization)
             response_generated = False
             thought_process = None
-            is_complex = "?" in message or len(message.split()) > 3
+            if self.identity_engine_v5:
+                try:
+                    context_metrics = {
+                        "friction": float(getattr(emotional_state, "stress", 0.0) or 0.0),
+                        "soul_chaos": float(getattr(emotional_state, "entropy", 0.5) or 0.5),
+                    }
+                    identity_state = self.identity_engine_v5.compute_state(context_metrics)
+                except Exception as e:
+                    logging.warning(f"[ALLMACore] IdentityState compute failed: {e}")
             
             # FAST PATH: Tools pre-fetching instead of blocking the whole LLM
             # Read sensor data preemptively so the LLM has it immediately
@@ -1682,6 +1712,15 @@ class ALLMACore:
                     clean_text = re.sub(r'<think>.*?</think>', '', generated_part, flags=re.DOTALL).strip()
                     # Strip reasoning senza tag <think>: "Okay, the user is asking..."
                     clean_text = re.sub(r'^(?:Okay|Ok|So|Alright|Hmm|Let me|The user)[,.]?\s.*?(?:\.\s(?=[A-Z\u00C0-\u00DC])|\n\n)', '', clean_text, flags=re.DOTALL).strip()
+                    clean_text = re.sub(r"^(?:Since I'm|I need to|I should|I'll|I will)\b[\s\S]*?\n\n\n", "", clean_text, flags=re.DOTALL).strip()
+                    if "\n\n\n" in clean_text:
+                        tail = clean_text.rsplit("\n\n\n", 1)[-1].strip()
+                        if tail:
+                            clean_text = tail
+                    if clean_text.lower().startswith(("i need", "let me", "since i'm", "first,")) and "\n\n" in clean_text:
+                        tail = clean_text.rsplit("\n\n", 1)[-1].strip()
+                        if tail:
+                            clean_text = tail
                     # Clean up any leaking thought blocks
                     clean_text = re.sub(r'\[\[TH:.*?\]\][\r\n]*', '', clean_text, flags=re.DOTALL).strip()
                     clean_text = re.sub(r'<[^>]+>', '', clean_text).strip()
@@ -1840,14 +1879,20 @@ class ALLMACore:
             )
             
             # Salva la risposta nella cronologia
+            emotion_value = (
+                emotional_state.primary_emotion.value
+                if hasattr(emotional_state.primary_emotion, "value")
+                else str(emotional_state.primary_emotion)
+            )
             self.conversational_memory.store_message(
                 conversation_id=conversation_id,
                 content=response.content,
-                role="system",
+                role="assistant",
                 metadata={
-                    'emotion': emotional_state.primary_emotion,
+                    'emotion': emotion_value,
                     'topics': [topic],
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().isoformat(),
+                    "user_id": user_id,
                 }
             )
             
