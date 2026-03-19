@@ -13,6 +13,7 @@ class STTEngine:
         self.speech_recognizer = None
         self.intent = None
         self.is_listening = False
+        self._android_context = None
 
         if platform == 'android':
             self._init_android_stt()
@@ -20,18 +21,23 @@ class STTEngine:
     def _init_android_stt(self):
         try:
             from jnius import autoclass, PythonJavaClass, java_method
-            from android.permissions import request_permissions, Permission
+            from android.permissions import request_permissions, Permission, check_permission
             from android.runnable import run_on_ui_thread
-
-            # Request Permissions first
-            request_permissions([Permission.RECORD_AUDIO])
 
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             context = PythonActivity.mActivity
+            self._android_context = context
+
+            if not check_permission(Permission.RECORD_AUDIO):
+                request_permissions([Permission.RECORD_AUDIO])
+                if self.callback_partial:
+                    Clock.schedule_once(lambda dt: self.callback_partial("Permesso microfono richiesto..."), 0)
+                return
             
             # Intent
             Intent = autoclass('android.content.Intent')
             RecognizerIntent = autoclass('android.speech.RecognizerIntent')
+            Locale = autoclass('java.util.Locale')
             
             # BARE MINIMUM DEFAULT (System Default)
             # We are removing ALL custom language/model flags to let the OS decide.
@@ -49,6 +55,15 @@ class STTEngine:
                 
             if self.intent:
                 self.intent.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, pkg_name)
+                self.intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                try:
+                    self.intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toString())
+                except Exception:
+                    pass
+                try:
+                    self.intent.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, True)
+                except Exception:
+                    pass
             
             # Visual Feedback - Keep this so we know it's working
             self.intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, True) 
@@ -82,7 +97,10 @@ class STTEngine:
                 def onResults(self, results):
                     print("STT Results received")
                     try:
-                        matches = results.getStringArrayList(autoclass('android.speech.RecognizerIntent').EXTRA_RESULTS)
+                        SpeechRecognizer = autoclass('android.speech.SpeechRecognizer')
+                        matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if (not matches) or (hasattr(matches, 'size') and matches.size() == 0):
+                            matches = results.getStringArrayList(autoclass('android.speech.RecognizerIntent').EXTRA_RESULTS)
                         if matches and matches.size() > 0:
                             text = matches.get(0)
                             print(f"STT Final: {text}")
@@ -107,7 +125,10 @@ class STTEngine:
                 def onPartialResults(self, results):
                     # PARTIAL RESULTS HANDLING
                     try:
-                        matches = results.getStringArrayList(autoclass('android.speech.RecognizerIntent').EXTRA_RESULTS)
+                        SpeechRecognizer = autoclass('android.speech.SpeechRecognizer')
+                        matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        if (not matches) or (hasattr(matches, 'size') and matches.size() == 0):
+                            matches = results.getStringArrayList(autoclass('android.speech.RecognizerIntent').EXTRA_RESULTS)
                         if matches and matches.size() > 0:
                             text = matches.get(0)
                             if self.engine.callback_partial:
@@ -168,6 +189,18 @@ class STTEngine:
     def start_listening(self):
         if platform == 'android':
             try:
+                from android.permissions import request_permissions, Permission, check_permission
+
+                if not check_permission(Permission.RECORD_AUDIO):
+                    request_permissions([Permission.RECORD_AUDIO])
+                    if self.callback_partial:
+                        Clock.schedule_once(lambda dt: self.callback_partial("Permessi negati (Mic)"), 0)
+                    Clock.schedule_once(lambda dt: self.start_listening(), 0.9)
+                    return
+
+                if not self.speech_recognizer and self._android_context:
+                    self._init_android_stt()
+
                 # Ensure UI thread for Android UI calls
                 from android.runnable import run_on_ui_thread
                 

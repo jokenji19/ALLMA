@@ -6,6 +6,23 @@ class InformationExtractor:
     
     def __init__(self):
         """Inizializza l'estrattore di informazioni"""
+        self._latin_letter_re = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]", flags=re.UNICODE)
+        self._person_stopwords = {
+            "ciao", "salve", "hey", "ehi", "buongiorno", "buonasera", "buonanotte",
+            "ok", "okay", "okey", "fine", "good", "great", "nice", "thanks", "thank", "you",
+            "va", "bene",
+            "chi", "che", "cosa", "quale", "quali", "quanto", "quanta", "quanti", "quante",
+            "come", "quando", "dove", "perché", "perche", "per", "non", "si", "no", "sì",
+            "io", "tu", "lui", "lei", "noi", "voi", "loro", "mi", "ti", "ci", "vi",
+            "ha", "hai", "hanno", "sono", "sei", "è", "e",
+            "who", "what", "which", "when", "where", "why", "how", "is", "are", "am", "was", "were", "be", "been", "being",
+            "do", "does", "did", "can", "could", "would", "should", "will", "shall", "may", "might", "must",
+            "i", "you", "he", "she", "we", "they", "me", "him", "her", "us", "them", "my", "your", "his", "its", "our", "their",
+            "and", "or", "but", "not", "yes", "no",
+            "que", "quien", "quién", "cual", "cuál", "cuando", "cuándo", "donde", "dónde", "porque", "porqué", "como", "cómo",
+            "bonjour", "salut", "qui", "quoi", "quel", "quels", "quelle", "quelles", "quand", "où", "ou", "pourquoi", "comment",
+            "hallo", "guten", "morgen", "abend", "nacht", "wer", "was", "welche", "wann", "wo", "warum", "wie",
+        }
         self.known_concepts = {
             'machine_learning': ['machine learning', 'ml', 'apprendimento automatico'],
             'deep_learning': ['deep learning', 'dl', 'apprendimento profondo'],
@@ -25,7 +42,7 @@ class InformationExtractor:
         
     def extract_concepts(self, text: str) -> List[str]:
         """Estrae i concetti noti dal testo"""
-        text = text.lower()
+        text = (text or "").lower()
         found_concepts = []
         
         # Dizionario dei concetti e delle loro varianti
@@ -61,8 +78,23 @@ class InformationExtractor:
         
         # Cerca ogni concetto e le sue varianti nel testo
         for concept, aliases in concepts.items():
-            if any(alias in text for alias in aliases):
-                found_concepts.append(concept)
+            for alias in aliases:
+                a = alias.lower().strip()
+                if not a:
+                    continue
+                if " " in a:
+                    if a in text:
+                        found_concepts.append(concept)
+                        break
+                else:
+                    if len(a) <= 3:
+                        if re.search(rf"\b{re.escape(a)}\b", text):
+                            found_concepts.append(concept)
+                            break
+                    else:
+                        if re.search(rf"\b{re.escape(a)}\b", text) or a in text:
+                            found_concepts.append(concept)
+                            break
                 
         return found_concepts
         
@@ -76,9 +108,45 @@ class InformationExtractor:
         
     def extract_persons(self, text: str) -> List[str]:
         """Estrae i nomi di persona dal testo"""
-        # Semplice euristica: parole che iniziano con maiuscola
-        words = text.split()
-        return [word for word in words if word[0].isupper() and len(word) > 1]
+        if not text:
+            return []
+
+        cleaned = re.sub(r"[^\w\s'’À-ÖØ-öø-ÿ]", " ", text, flags=re.UNICODE)
+        if not self._latin_letter_re.search(cleaned):
+            return []
+        tokens = [t for t in cleaned.split() if t]
+
+        results: List[str] = []
+        seen = set()
+
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+            token_clean = token.strip("'’")
+            if len(token_clean) <= 1 or not token_clean[0].isupper() or token_clean.isdigit():
+                i += 1
+                continue
+
+            phrase_tokens = [token_clean]
+            j = i + 1
+            while j < len(tokens):
+                nxt = tokens[j].strip("'’")
+                if len(nxt) <= 1 or nxt.isdigit() or not nxt[0].isupper():
+                    break
+                phrase_tokens.append(nxt)
+                j += 1
+
+            phrase_lowers = [p.lower() for p in phrase_tokens]
+            if any(p not in self._person_stopwords for p in phrase_lowers):
+                phrase = " ".join(phrase_tokens)
+                key = phrase.lower()
+                if key not in seen:
+                    results.append(phrase)
+                    seen.add(key)
+
+            i = j
+
+        return results
         
     def extract_organizations(self, text: str) -> List[str]:
         """Estrae i nomi di organizzazioni dal testo"""
@@ -133,8 +201,23 @@ class InformationExtractor:
         
         # Cerca i topic nel testo
         for topic, synonyms in known_topics.items():
-            if any(syn in text_lower for syn in synonyms):
-                found_topics.append(topic)
+            for syn in synonyms:
+                s = syn.lower().strip()
+                if not s:
+                    continue
+                if " " in s:
+                    if s in text_lower:
+                        found_topics.append(topic)
+                        break
+                else:
+                    if len(s) <= 3:
+                        if re.search(rf"\b{re.escape(s)}\b", text_lower):
+                            found_topics.append(topic)
+                            break
+                    else:
+                        if re.search(rf"\b{re.escape(s)}\b", text_lower) or s in text_lower:
+                            found_topics.append(topic)
+                            break
                 
         return found_topics
 

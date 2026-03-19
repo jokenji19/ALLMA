@@ -43,6 +43,7 @@ import os
 import uuid
 import re
 import time
+import json
 
 class ContextUnderstandingSystem:
     def __init__(self):
@@ -729,10 +730,88 @@ class ContextUnderstandingSystem:
         """Restituisce il contesto corrente"""
         return self._current_context
 
-    def analyze_context(self, text: str) -> Dict[str, Any]:
+    def _extract_entities_via_llm(self, text: str, llm_client) -> Dict[str, List[str]]:
+        prompt = (
+            '<|im_start|>system\n'
+            'Return ONLY valid JSON. No <think>. Schema:\n'
+            '{"persons":["..."],"organizations":["..."],"locations":["..."]}\n'
+            'Each value must be a JSON array of strings (can be empty).\n'
+            '<|im_end|>\n'
+            f'<|im_start|>user\n{text}\n<|im_end|>\n'
+            '<|im_start|>assistant\n'
+        )
+
+        def call_llm(prompt_value: str) -> str:
+            try:
+                output = llm_client(
+                    prompt_value,
+                    max_tokens=96,
+                    stop=["<|im_end|>", "</think>", "<think>"],
+                    temperature=0.0,
+                    echo=False
+                )
+            except TypeError:
+                output = llm_client(
+                    prompt_value,
+                    max_tokens=96,
+                    stop=["<|im_end|>", "</think>", "<think>"],
+                    temperature=0.0
+                )
+            if isinstance(output, dict) and 'choices' in output:
+                return str(output['choices'][0].get('text', '')).strip()
+            return str(output).strip()
+
+        def parse_json(raw: str) -> Dict[str, Any]:
+            cleaned = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+            cleaned = cleaned.strip().strip("`").strip()
+            try:
+                return json.loads(cleaned)
+            except Exception:
+                match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+                if match:
+                    return json.loads(match.group(0))
+            raise ValueError("Invalid JSON")
+
+        raw = call_llm(prompt)
+        data = parse_json(raw)
+
+        def to_list(value) -> List[str]:
+            if value is None:
+                return []
+            if isinstance(value, list):
+                out = []
+                for v in value:
+                    if v is None:
+                        continue
+                    s = str(v).strip()
+                    if s:
+                        out.append(s)
+                return out
+            if isinstance(value, str):
+                s = value.strip()
+                return [s] if s else []
+            return []
+
+        return {
+            "persons": to_list(data.get("persons")),
+            "organizations": to_list(data.get("organizations")),
+            "locations": to_list(data.get("locations")),
+        }
+
+    def _should_use_llm_entities(self, text: str) -> bool:
+        if not text:
+            return False
+        latin = re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ]", text, flags=re.UNICODE) is not None
+        if latin:
+            return False
+        if re.search(r"[\u0400-\u04FF\u0600-\u06FF\u3040-\u30FF\u4E00-\u9FFF]", text):
+            return True
+        return False
+
+    def analyze_context(self, text: str, llm_client=None) -> Dict[str, Any]:
         """Analizza il contesto del testo"""
         # Estrae le informazioni dal testo
-        entities = self.extract_entities(text)
+        entities = self.extract_entities(text, llm_client=llm_client)
         topics = self.extract_topics(text)
         
         # Aggiorna il contesto corrente
@@ -744,11 +823,22 @@ class ContextUnderstandingSystem:
         
         return self._current_context
         
-    def extract_entities(self, text: str) -> Dict[str, List[str]]:
+    def extract_entities(self, text: str, llm_client=None) -> Dict[str, List[str]]:
         """Estrae le entità dal testo"""
         # Crea un estrattore di informazioni
         extractor = InformationExtractor()
-        return extractor.extract_entities(text)
+        entities = extractor.extract_entities(text)
+
+        if llm_client and self._should_use_llm_entities(text):
+            try:
+                llm_entities = self._extract_entities_via_llm(text, llm_client)
+                for k in ("persons", "organizations", "locations"):
+                    if llm_entities.get(k):
+                        entities[k] = llm_entities[k]
+            except Exception:
+                pass
+
+        return entities
         
     def extract_topics(self, text: str) -> List[str]:
         """Estrae i topic dal testo"""

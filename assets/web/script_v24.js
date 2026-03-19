@@ -698,6 +698,25 @@ window.updateVoiceStackStatus = function (status) {
     setChip(llm, 'LLM', status?.llm);
 };
 
+function flushAllmaQueue() {
+    const q = window.__allmaQueue;
+    if (!Array.isArray(q) || q.length === 0) return;
+    const pending = [];
+    for (const item of q) {
+        try {
+            const fn = window[item.fn];
+            if (typeof fn === 'function') {
+                fn.apply(null, Array.isArray(item.args) ? item.args : []);
+            } else {
+                pending.push(item);
+            }
+        } catch (e) {
+            pending.push(item);
+        }
+    }
+    window.__allmaQueue = pending;
+}
+
 // Initialize on Load
 document.addEventListener("DOMContentLoaded", () => {
     try {
@@ -731,6 +750,7 @@ document.addEventListener("DOMContentLoaded", () => {
         console.error("Init Storage Error:", e);
     }
     updateTime();
+    flushAllmaQueue();
 });
 
 // ---------------------------

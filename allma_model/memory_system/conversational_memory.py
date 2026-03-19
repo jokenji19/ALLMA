@@ -1,6 +1,6 @@
 """ConversationalMemory - Sistema di memoria conversazionale per ALLMA."""
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 import json
 import re
@@ -517,7 +517,8 @@ class ConversationalMemory:
         conversation_id: str,
         content: str,
         metadata: Optional[Dict] = None,
-        role: str = "assistant"
+        role: str = "assistant",
+        user_id: Optional[str] = None
     ) -> None:
         """
         Memorizza un messaggio.
@@ -537,7 +538,8 @@ class ConversationalMemory:
                 role=role,
                 content=content,
                 timestamp=datetime.now(),
-                metadata=metadata
+                metadata=metadata,
+                user_id=user_id
             )
             self.messages.append(message)
             self.save_memory()
@@ -672,6 +674,23 @@ class ConversationalMemory:
             )
         )
         return conversation_id
+
+    def update_context(self, conversation_id: str, context: Dict[str, Any]) -> None:
+        if not conversation_id:
+            raise ValueError("Conversation ID è richiesto")
+        if context is None:
+            return
+
+        with self.lock:
+            for uid, convs in self.conversations.items():
+                for c in convs:
+                    if c.id == conversation_id:
+                        if c.metadata is None:
+                            c.metadata = {}
+                        if isinstance(context, dict):
+                            c.metadata.update(context)
+                        self.save_memory()
+                        return
 
     def store_insight(self, content: str, origin_topics: List[str]) -> None:
         """

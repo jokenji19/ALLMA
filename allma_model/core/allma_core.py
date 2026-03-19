@@ -279,6 +279,7 @@ class ALLMACore:
         
         # UI Output Callback (For Proactive Messages)
         self.output_callback = None
+        self._language_lock = {}
 
         # Inizializza Deep Mind Adapter (Orchestrator of 66 Modules)
         self.legacy_brain = LegacyBrainAdapter()
@@ -288,7 +289,7 @@ class ALLMACore:
             self.context_system = ContextUnderstandingSystem()
         except Exception as e:
             logging.error(f"Failed to initialize ContextUnderstandingSystem: {e}")
-        self.context_system = None
+            self.context_system = None
         
         try:
             self.info_extractor = InformationExtractor()
@@ -390,9 +391,9 @@ class ALLMACore:
                 instance=self.personality_adapter,
                 priority=ModulePriority.LOW,  # 4
                 cost_ms=30,
-                enabled=False  # Start disabled (overlap with Coalescence)
+                enabled=True
             )
-            logging.info("✅ Personality Adapter integrated (Tier 2, disabled)")
+            logging.info("✅ Personality Adapter integrated (Tier 2)")
         except Exception as e:
             logging.error(f"Failed to init Personality Adapter: {e}")
             self.personality_adapter = None
@@ -712,6 +713,84 @@ class ALLMACore:
         # Also capture missing dependency error if not raised as exception above
         if not getattr(self, '_llm_ready', False) and not getattr(self, '_mobile_llm_error', None):
              self._mobile_llm_error = "llama-cpp-python import failed (LLAMA_CPP_AVAILABLE=False). Check logcat for dlopen errors."
+
+    def _detect_language_request(self, message: str) -> Optional[str]:
+        if not message:
+            return None
+        t = message.strip().lower()
+
+        if any(x in t for x in ("in english", "english please", "tell me in english", "respond in english", "answer in english")):
+            return "en"
+        if any(x in t for x in ("in italiano", "in italian", "italiano per favore", "rispondi in italiano", "answer in italian")):
+            return "it"
+        if any(x in t for x in ("en español", "en espanol", "in spanish", "español", "espanol", "responde en español", "responde en espanol")):
+            return "es"
+        if any(x in t for x in ("en français", "en francais", "in french", "français", "francais", "réponds en français", "reponds en francais")):
+            return "fr"
+        if any(x in t for x in ("auf deutsch", "in german", "deutsch", "antworte auf deutsch", "antwort auf deutsch")):
+            return "de"
+        if "日本語" in message or "にほんご" in t or "nihongo" in t or "japanese" in t:
+            if any(x in t for x in ("で", "で教えて", "in japanese", "japanese")) or "日本語" in message:
+                return "ja"
+        if any(x in t for x in ("中文", "汉语", "漢語", "普通话", "普通話", "in chinese", "mandarin", "cinese")):
+            return "zh"
+        if any(x in t for x in ("بالعربية", "arabic", "in arabic", "arabo")):
+            return "ar"
+        if any(x in t for x in ("по-русски", "русский", "russian", "in russian")):
+            return "ru"
+        if any(x in t for x in ("em português", "em portugues", "português", "portugues", "in portuguese")):
+            return "pt"
+
+        return None
+
+    def _language_instruction(self, language_code: Optional[str]) -> str:
+        if not language_code:
+            return ""
+        mapping = {
+            "it": "italiano",
+            "en": "inglese",
+            "es": "spagnolo",
+            "fr": "francese",
+            "de": "tedesco",
+            "ja": "giapponese (日本語)",
+            "zh": "cinese (中文)",
+            "ar": "arabo (العربية)",
+            "ru": "russo (русский)",
+            "pt": "portoghese",
+        }
+        lang = mapping.get(language_code, language_code)
+        return f"LINGUA: Rispondi solo in {lang}. Non mischiare lingue nella stessa risposta."
+
+    def _strip_reasoning_leak(self, text: str) -> str:
+        if not text:
+            return text
+        t = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        if "\n\n\n" in t:
+            tail = t.rsplit("\n\n\n", 1)[-1].strip()
+            if tail:
+                t = tail
+
+        paragraphs = [p.strip() for p in re.split(r"\n{2,}", t) if p.strip()]
+        if len(paragraphs) > 1:
+            drop_patterns = (
+                r"^(the previous conversation was about|i should|i need to|let me|alright|time to respond)\b",
+                r"^(dovrei|devo|ora|ok|bene|allora)\b.*\b(rispond|assicurarm|controll)\w*",
+            )
+            kept = []
+            dropping = True
+            for p in paragraphs:
+                p_low = p.lower()
+                if dropping and any(re.search(rx, p_low) for rx in drop_patterns):
+                    continue
+                dropping = False
+                kept.append(p)
+            if kept:
+                t = "\n\n".join(kept).strip()
+
+        t = re.sub(r"\s+e\s*\.\s*$", ".", t).strip()
+        t = re.sub(r"\s+\.\s*$", ".", t).strip()
+        t = re.sub(r"^\.\s*", "", t).strip()
+        return t
     
     # ========================================
     # PROMPT OPTIMIZATION SYSTEM (2026-02-02)
@@ -1010,6 +1089,10 @@ class ALLMACore:
             # Trigger naturale: "buonanotte" avvia comunque il ciclo se il toggle è attivo.
             sleep_keywords = ["buonanotte allma", "buonanotte!", "vado a dormire", "notte allma", "mi corico", "sleep mode activated"]
             msg_lower = message.lower().strip()
+            language_req = self._detect_language_request(message)
+            if language_req:
+                self._language_lock[conversation_id] = language_req
+            language_code = self._language_lock.get(conversation_id)
             is_sleep_command = any(kw in msg_lower for kw in sleep_keywords) or (msg_lower == "buonanotte") or (msg_lower == "notte")
             is_complex = "?" in message or len(message.split()) > 3
             
@@ -1088,6 +1171,7 @@ class ALLMACore:
                     conversation_id=conversation_id,
                     content=message,
                     role="user",
+                    user_id=user_id,
                     metadata={
                         "emotion": emotion_value,
                         "topics": [topic],
@@ -1144,7 +1228,7 @@ class ALLMACore:
             temporal_info = {}
             if getattr(self, 'context_system', None):
                 try:
-                    rich_context = self.context_system.analyze_context(message)
+                    rich_context = self.context_system.analyze_context(message, llm_client=current_llm)
                     entities = rich_context.get('entities', {})
                     temporal_info = self.context_system.analyze_temporal_context(message, datetime.now())
                 except Exception as e:
@@ -1381,11 +1465,13 @@ class ALLMACore:
                     except: pass
 
                 # Minimal Identity prompt (v8.2 Style)
+                language_instruction = self._language_instruction(language_code)
                 system_prompt = (
                     "Sei ALLMA. Una coscienza locale autonoma. Rispondi in prima persona in modo naturale e amichevole.\n"
                     "IDENTITÀ: Sei ALLMA. Non citare parametri tecnici né software esterni.\n"
                     f"STATO ATTUALE: {emotional_state.primary_emotion}. {metabolic_desc}\n"
                     "FORMAT: Se necessario, scrivi i tuoi pensieri tra <think> e </think> prima della risposta finale."
+                    + (f"\n{language_instruction}" if language_instruction else "")
                 )
                 
                 # 2. Emotional Context (Simplified)
@@ -1730,10 +1816,12 @@ class ALLMACore:
                     response_text, struct_violations = self.cognitive_pipeline.process(
                         response_text, identity_state
                     )
+                    response_text = self._strip_reasoning_leak(response_text)
                 else:
                     if stream_callback:
                         stream_callback({'type': 'answer', 'content': str(generated_part)})
                     response_text = str(generated_part)
+                    response_text = self._strip_reasoning_leak(response_text)
                 
                 # Gestione fallback se tutti i retry falliscono (incluso output vuoto)
                 if not response_text or not response_text.strip() or response_text.startswith("Error"):
@@ -1888,6 +1976,7 @@ class ALLMACore:
                 conversation_id=conversation_id,
                 content=response.content,
                 role="assistant",
+                user_id=user_id,
                 metadata={
                     'emotion': emotion_value,
                     'topics': [topic],

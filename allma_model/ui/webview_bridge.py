@@ -483,7 +483,16 @@ class WebViewBridge:
         safe_sender = json.dumps(sender)
         safe_thought = json.dumps(thought_text) if thought_text else "null"
         
-        js_code = f"window.addMessage({safe_text}, {safe_sender}, {safe_thought})"
+        js_code = (
+            "(function(){"
+            "try{"
+            "window.__allmaQueue=window.__allmaQueue||[];"
+            "var fn=window.addMessage;"
+            "var args=[" + safe_text + "," + safe_sender + "," + safe_thought + "];"
+            "if(typeof fn==='function'){fn.apply(null,args);}else{window.__allmaQueue.push({fn:'addMessage',args:args});}"
+            "}catch(e){try{console.warn('ALLMA bridge addMessage failed',e);}catch(_){}}"
+            "})();"
+        )
         
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
@@ -492,33 +501,40 @@ class WebViewBridge:
             
         run_js()
 
-    def start_stream(self):
-        if not self.webview: return
-        from android.runnable import run_on_ui_thread
-        @run_on_ui_thread
-        def run_js():
-            self.webview.evaluateJavascript("window.startStream()", None)
-        run_js()
-
-    def stream_chunk(self, text, is_thought=False):
-        if not self.webview: return
-        safe_text = json.dumps(text)
-        is_thought_js = "true" if is_thought else "false"
-        js_code = f"window.streamChunk({safe_text}, {is_thought_js})"
-        
+    def call_js_function(self, fn_name: str, args_js: str = ""):
+        if not self.webview:
+            return
+        import json
+        safe_fn = json.dumps(fn_name)
+        args_part = args_js.strip()
+        args_array = "[]" if not args_part else f"[{args_part}]"
+        js_code = (
+            "(function(){"
+            "try{"
+            "window.__allmaQueue=window.__allmaQueue||[];"
+            f"var fnName={safe_fn};"
+            f"var args={args_array};"
+            "var fn=window[fnName];"
+            "if(typeof fn==='function'){fn.apply(null,args);}else{window.__allmaQueue.push({fn:fnName,args:args});}"
+            "}catch(e){try{console.warn('ALLMA bridge call failed',e);}catch(_){}}"
+            "})();"
+        )
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
             self.webview.evaluateJavascript(js_code, None)
         run_js()
 
+    def start_stream(self):
+        self.call_js_function("startStream")
+
+    def stream_chunk(self, text, is_thought=False):
+        safe_text = json.dumps(text)
+        is_thought_js = "true" if is_thought else "false"
+        self.call_js_function("streamChunk", f"{safe_text}, {is_thought_js}")
+
     def end_stream(self):
-        if not self.webview: return
-        from android.runnable import run_on_ui_thread
-        @run_on_ui_thread
-        def run_js():
-            self.webview.evaluateJavascript("window.endStream()", None)
-        run_js()
+        self.call_js_function("endStream")
 
     def update_benchmark_ui(self, current, total, text):
         """Aggiorna l'overlay di progresso del benchmark."""
@@ -653,5 +669,6 @@ class WebViewBridge:
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_code, None)
+            wrapped = "(function(){try{" + str(js_code) + "}catch(e){try{console.warn('ALLMA execute_js failed',e);}catch(_){}}})();"
+            self.webview.evaluateJavascript(wrapped, None)
         run_js()

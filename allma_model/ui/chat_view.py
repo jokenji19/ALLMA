@@ -403,9 +403,10 @@ class ChatView(MDScreen):
     def _report_voice_stack_status(self):
         stt_ok = self.stt is not None
         tts_ok = self.tts is not None
-        llm_ok = bool(getattr(self.core, '_llm_ready', False))
+        llm_ready = bool(getattr(self.core, '_llm_ready', False))
         llm_error = getattr(self.core, '_mobile_llm_error', None)
         models_dir = getattr(self.core, 'models_dir', None)
+        llm_ok = True if llm_ready else (False if llm_error else None)
         self.voice_stack_status = {
             'stt': stt_ok,
             'tts': tts_ok,
@@ -415,14 +416,16 @@ class ChatView(MDScreen):
         }
 
         if self.bridge:
-            status_line = f"Diagnostica Voce → STT: {'OK' if stt_ok else 'KO'} | TTS: {'OK' if tts_ok else 'KO'} | LLM: {'OK' if llm_ok else 'KO'}"
-            if not llm_ok and llm_error:
+            llm_label = "OK" if llm_ok is True else ("KO" if llm_ok is False else "LOADING")
+            status_line = f"Diagnostica Voce → STT: {'OK' if stt_ok else 'KO'} | TTS: {'OK' if tts_ok else 'KO'} | LLM: {llm_label}"
+            if llm_ok is False and llm_error:
                 status_line += f" | LLM Err: {llm_error}"
-            self.bridge.send_message_to_js(status_line, 'bot')
+            if (not stt_ok) or (not tts_ok) or (llm_ok is False):
+                self.bridge.send_message_to_js(status_line, 'bot')
             try:
                 import json
                 status_payload = json.dumps(self.voice_stack_status)
-                self.bridge.execute_js(f"window.updateVoiceStackStatus({status_payload})")
+                self.bridge.call_js_function("updateVoiceStackStatus", status_payload)
             except Exception:
                 pass
     def update_learning_status(self, dt):
