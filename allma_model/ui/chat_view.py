@@ -381,6 +381,29 @@ class ChatView(MDScreen):
             
             # End Stream
             self.bridge.end_stream()
+
+            if self.bridge and self.voice_mode_enabled:
+                try:
+                    metadata = processed_response.metadata if hasattr(processed_response, 'metadata') else {}
+                    emotion = processed_response.emotion
+                    if hasattr(emotion, "value"):
+                        emotion = emotion.value
+                    payload = {
+                        "emotion": str(emotion),
+                        "intensity": metadata.get("emotion_intensity"),
+                        "valence": metadata.get("emotion_valence"),
+                        "arousal": metadata.get("emotion_arousal"),
+                        "dominance": metadata.get("emotion_dominance"),
+                        "topic": processed_response.topic if hasattr(processed_response, 'topic') else None,
+                        "intent": metadata.get("intent"),
+                        "memory_gate_status": metadata.get("memory_gate_status"),
+                        "memory_score": metadata.get("memory_score"),
+                        "confidence": getattr(processed_response, 'confidence', None),
+                        "knowledge_integrated": getattr(processed_response, 'knowledge_integrated', False),
+                    }
+                    self.bridge.update_voice_internal_state(payload)
+                except Exception:
+                    pass
             
             # Flush remaining TTS
             if hasattr(processed_response, 'voice_params'):

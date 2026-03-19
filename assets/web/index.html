@@ -738,28 +738,28 @@
 
     <!-- Voice Overlay -->
     <div id="voice-overlay">
+        <canvas id="voice-bg-canvas"></canvas>
         <div class="voice-header">
             <div class="voice-title">Modalità Vocale</div>
         </div>
 
         <div class="voice-visualizer">
-            <!-- Core Neural Sphere (Container) -->
             <div class="neural-sphere">
-                <!-- Particles (Top Layer) -->
                 <canvas id="neural-canvas" width="400" height="400"></canvas>
-
-                <!-- Internal Liquid Waves (Background Layer) -->
                 <div class="wave-blob w-1"></div>
                 <div class="wave-blob w-2"></div>
                 <div class="wave-blob w-3"></div>
             </div>
         </div>
 
+        <div class="voice-status" id="voice-status">Tocca per parlare</div>
+
         <div class="voice-text-container">
-            <div class="voice-text" id="voice-text">In ascolto...</div>
+            <div class="voice-text" id="voice-text"></div>
         </div>
 
         <div class="voice-controls">
+            <button class="voice-btn mic" id="voice-mic-btn" onclick="window.voiceToggleListening && window.voiceToggleListening()">🎙️</button>
             <button class="voice-btn close" onclick="closeVoiceMode()">❌</button>
             <!-- Maybe a toggle mic button here too later -->
         </div>

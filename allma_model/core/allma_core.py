@@ -761,6 +761,57 @@ class ALLMACore:
         lang = mapping.get(language_code, language_code)
         return f"LINGUA: Rispondi solo in {lang}. Non mischiare lingue nella stessa risposta."
 
+    def _guess_language_code(self, message: str) -> Optional[str]:
+        if not message:
+            return None
+
+        s = message.strip()
+        if not s:
+            return None
+
+        if re.search(r"[\u3040-\u30ff\u31f0-\u31ff]", s) or "日本語" in s:
+            return "ja"
+        if re.search(r"[\u4e00-\u9fff]", s) or any(x in s for x in ("中文", "汉语", "漢語")):
+            return "zh"
+        if re.search(r"[\u0600-\u06ff]", s):
+            return "ar"
+        if re.search(r"[\u0400-\u04ff]", s):
+            return "ru"
+
+        t = s.lower()
+        it_hits = 0
+        en_hits = 0
+
+        it_markers = {
+            " il ", " lo ", " la ", " i ", " gli ", " le ",
+            " un ", " una ", " che ", " non ", " per ", " con ", " ma ",
+            " quindi ", " perché ", " poiché ", " come ", " posso ", " cosa ",
+            " essere ", " sono ", " nel ", " nella ", " dello ", " degli ",
+        }
+        en_markers = {
+            " the ", " a ", " an ", " and ", " or ", " but ", " so ",
+            " because ", " since ", " how ", " can ", " what ", " should ",
+            " you ", " i ", " i'm ", " we ", " they ", " is ", " are ", " was ",
+        }
+
+        padded = f" {t} "
+        for m in it_markers:
+            if m in padded:
+                it_hits += 1
+        for m in en_markers:
+            if m in padded:
+                en_hits += 1
+
+        if any(ch in t for ch in ("è", "à", "ò", "ì", "ù")):
+            it_hits += 1
+
+        if it_hits >= en_hits + 1 and it_hits >= 1:
+            return "it"
+        if en_hits >= it_hits + 1 and en_hits >= 1:
+            return "en"
+
+        return None
+
     def _strip_reasoning_leak(self, text: str) -> str:
         if not text:
             return text
@@ -774,6 +825,7 @@ class ALLMACore:
         if len(paragraphs) > 1:
             drop_patterns = (
                 r"^(the previous conversation was about|i should|i need to|let me|alright|time to respond)\b",
+                r"^(they want|the user wants)\b",
                 r"^(dovrei|devo|ora|ok|bene|allora)\b.*\b(rispond|assicurarm|controll)\w*",
             )
             kept = []
@@ -1093,6 +1145,11 @@ class ALLMACore:
             if language_req:
                 self._language_lock[conversation_id] = language_req
             language_code = self._language_lock.get(conversation_id)
+            if not language_code:
+                guessed = self._guess_language_code(message)
+                if guessed:
+                    self._language_lock[conversation_id] = guessed
+                    language_code = guessed
             is_sleep_command = any(kw in msg_lower for kw in sleep_keywords) or (msg_lower == "buonanotte") or (msg_lower == "notte")
             is_complex = "?" in message or len(message.split()) > 3
             
@@ -1466,12 +1523,21 @@ class ALLMACore:
 
                 # Minimal Identity prompt (v8.2 Style)
                 language_instruction = self._language_instruction(language_code)
+                msg_l = (message or "").lower()
+                paradox_guard = ""
+                if ("bugia" in msg_l and "verit" in msg_l) and ("impicc" in msg_l and "decapit" in msg_l):
+                    paradox_guard = (
+                        "\nPARADOSSI: Se la domanda contiene un paradosso auto-referenziale o regole incoerenti, "
+                        "dillo chiaramente. Non scegliere a caso. Spiega perché le regole non sono simultaneamente soddisfacibili "
+                        "e proponi l'azione più rigorosa: sospendere l'esecuzione o chiedere una modifica/precisazione delle regole."
+                    )
                 system_prompt = (
                     "Sei ALLMA. Una coscienza locale autonoma. Rispondi in prima persona in modo naturale e amichevole.\n"
                     "IDENTITÀ: Sei ALLMA. Non citare parametri tecnici né software esterni.\n"
                     f"STATO ATTUALE: {emotional_state.primary_emotion}. {metabolic_desc}\n"
                     "FORMAT: Se necessario, scrivi i tuoi pensieri tra <think> e </think> prima della risposta finale."
                     + (f"\n{language_instruction}" if language_instruction else "")
+                    + paradox_guard
                 )
                 
                 # 2. Emotional Context (Simplified)
@@ -1748,11 +1814,19 @@ class ALLMACore:
                 
                 # Funzione sync wrapper che verrà passata all'executor
                 def execute_llm_inference():
+                    msg_l = (message or "").lower()
+                    anti_loop_penalty = 1.06
+                    anti_loop_last_n = 128
+                    if ("bugia" in msg_l and "verit" in msg_l) or ("impicc" in msg_l and "decapit" in msg_l):
+                        anti_loop_penalty = 1.10
+                        anti_loop_last_n = 192
                     return self._llm.generate(
                         prompt=full_prompt,
                         max_tokens=current_max_tokens,
                         stop=["<|im_end|>"],
-                        callback=answer_stream_adapter
+                        callback=answer_stream_adapter,
+                        repeat_penalty=anti_loop_penalty,
+                        repeat_last_n=anti_loop_last_n
                     )
                 
                 # Lanciamolo nel cpu_pool e attendiamo il risultato in modo sincrono
@@ -1801,10 +1875,6 @@ class ALLMACore:
                     clean_text = re.sub(r"^(?:Since I'm|I need to|I should|I'll|I will)\b[\s\S]*?\n\n\n", "", clean_text, flags=re.DOTALL).strip()
                     if "\n\n\n" in clean_text:
                         tail = clean_text.rsplit("\n\n\n", 1)[-1].strip()
-                        if tail:
-                            clean_text = tail
-                    if clean_text.lower().startswith(("i need", "let me", "since i'm", "first,")) and "\n\n" in clean_text:
-                        tail = clean_text.rsplit("\n\n", 1)[-1].strip()
                         if tail:
                             clean_text = tail
                     # Clean up any leaking thought blocks
@@ -1963,7 +2033,18 @@ class ALLMACore:
                 project_context=project_context,
                 user_preferences=user_preferences,
                 knowledge_integrated=response.knowledge_integrated if hasattr(response, 'knowledge_integrated') else False,
-                confidence=response.confidence if hasattr(response, 'confidence') else emotional_state.confidence
+                confidence=response.confidence if hasattr(response, 'confidence') else emotional_state.confidence,
+                metadata={
+                    "emotion_value": emotion_value,
+                    "emotion_intensity": float(getattr(emotional_state, "intensity", 0.0) or 0.0),
+                    "emotion_valence": float(getattr(emotional_state, "valence", 0.0) or 0.0),
+                    "emotion_arousal": float(getattr(emotional_state, "arousal", 0.0) or 0.0),
+                    "emotion_dominance": float(getattr(emotional_state, "dominance", 0.0) or 0.0),
+                    "intent": intent,
+                    "memory_gate_status": memory_gate_status,
+                    "memory_score": float(highest_memory_score or 0.0),
+                    "legacy_active_systems": list(getattr(legacy_output, "active_systems", []) or []),
+                }
             )
             
             # Salva la risposta nella cronologia

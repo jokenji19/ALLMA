@@ -2,6 +2,7 @@ from kivy.utils import platform
 from kivy.clock import Clock
 import json
 import logging
+import re
 import threading
 import time
 from allma_model.ui.temperature_monitor import TemperatureMonitor
@@ -190,6 +191,10 @@ class WebViewBridge:
                 settings.setDomStorageEnabled(True)
                 settings.setAllowFileAccess(True)
                 settings.setAllowContentAccess(True)
+                try:
+                    settings.setBlockNetworkLoads(True)
+                except Exception:
+                    pass
                 
                 self.webview.setBackgroundColor(Color.parseColor("#0B1220"))
                 
@@ -296,12 +301,17 @@ class WebViewBridge:
                 
                 html = ""
                 css = ""
+                settings_css = ""
                 js = ""
                 
                 with open(os.path.join(base_path, 'index.html'), 'r') as f:
                     html = f.read()
                 with open(os.path.join(base_path, 'style_v24.css'), 'r') as f:
                     css = f.read()
+                settings_path = os.path.join(base_path, 'settings_ui.css')
+                if os.path.exists(settings_path):
+                    with open(settings_path, 'r') as f:
+                        settings_css = f.read()
                 with open(os.path.join(base_path, 'script_v24.js'), 'r') as f:
                     js = f.read()
 
@@ -413,8 +423,8 @@ class WebViewBridge:
                 # CRITICAL FIX: Do NOT use f-strings for CSS/JS as they contain curly braces!
                 # Robust Injection Strategy:
                 # 1. Remove existing link/script tags to avoid double loading
-                html = html.replace('<link rel="stylesheet" href="style_v24.css">', '')
-                html = html.replace('<script src="script_v24.js"></script>', '')
+                html = re.sub(r'<link[^>]+rel=["\']stylesheet["\'][^>]*>', '', html, flags=re.IGNORECASE)
+                html = re.sub(r'<script[^>]+src=["\'][^"\']+["\'][^>]*></script>', '', html, flags=re.IGNORECASE)
                 
                 # Global Error Handler
                 error_handler = """
@@ -429,7 +439,7 @@ class WebViewBridge:
                 full_js = error_handler + "\n" + js_patch + "\n" + js
                 
                 # 2. Inject CSS/JS into head/body explicitly
-                style_tag = '<style>' + css + '</style>'
+                style_tag = '<style>' + css + '\n' + settings_css + '</style>'
                 script_tag = '<script>' + full_js + '</script>'
                 
                 html = html.replace('</head>', style_tag + '</head>')
@@ -535,6 +545,13 @@ class WebViewBridge:
 
     def end_stream(self):
         self.call_js_function("endStream")
+
+    def update_voice_internal_state(self, payload):
+        if not self.webview:
+            return
+        import json
+        safe_payload = json.dumps(payload if payload is not None else {})
+        self.call_js_function("updateVoiceInternalState", safe_payload)
 
     def update_benchmark_ui(self, current, total, text):
         """Aggiorna l'overlay di progresso del benchmark."""

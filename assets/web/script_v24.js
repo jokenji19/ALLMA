@@ -213,14 +213,534 @@ function startNewChat() {
 }
 
 // --- VOICE MODE (v0.55) ---
+const VoiceFX = (() => {
+    let overlay = null;
+    let bgCanvas = null;
+    let orbCanvas = null;
+    let bgCtx = null;
+    let orbCtx = null;
+    let active = false;
+    let state = 'idle';
+    let micRequested = false;
+    let raf = 0;
+    let t = 0;
+    let dt = 1;
+    let lastTs = 0;
+    let quality = 1;
+    let qualityTarget = 1;
+    let audio = 0;
+    let smoothAudio = 0;
+    let dpr = 1;
+    const particles = [];
+    const neurons = [];
+    const internal = {
+        emotion: 'neutral',
+        intensity: 0.4,
+        valence: 0.5,
+        arousal: 0.5,
+        dominance: 0.5,
+        topic: null,
+        memory_gate_status: null,
+        memory_score: 0.0,
+        intent: null,
+        confidence: null
+    };
+
+    function statusLabel(s) {
+        if (s === 'listening') return 'In ascolto...';
+        if (s === 'thinking') return 'Sto pensando...';
+        if (s === 'speaking') return 'Sto parlando...';
+        return 'Tocca per parlare';
+    }
+
+    function clamp01(x) {
+        const n = Number(x);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(0, Math.min(1, n));
+    }
+
+    function normalizeEmotion(e) {
+        if (!e) return 'neutral';
+        const s = String(e).toLowerCase().trim();
+        if (s.includes('joy') || s.includes('happy') || s.includes('felic') || s.includes('gioia')) return 'joy';
+        if (s.includes('sad') || s.includes('trist')) return 'sadness';
+        if (s.includes('anger') || s.includes('rabb') || s.includes('frustr')) return 'anger';
+        if (s.includes('fear') || s.includes('paur') || s.includes('anxi')) return 'fear';
+        if (s.includes('curios')) return 'curiosity';
+        if (s.includes('trust') || s.includes('fid')) return 'trust';
+        if (s.includes('surpris') || s.includes('sorp')) return 'surprise';
+        if (s.includes('disgust') || s.includes('disgus')) return 'disgust';
+        if (s.includes('confus')) return 'confusion';
+        if (s.includes('hope') || s.includes('sper')) return 'hope';
+        return 'neutral';
+    }
+
+    function mix(a, b, t) {
+        return Math.round(a + (b - a) * t);
+    }
+
+    function mixPalette(p1, p2, t) {
+        return {
+            primary: [mix(p1.primary[0], p2.primary[0], t), mix(p1.primary[1], p2.primary[1], t), mix(p1.primary[2], p2.primary[2], t)],
+            secondary: [mix(p1.secondary[0], p2.secondary[0], t), mix(p1.secondary[1], p2.secondary[1], t), mix(p1.secondary[2], p2.secondary[2], t)],
+            tertiary: [mix(p1.tertiary[0], p2.tertiary[0], t), mix(p1.tertiary[1], p2.tertiary[1], t), mix(p1.tertiary[2], p2.tertiary[2], t)]
+        };
+    }
+
+    function emotionPalette(emotion) {
+        const e = normalizeEmotion(emotion);
+        if (e === 'joy') return { primary: [16, 185, 129], secondary: [52, 211, 153], tertiary: [110, 231, 183] };
+        if (e === 'sadness') return { primary: [59, 130, 246], secondary: [37, 99, 235], tertiary: [147, 197, 253] };
+        if (e === 'anger') return { primary: [239, 68, 68], secondary: [244, 63, 94], tertiary: [253, 164, 175] };
+        if (e === 'fear') return { primary: [245, 158, 11], secondary: [251, 191, 36], tertiary: [252, 211, 77] };
+        if (e === 'curiosity') return { primary: [99, 102, 241], secondary: [139, 92, 246], tertiary: [192, 132, 252] };
+        if (e === 'trust') return { primary: [34, 211, 238], secondary: [56, 189, 248], tertiary: [125, 211, 252] };
+        if (e === 'surprise') return { primary: [236, 72, 153], secondary: [217, 70, 239], tertiary: [244, 114, 182] };
+        if (e === 'disgust') return { primary: [34, 197, 94], secondary: [16, 185, 129], tertiary: [134, 239, 172] };
+        if (e === 'confusion') return { primary: [167, 139, 250], secondary: [139, 92, 246], tertiary: [216, 180, 254] };
+        if (e === 'hope') return { primary: [125, 211, 252], secondary: [56, 189, 248], tertiary: [186, 230, 253] };
+        return { primary: [148, 163, 184], secondary: [100, 116, 139], tertiary: [203, 213, 225] };
+    }
+
+    function stateColors(s) {
+        const base = emotionPalette(internal.emotion);
+        const thinking = { primary: [245, 158, 11], secondary: [251, 191, 36], tertiary: [252, 211, 77] };
+        const speaking = { primary: [16, 185, 129], secondary: [52, 211, 153], tertiary: [110, 231, 183] };
+        if (s === 'thinking') return mixPalette(base, thinking, 0.65);
+        if (s === 'speaking') return mixPalette(base, speaking, 0.55);
+        if (s === 'listening') return base;
+        return mixPalette(base, { primary: [148, 163, 184], secondary: [100, 116, 139], tertiary: [203, 213, 225] }, 0.35);
+    }
+
+    function ensureInit() {
+        if (overlay) return;
+        overlay = document.getElementById('voice-overlay');
+        bgCanvas = document.getElementById('voice-bg-canvas');
+        orbCanvas = document.getElementById('neural-canvas');
+        if (bgCanvas) bgCtx = bgCanvas.getContext('2d');
+        if (orbCanvas) orbCtx = orbCanvas.getContext('2d');
+
+        if (particles.length === 0) {
+            for (let i = 0; i < 50; i++) {
+                particles.push({
+                    x: Math.random(),
+                    y: Math.random(),
+                    vx: (Math.random() - 0.5) * 0.00018,
+                    vy: (Math.random() - 0.5) * 0.00018,
+                    size: Math.random() * 1.5 + 0.5,
+                    alpha: Math.random() * 0.12 + 0.04,
+                    phase: Math.random() * Math.PI * 2
+                });
+            }
+        }
+
+        if (neurons.length === 0) {
+            const count = 170;
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const rFactor = Math.sqrt(Math.random());
+                const baseRadius = rFactor;
+                const layer = rFactor < 0.35 ? 0 : rFactor < 0.7 ? 1 : 2;
+                neurons.push({
+                    x: 0,
+                    y: 0,
+                    baseAngle: angle,
+                    baseRadius,
+                    vx: (Math.random() - 0.5) * 0.3,
+                    vy: (Math.random() - 0.5) * 0.3,
+                    radius: layer === 0 ? 1.7 + Math.random() * 2 : layer === 1 ? 1.2 + Math.random() * 1.6 : 0.9 + Math.random() * 1.1,
+                    baseAlpha: layer === 0 ? 0.7 + Math.random() * 0.25 : layer === 1 ? 0.45 + Math.random() * 0.25 : 0.25 + Math.random() * 0.2,
+                    orbitSpeed: (0.002 + Math.random() * 0.006) * (Math.random() > 0.5 ? 1 : -1),
+                    orbitAmplitude: 2 + Math.random() * 8,
+                    phase: Math.random() * Math.PI * 2,
+                    layer,
+                    pulseSpeed: 0.02 + Math.random() * 0.04
+                });
+            }
+        }
+
+        function onResize() {
+            dpr = Math.max(1, window.devicePixelRatio || 1);
+            if (bgCanvas) {
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                bgCanvas.width = Math.floor(w * dpr);
+                bgCanvas.height = Math.floor(h * dpr);
+                bgCanvas.style.width = w + "px";
+                bgCanvas.style.height = h + "px";
+                if (bgCtx) bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+            if (orbCanvas) {
+                const rect = orbCanvas.getBoundingClientRect();
+                const w = Math.max(260, Math.floor(rect.width));
+                const h = Math.max(260, Math.floor(rect.height));
+                orbCanvas.width = Math.floor(w * dpr);
+                orbCanvas.height = Math.floor(h * dpr);
+                if (orbCtx) orbCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+        }
+
+        window.addEventListener('resize', onResize);
+        setTimeout(onResize, 0);
+    }
+
+    function setState(next) {
+        state = next || 'idle';
+        if (overlay) overlay.setAttribute('data-voice-state', state);
+        const label = document.getElementById('voice-status');
+        if (label) {
+            const e = normalizeEmotion(internal.emotion);
+            const tpc = internal.topic ? String(internal.topic) : '';
+            const suffix = tpc ? `${e} • ${tpc}` : e;
+            label.textContent = state === 'idle' ? statusLabel(state) : `${statusLabel(state)} • ${suffix}`;
+        }
+    }
+
+    function setInternalState(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        if (payload.emotion !== undefined) internal.emotion = payload.emotion;
+        if (payload.intensity !== undefined) internal.intensity = clamp01(payload.intensity);
+        if (payload.valence !== undefined) internal.valence = clamp01(payload.valence);
+        if (payload.arousal !== undefined) internal.arousal = clamp01(payload.arousal);
+        if (payload.dominance !== undefined) internal.dominance = clamp01(payload.dominance);
+        if (payload.topic !== undefined) internal.topic = payload.topic;
+        if (payload.memory_gate_status !== undefined) internal.memory_gate_status = payload.memory_gate_status;
+        if (payload.memory_score !== undefined) internal.memory_score = Number(payload.memory_score) || 0.0;
+        if (payload.intent !== undefined) internal.intent = payload.intent;
+        if (payload.confidence !== undefined) internal.confidence = payload.confidence;
+        setState(state);
+        bump(0.15 + internal.intensity * 0.2);
+    }
+
+    function bump(level) {
+        const v = typeof level === 'number' ? level : 0.25;
+        audio = Math.min(1, audio + v);
+    }
+
+    function drawBackground() {
+        if (!bgCanvas || !bgCtx) return;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        bgCtx.clearRect(0, 0, w, h);
+
+        const colors = stateColors(state).primary;
+        const intensityBoost = 0.75 + clamp01(internal.intensity) * 0.85;
+        const gateBoost = internal.memory_gate_status === 'LEVEL_3' ? 1.15 : internal.memory_gate_status === 'LEVEL_2' ? 1.0 : 0.85;
+        const speedMultiplier = (state === 'listening' ? 1 + smoothAudio * 2 : state === 'speaking' ? 1.2 : state === 'thinking' ? 0.8 : 0.45) * intensityBoost * gateBoost;
+
+        const q = Math.max(0.35, Math.min(1, quality));
+        const pCount = Math.max(18, Math.floor(particles.length * q));
+        for (let i = 0; i < pCount; i++) {
+            const p = particles[i];
+            p.phase += 0.01 * dt;
+            p.x += p.vx * speedMultiplier * dt + Math.sin(t * 0.003 + p.phase) * 0.00025 * dt;
+            p.y += p.vy * speedMultiplier * dt + Math.cos(t * 0.004 + p.phase) * 0.00025 * dt;
+            if (p.x < 0) p.x = 1;
+            if (p.x > 1) p.x = 0;
+            if (p.y < 0) p.y = 1;
+            if (p.y > 1) p.y = 0;
+
+            const px = p.x * w;
+            const py = p.y * h;
+            const a = p.alpha + (state === 'listening' ? smoothAudio * 0.15 : 0);
+            bgCtx.beginPath();
+            bgCtx.arc(px, py, p.size, 0, Math.PI * 2);
+            bgCtx.fillStyle = `rgba(${colors[0]}, ${colors[1]}, ${colors[2]}, ${a})`;
+            bgCtx.fill();
+        }
+
+        const maxDist = 130 * (0.75 + q * 0.25);
+        const stride = q < 0.7 ? 2 : 1;
+        for (let i = 0; i < pCount; i += stride) {
+            for (let j = i + 1; j < pCount; j += stride) {
+                const dx = (particles[i].x - particles[j].x) * w;
+                const dy = (particles[i].y - particles[j].y) * h;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < maxDist) {
+                    const a = 0.03 * (1 - dist / maxDist);
+                    bgCtx.beginPath();
+                    bgCtx.moveTo(particles[i].x * w, particles[i].y * h);
+                    bgCtx.lineTo(particles[j].x * w, particles[j].y * h);
+                    bgCtx.strokeStyle = `rgba(${colors[0]}, ${colors[1]}, ${colors[2]}, ${a})`;
+                    bgCtx.lineWidth = 0.4;
+                    bgCtx.stroke();
+                }
+            }
+        }
+    }
+
+    function drawOrb() {
+        if (!orbCanvas || !orbCtx) return;
+        const rect = orbCanvas.getBoundingClientRect();
+        const w = Math.max(260, rect.width);
+        const h = Math.max(260, rect.height);
+        const cx = w / 2;
+        const cy = h / 2;
+        const radius = Math.min(w, h) * 0.36;
+
+        orbCtx.clearRect(0, 0, w, h);
+
+        const colors = stateColors(state);
+        const smoothK = 1 - Math.pow(1 - 0.12, dt);
+        smoothAudio += (audio - smoothAudio) * smoothK;
+        audio *= Math.pow(0.92, dt);
+
+        const breathScale =
+            state === 'idle' ? 1 + Math.sin(t * 0.015) * 0.04 :
+            state === 'thinking' ? 1 + Math.sin(t * 0.04) * 0.08 :
+            state === 'listening' ? 1 + smoothAudio * 0.3 + Math.sin(t * 0.02) * 0.05 :
+            1 + smoothAudio * 0.2 + Math.sin(t * 0.025) * 0.04;
+
+        const glowRadius = radius * (1 + smoothAudio * 0.5) * breathScale;
+        const bgGlow = orbCtx.createRadialGradient(cx, cy, 0, cx, cy, glowRadius * 1.6);
+        const glowAlpha = state === 'idle' ? 0.03 : 0.06 + smoothAudio * 0.08;
+        bgGlow.addColorStop(0, `rgba(${colors.primary[0]}, ${colors.primary[1]}, ${colors.primary[2]}, ${glowAlpha})`);
+        bgGlow.addColorStop(0.5, `rgba(${colors.primary[0]}, ${colors.primary[1]}, ${colors.primary[2]}, ${glowAlpha * 0.3})`);
+        bgGlow.addColorStop(1, `rgba(${colors.primary[0]}, ${colors.primary[1]}, ${colors.primary[2]}, 0)`);
+        orbCtx.beginPath();
+        orbCtx.arc(cx, cy, glowRadius * 1.6, 0, Math.PI * 2);
+        orbCtx.fillStyle = bgGlow;
+        orbCtx.fill();
+
+        const baseSpeed =
+            state === 'listening' ? 1.5 + smoothAudio * 3 :
+            state === 'speaking' ? 1.2 + smoothAudio * 2 :
+            state === 'thinking' ? 2.5 :
+            0.5;
+        const speedMultiplier = baseSpeed * (0.85 + clamp01(internal.intensity) * 0.9) * (internal.memory_gate_status === 'LEVEL_3' ? 1.2 : internal.memory_gate_status === 'LEVEL_2' ? 1.05 : 0.9);
+
+        const q = Math.max(0.35, Math.min(1, quality));
+        const nCount = Math.max(90, Math.floor(neurons.length * q));
+
+        for (let idx = 0; idx < nCount; idx++) {
+            const n = neurons[idx];
+            if (!n.__init) {
+                n.x = cx + Math.cos(n.baseAngle) * (n.baseRadius * radius);
+                n.y = cy + Math.sin(n.baseAngle) * (n.baseRadius * radius);
+                n.__init = 1;
+            }
+            n.baseAngle += n.orbitSpeed * speedMultiplier * dt;
+            n.phase += n.pulseSpeed * dt;
+
+            let extraRadius = 0;
+            if (state === 'thinking') extraRadius = Math.sin(t * 0.03 + n.phase) * 0.15;
+
+            const currentR = (n.baseRadius + extraRadius) * radius * breathScale;
+            const wobbleX = Math.sin(t * 0.01 + n.phase) * n.orbitAmplitude * speedMultiplier;
+            const wobbleY = Math.cos(t * 0.013 + n.phase * 1.3) * n.orbitAmplitude * speedMultiplier;
+            const targetX = cx + Math.cos(n.baseAngle) * currentR + wobbleX;
+            const targetY = cy + Math.sin(n.baseAngle) * currentR + wobbleY;
+
+            const ease = 0.03 + smoothAudio * 0.03;
+            n.vx += (targetX - n.x) * ease * dt;
+            n.vy += (targetY - n.y) * ease * dt;
+
+            if (state === 'listening' && smoothAudio > 0.08) {
+                const dx = n.x - cx;
+                const dy = n.y - cy;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                const impulse = smoothAudio * 0.8;
+                n.vx += (dx / dist) * impulse * Math.sin(t * 0.1 + n.phase);
+                n.vy += (dy / dist) * impulse * Math.cos(t * 0.1 + n.phase);
+            }
+
+            const damp = Math.pow(0.88, dt);
+            n.vx *= damp;
+            n.vy *= damp;
+            n.x += n.vx * dt;
+            n.y += n.vy * dt;
+
+            const dx2 = n.x - cx;
+            const dy2 = n.y - cy;
+            const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            const maxR = radius * breathScale * 1.2;
+            if (dist2 > maxR) {
+                const f = maxR / dist2;
+                n.x = cx + dx2 * f;
+                n.y = cy + dy2 * f;
+                n.vx *= 0.5;
+                n.vy *= 0.5;
+            }
+        }
+
+        const doConnections = !((q < 0.78) && (state === 'thinking' || dt > 1.2) && (Math.floor(t) % 2 === 1));
+        if (doConnections) {
+            const connDist = (44 + smoothAudio * 20 + clamp01(internal.memory_score) * 18) * (0.75 + q * 0.25);
+            const gridSize = connDist;
+            const grid = new Map();
+            for (let i = 0; i < nCount; i++) {
+                const gx = Math.floor(neurons[i].x / gridSize);
+                const gy = Math.floor(neurons[i].y / gridSize);
+                const key = `${gx},${gy}`;
+                if (!grid.has(key)) grid.set(key, []);
+                grid.get(key).push(i);
+            }
+
+            const maxConnections = q < 0.7 ? 3 : 5;
+            const connectionCounts = new Uint8Array(nCount);
+
+            for (let i = 0; i < nCount; i++) {
+                if (connectionCounts[i] >= maxConnections) continue;
+                const ni = neurons[i];
+                const gx = Math.floor(ni.x / gridSize);
+                const gy = Math.floor(ni.y / gridSize);
+
+                for (let ox = -1; ox <= 1; ox++) {
+                    for (let oy = -1; oy <= 1; oy++) {
+                        const key = `${gx + ox},${gy + oy}`;
+                        const cell = grid.get(key);
+                        if (!cell) continue;
+                        for (const j of cell) {
+                            if (j <= i) continue;
+                            if (connectionCounts[i] >= maxConnections || connectionCounts[j] >= maxConnections) continue;
+                            const nj = neurons[j];
+                            const ddx = ni.x - nj.x;
+                            const ddy = ni.y - nj.y;
+                            const d = Math.sqrt(ddx * ddx + ddy * ddy);
+                            if (d < connDist) {
+                                connectionCounts[i]++;
+                                connectionCounts[j]++;
+                                const alpha = (1 - d / connDist) * 0.32;
+                                const pulse = Math.sin(t * 0.03 + (ni.phase + nj.phase) * 0.5) * 0.5 + 0.5;
+                                const finalAlpha = alpha * (0.5 + pulse * 0.5) * (state === 'idle' ? 0.5 : 1);
+
+                                const grad = orbCtx.createLinearGradient(ni.x, ni.y, nj.x, nj.y);
+                                const c1 = ni.layer === 0 ? colors.tertiary : ni.layer === 1 ? colors.secondary : colors.primary;
+                                const c2 = nj.layer === 0 ? colors.tertiary : nj.layer === 1 ? colors.secondary : colors.primary;
+                                grad.addColorStop(0, `rgba(${c1[0]}, ${c1[1]}, ${c1[2]}, ${finalAlpha})`);
+                                grad.addColorStop(1, `rgba(${c2[0]}, ${c2[1]}, ${c2[2]}, ${finalAlpha})`);
+                                orbCtx.beginPath();
+                                orbCtx.moveTo(ni.x, ni.y);
+                                orbCtx.lineTo(nj.x, nj.y);
+                                orbCtx.strokeStyle = grad;
+                                orbCtx.lineWidth = 0.5 + alpha * 1.4;
+                                orbCtx.stroke();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (let idx = 0; idx < nCount; idx++) {
+            const n = neurons[idx];
+            const pulse = Math.sin(n.phase) * 0.3 + 0.7;
+            const c = n.layer === 0 ? colors.tertiary : n.layer === 1 ? colors.secondary : colors.primary;
+
+            const glowR = n.radius * (2 + smoothAudio * 2);
+            const neuronGlow = orbCtx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glowR);
+            const glowA = n.baseAlpha * pulse * (state === 'idle' ? 0.18 : 0.42 + smoothAudio * 0.28);
+            neuronGlow.addColorStop(0, `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${glowA})`);
+            neuronGlow.addColorStop(1, `rgba(${c[0]}, ${c[1]}, ${c[2]}, 0)`);
+            orbCtx.beginPath();
+            orbCtx.arc(n.x, n.y, glowR, 0, Math.PI * 2);
+            orbCtx.fillStyle = neuronGlow;
+            orbCtx.fill();
+
+            const coreAlpha = n.baseAlpha * pulse * (state === 'idle' ? 0.6 : 0.8 + smoothAudio * 0.2);
+            const coreRadius = n.radius * (0.85 + pulse * 0.25 + smoothAudio * 0.35);
+            orbCtx.beginPath();
+            orbCtx.arc(n.x, n.y, coreRadius, 0, Math.PI * 2);
+            orbCtx.fillStyle = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${coreAlpha})`;
+            orbCtx.fill();
+        }
+
+        const ringGrad = orbCtx.createRadialGradient(cx, cy, radius * breathScale * 0.9, cx, cy, radius * breathScale * 1.25);
+        const ringAlpha = state === 'idle' ? 0.04 : 0.06 + smoothAudio * 0.06;
+        ringGrad.addColorStop(0, `rgba(${colors.primary[0]}, ${colors.primary[1]}, ${colors.primary[2]}, 0)`);
+        ringGrad.addColorStop(0.5, `rgba(${colors.primary[0]}, ${colors.primary[1]}, ${colors.primary[2]}, ${ringAlpha})`);
+        ringGrad.addColorStop(1, `rgba(${colors.primary[0]}, ${colors.primary[1]}, ${colors.primary[2]}, 0)`);
+        orbCtx.beginPath();
+        orbCtx.arc(cx, cy, radius * breathScale * 1.25, 0, Math.PI * 2);
+        orbCtx.fillStyle = ringGrad;
+        orbCtx.fill();
+    }
+
+    function frame() {
+        if (!active) return;
+        dt = 1;
+        if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+            const ts = performance.now();
+            if (lastTs > 0) {
+                const raw = (ts - lastTs) / 16.6667;
+                dt = Math.max(0.25, Math.min(2.5, raw));
+            }
+            lastTs = ts;
+        }
+        t += dt;
+
+        qualityTarget = 1;
+        if (state === 'thinking') qualityTarget *= 0.7;
+        if (dt > 1.7) qualityTarget *= 0.55;
+        else if (dt > 1.35) qualityTarget *= 0.7;
+        else if (dt > 1.15) qualityTarget *= 0.85;
+        qualityTarget = Math.max(0.35, Math.min(1, qualityTarget));
+        const qk = 1 - Math.pow(1 - 0.08, dt);
+        quality += (qualityTarget - quality) * qk;
+
+        drawBackground();
+        drawOrb();
+
+        if (state === 'listening') bump((0.02 + Math.random() * 0.02) * dt);
+        if (state === 'speaking') bump((0.01 + Math.random() * 0.015) * dt);
+        if (state === 'thinking') bump((0.015 + Math.random() * 0.02) * dt);
+
+        raf = requestAnimationFrame(frame);
+    }
+
+    function activate() {
+        ensureInit();
+        if (!overlay) return;
+        active = true;
+        overlay.classList.add('active');
+        overlay.setAttribute('data-voice-state', state);
+        lastTs = 0;
+        quality = 1;
+        qualityTarget = 1;
+        if (!raf) raf = requestAnimationFrame(frame);
+    }
+
+    function deactivate() {
+        if (!overlay) ensureInit();
+        active = false;
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        lastTs = 0;
+        quality = 1;
+        qualityTarget = 1;
+        micRequested = false;
+        setState('idle');
+    }
+
+    function setMicRequested(v) {
+        micRequested = !!v;
+    }
+
+    function getMicRequested() {
+        return micRequested;
+    }
+
+    function isActive() {
+        return !!(overlay && overlay.classList.contains('active'));
+    }
+
+    function getState() {
+        return state;
+    }
+
+    return { activate, deactivate, setState, bump, isActive, getState, setMicRequested, getMicRequested, setInternalState };
+})();
+
 window.openVoiceMode = function () {
     console.log("Opening Voice Mode");
     const overlay = document.getElementById('voice-overlay');
     if (overlay) {
         overlay.classList.add('active');
-        document.getElementById('voice-text').textContent = "Parla ora...";
-        const vc = document.getElementById('voice-circle');
-        if (vc) vc.classList.add('listening');
+        VoiceFX.activate();
+        VoiceFX.setState('listening');
+        VoiceFX.setMicRequested(true);
+        const transcript = document.getElementById('voice-text');
+        if (transcript) transcript.textContent = "";
 
         // Also ensure Mic is active on Python side if not already
         if (window.pyBridge) {
@@ -238,8 +758,9 @@ window.closeVoiceMode = function () {
     const overlay = document.getElementById('voice-overlay');
     if (overlay) {
         overlay.classList.remove('active');
-        const vc = document.getElementById('voice-circle');
-        if (vc) vc.classList.remove('listening');
+        VoiceFX.deactivate();
+        const transcript = document.getElementById('voice-text');
+        if (transcript) transcript.textContent = "";
 
         if (window.pyBridge) {
             window.pyBridge.postMessage(JSON.stringify({
@@ -254,6 +775,33 @@ window.closeVoiceMode = function () {
 window.updateVoiceText = function (text) {
     const el = document.getElementById('voice-text');
     if (el) el.textContent = text;
+    if (VoiceFX.isActive()) {
+        VoiceFX.setState('listening');
+        VoiceFX.bump(0.35);
+    }
+};
+
+window.updateVoiceInternalState = function (payload) {
+    if (typeof VoiceFX !== 'undefined' && VoiceFX.setInternalState) {
+        VoiceFX.setInternalState(payload);
+    }
+};
+
+window.voiceToggleListening = function () {
+    if (!VoiceFX.isActive()) {
+        openVoiceMode();
+        return;
+    }
+    if (window.pyBridge) {
+        window.pyBridge.postMessage(JSON.stringify({
+            type: 'action',
+            action: 'toggle_mic'
+        }));
+    }
+    const next = VoiceFX.getMicRequested() ? 'idle' : 'listening';
+    VoiceFX.setMicRequested(!VoiceFX.getMicRequested());
+    VoiceFX.setState(next);
+    VoiceFX.bump(0.45);
 };
 
 // Override toggleMic to open this mode
@@ -755,6 +1303,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // ---------------------------
 window.startStream = function () {
+    if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
+        VoiceFX.setState('thinking');
+        VoiceFX.bump(0.35);
+    }
     // Se c'è già una bolla attiva (creata da sendMessage), non duplicare
     if (currentStreamBubble) return;
     const template = document.getElementById('tmpl-bot');
@@ -820,6 +1372,12 @@ window.streamChunk = function (text, isThought) {
         currentStreamBubble.reasoning.textContent += text;
         scrollToBottom();
     } else {
+        if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
+            if (VoiceFX.getState && VoiceFX.getState() !== 'speaking') {
+                VoiceFX.setState('speaking');
+            }
+            VoiceFX.bump(0.08);
+        }
         // Primo token reale in risposta: rimuovi i pallini animati
         if (!currentStreamBubble.dotsCleared) {
             const dots = currentStreamBubble.content.querySelector('.typing-dots');
@@ -850,6 +1408,10 @@ window.streamChunk = function (text, isThought) {
 
 window.endStream = function () {
     isBackendFinished = true;
+    if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
+        VoiceFX.setState(VoiceFX.getMicRequested && VoiceFX.getMicRequested() ? 'listening' : 'idle');
+        VoiceFX.bump(0.25);
+    }
 
     // Stop the running timer update, as backend is done
     if (timerInterval) clearInterval(timerInterval);

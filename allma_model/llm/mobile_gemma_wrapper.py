@@ -411,7 +411,9 @@ class MobileGemmaWrapper:
         temperature: float = 0.7,
         top_p: float = 0.9,
         stop: Optional[List[str]] = None,
-        callback: Optional[callable] = None # Support streaming
+        callback: Optional[callable] = None, # Support streaming
+        repeat_penalty: Optional[float] = None,
+        repeat_last_n: Optional[int] = None
     ) -> str:
         """
         Genera testo dato un prompt.
@@ -435,6 +437,20 @@ class MobileGemmaWrapper:
                 import random
                 random_seed = random.randint(0, 2**31 - 1)
                 stream_mode = callback is not None
+                self.last_generation = {
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "stop": stop,
+                    "repeat_penalty": repeat_penalty,
+                    "repeat_last_n": repeat_last_n,
+                    "seed": random_seed,
+                    "stream": stream_mode,
+                    "prompt_tokens": None,
+                    "completion_tokens": None,
+                    "total_tokens": None,
+                    "finish_reason": None,
+                }
 
                 # Calcola dinamicamente i token liberi nel contesto
                 if max_tokens == -1:
@@ -445,11 +461,17 @@ class MobileGemmaWrapper:
                     # Riserva 64 token di margine di sicurezza
                     max_tokens = max(64, self.n_ctx - prompt_token_count - 64)
                     logging.info(f"[MobileGemma] Dynamic max_tokens={max_tokens} (ctx={self.n_ctx}, prompt={prompt_token_count} tokens)")
+                    self.last_generation["max_tokens"] = max_tokens
+                    self.last_generation["prompt_tokens"] = int(prompt_token_count)
+                else:
+                    try:
+                        self.last_generation["prompt_tokens"] = int(len(self.llm.tokenize(prompt.encode("utf-8"))))
+                    except Exception:
+                        pass
 
                 logging.info(f"[MobileGemma] Generating response (Stream={stream_mode}, Seed={random_seed})")
 
-                output = self.llm(
-                    prompt,
+                llm_kwargs = dict(
                     max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
@@ -458,6 +480,17 @@ class MobileGemmaWrapper:
                     stream=stream_mode,
                     seed=random_seed
                 )
+                if repeat_penalty is not None:
+                    llm_kwargs["repeat_penalty"] = float(repeat_penalty)
+                if repeat_last_n is not None:
+                    llm_kwargs["repeat_last_n"] = int(repeat_last_n)
+
+                try:
+                    output = self.llm(prompt, **llm_kwargs)
+                except TypeError:
+                    llm_kwargs.pop("repeat_penalty", None)
+                    llm_kwargs.pop("repeat_last_n", None)
+                    output = self.llm(prompt, **llm_kwargs)
 
                 if stream_mode:
                     full_text = ""
@@ -490,9 +523,56 @@ class MobileGemmaWrapper:
                                 logging.error(f"[MobileGemma] Stream callback error: {cb_err}")
                         if pacing_delay > 0:
                             time.sleep(pacing_delay)
+                    try:
+                        self.last_generation["completion_tokens"] = int(len(self.llm.tokenize(full_text.encode("utf-8"))))
+                        if self.last_generation.get("prompt_tokens") is not None:
+                            self.last_generation["total_tokens"] = int(self.last_generation["prompt_tokens"] + self.last_generation["completion_tokens"])
+                    except Exception:
+                        pass
+                    try:
+                        ct = self.last_generation.get("completion_tokens")
+                        mt = self.last_generation.get("max_tokens")
+                        if ct is not None and mt is not None and mt != -1 and int(ct) >= int(mt) - 1:
+                            self.last_generation["finish_reason"] = "max_tokens"
+                        else:
+                            self.last_generation["finish_reason"] = "stop"
+                    except Exception:
+                        pass
                     return strip_think(full_text)
                 else:
                     raw_text = output["choices"][0]["text"]
+                    try:
+                        finish_reason = output["choices"][0].get("finish_reason")
+                    except Exception:
+                        finish_reason = None
+                    try:
+                        usage = output.get("usage") or {}
+                    except Exception:
+                        usage = {}
+                    if isinstance(usage, dict) and usage:
+                        self.last_generation["prompt_tokens"] = usage.get("prompt_tokens", self.last_generation.get("prompt_tokens"))
+                        self.last_generation["completion_tokens"] = usage.get("completion_tokens", self.last_generation.get("completion_tokens"))
+                        self.last_generation["total_tokens"] = usage.get("total_tokens", self.last_generation.get("total_tokens"))
+                    if finish_reason:
+                        self.last_generation["finish_reason"] = finish_reason
+                    else:
+                        if max_tokens != -1:
+                            try:
+                                completion_tokens = len(self.llm.tokenize(raw_text.encode("utf-8")))
+                                self.last_generation["completion_tokens"] = int(completion_tokens)
+                                if self.last_generation.get("prompt_tokens") is not None:
+                                    self.last_generation["total_tokens"] = int(self.last_generation["prompt_tokens"] + completion_tokens)
+                            except Exception:
+                                pass
+                        try:
+                            ct = self.last_generation.get("completion_tokens")
+                            mt = self.last_generation.get("max_tokens")
+                            if ct is not None and mt is not None and mt != -1 and int(ct) >= int(mt) - 1:
+                                self.last_generation["finish_reason"] = "max_tokens"
+                            else:
+                                self.last_generation["finish_reason"] = self.last_generation.get("finish_reason") or "stop"
+                        except Exception:
+                            pass
                     return strip_think(raw_text)
 
         except Exception as e:

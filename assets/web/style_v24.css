@@ -1073,47 +1073,18 @@ body.dark-mode .diag-bar-bg {
     pointer-events: auto;
 }
 
-/* Canvas for Particles (The "Circle") */
-#neural-canvas {
+/* Background particles */
+#voice-bg-canvas {
     position: absolute;
-    top: 40%;
-    /* Moved UP from center (50%) as requested */
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: 0;
     width: 100%;
-    height: 400px;
-    z-index: 1;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
 }
 
-#voice-text {
-    position: absolute;
-    top: 65%;
-    width: 80%;
-    text-align: center;
-    font-size: 22px;
-    font-weight: 600;
-    color: #E8EEF9;
-    z-index: 2;
-    transition: opacity 0.5s ease-in-out;
-}
-
-#voice-text.fade-out {
-    opacity: 0 !important;
-}
-
-#voice-close-btn {
-    position: absolute;
-    bottom: 40px;
-    background: #FF4D4D;
-    color: white;
-    border: none;
-    padding: 12px 30px;
-    border-radius: 25px;
-    font-weight: 700;
-    font-size: 16px;
-    cursor: pointer;
-    z-index: 3;
-    box-shadow: 0 6px 18px rgba(255, 77, 77, 0.35);
+#voice-overlay {
+    isolation: isolate;
 }
 
 .voice-header {
@@ -1134,18 +1105,19 @@ body.dark-mode .diag-bar-bg {
 /* --- VISUALIZER CONTAINER --- */
 .voice-visualizer {
     position: relative;
-    width: 320px;
-    height: 320px;
+    width: 340px;
+    height: 340px;
     display: flex;
     align-items: center;
     justify-content: center;
+    z-index: 10;
 }
 
 /* --- NEURAL SPHERE (Inner Content) --- */
 .neural-sphere {
     position: relative;
-    width: 260px;
-    height: 260px;
+    width: 300px;
+    height: 300px;
     border-radius: 50%;
     overflow: hidden;
     /* Sphere Background - Deep Blue Void */
@@ -1239,17 +1211,31 @@ body.dark-mode .diag-bar-bg {
 
 .voice-text-container {
     position: absolute;
-    bottom: 120px;
+    bottom: 130px;
     width: 100%;
     text-align: center;
     z-index: 20;
+    padding: 0 24px;
 }
 
 .voice-text {
-    font-size: 20px;
-    color: rgba(255, 255, 255, 0.9);
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.88);
     font-weight: 500;
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.voice-status {
+    position: absolute;
+    bottom: 175px;
+    width: 100%;
+    text-align: center;
+    z-index: 20;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2.2px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.55);
 }
 
 .voice-controls {
@@ -1274,6 +1260,36 @@ body.dark-mode .diag-bar-bg {
     cursor: pointer;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
     transition: transform 0.2s;
+}
+
+.voice-btn.mic {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(10px);
+    color: white;
+}
+
+.voice-btn.mic:active {
+    transform: scale(0.92);
+}
+
+#voice-overlay[data-voice-state="listening"] .voice-btn.mic {
+    background: rgba(239, 68, 68, 0.16);
+    border: 1px solid rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.25);
+}
+
+#voice-overlay[data-voice-state="thinking"] .voice-btn.mic {
+    background: rgba(245, 158, 11, 0.14);
+    border: 1px solid rgba(245, 158, 11, 0.7);
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.2);
+    opacity: 0.7;
+}
+
+#voice-overlay[data-voice-state="speaking"] .voice-btn.mic {
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.7);
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);
 }
 
 .voice-btn.close {
