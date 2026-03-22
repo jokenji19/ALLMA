@@ -1115,13 +1115,13 @@ class ALLMACore:
         # SECURITY: Sanitize user input
         safe_message = message.replace("<|im_start|>", "").replace("<|im_end|>", "")
 
-        # Full prompt assembly (SAME as current code at line 1128)
+        # Full prompt assembly (Restored to V8.2 Lightning logic)
         full_prompt = (
-            f"<|im_start|>system\n{system_prompt}\n\n"
-            f"CONTEXT BLOCK:\n{emotion_context}.\n{memory_context_str}.\n{advanced_context_str}\n"
-            f"INTERNAL STATE HISTORY: {thought_context}<|im_end|>\n"
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
             f"{conversation_history_str}\n"
-            f"<|im_start|>user\n{safe_message}<|im_end|>\n"
+            f"<|im_start|>user\n"
+            f"Ctx: {emotion_context}. {memory_context_str}. {advanced_context_str}\n\n"
+            f"{safe_message}<|im_end|>\n"
             f"<|im_start|>assistant\n[[TH:"
         )
         
@@ -1241,9 +1241,9 @@ class ALLMACore:
             # PHASE 21: Format conversation history into ChatML for context
             conversation_turns = []
             if history:
-                # Get last 4 messages (2 user + 2 assistant turns) for Mobile Lightness
-                # OPTIMIZATION: Reduce history depth to 2 for mobile speed if not complex
-                history_limit = 3 if is_complex else 2
+                # OPTIMIZATION for Prefix Caching: Do avoiding sliding windows every turn to keep LlamaCache tree valid!
+                # We extend the history limit to 20 to allow flat TTFTs, relying on the model's 2048 context.
+                history_limit = 20
                 recent_history = history[-history_limit:] if len(history) > history_limit else history
                 
                 for msg in recent_history:

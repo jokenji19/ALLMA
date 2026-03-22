@@ -543,47 +543,9 @@ class MobileGemmaWrapper:
                     self._generation_meta_by_id = {}
 
                 try:
-                    use_prefix_state_cache = bool(
-                        conversation_id
-                        and prefix_hash
-                        and prefix_prompt
-                        and hasattr(self.llm, "save_state")
-                        and hasattr(self.llm, "load_state")
-                        and hasattr(self.llm, "eval")
-                        and hasattr(self.llm, "reset")
-                    )
+                    use_prefix_state_cache = False
 
-                    if use_prefix_state_cache:
-                        if not hasattr(self, "_prefix_state_cache"):
-                            self._prefix_state_cache = OrderedDict()
-
-                        conv = str(conversation_id)
-                        key = f"{conv}:{prefix_hash}"
-                        state = self._prefix_state_cache.get(key)
-                        if state is None:
-                            try:
-                                self.llm.reset()
-                                prefix_tokens = self.llm.tokenize(prefix_prompt.encode("utf-8"))
-                                self.llm.eval(prefix_tokens)
-                                state = self.llm.save_state()
-                                self._prefix_state_cache[key] = state
-                                self._prefix_state_cache.move_to_end(key)
-                                while len(self._prefix_state_cache) > 2:
-                                    self._prefix_state_cache.popitem(last=False)
-                                logging.info(f"[MobileGemma] Prefix state cache MISS conv={conv}")
-                            except Exception:
-                                state = None
-                        else:
-                            self._prefix_state_cache.move_to_end(key)
-                            logging.info(f"[MobileGemma] Prefix state cache HIT conv={conv}")
-
-                        if state is not None:
-                            try:
-                                self.llm.load_state(state)
-                            except Exception:
-                                pass
-
-                    if (not use_prefix_state_cache) and conversation_id and hasattr(self.llm, "set_cache"):
+                    if conversation_id and hasattr(self.llm, "set_cache"):
                         from llama_cpp import LlamaCache
                         conv = str(conversation_id)
                         prev_prefix = self._conv_cache_prefix.get(conv)
@@ -593,7 +555,7 @@ class MobileGemmaWrapper:
                             logging.info(f"[MobileGemma] Prompt cache invalidated conv={conv}")
                         cache = self._conv_caches.get(conv)
                         if cache is None:
-                            cache = LlamaCache(capacity_bytes=(128 << 20))
+                            cache = LlamaCache(capacity_bytes=(256 << 20))
                             self._conv_caches[conv] = cache
                         self._conv_caches.move_to_end(conv)
                         while len(self._conv_caches) > 2:
