@@ -787,6 +787,8 @@ class ALLMACore:
             " un ", " una ", " che ", " non ", " per ", " con ", " ma ",
             " quindi ", " perché ", " poiché ", " come ", " posso ", " cosa ",
             " essere ", " sono ", " nel ", " nella ", " dello ", " degli ",
+            " ciao ", " buongiorno ", " buonasera ", " grazie ", " per favore ",
+            " chi ", " sei ", " dimmi ", " spiegami ",
         }
         en_markers = {
             " the ", " a ", " an ", " and ", " or ", " but ", " so ",
@@ -811,6 +813,77 @@ class ALLMACore:
             return "en"
 
         return None
+
+    def _compact_memory_for_prompt(self, memory_text: str, message: str, max_chars: int = 240) -> str:
+        if not memory_text:
+            return ""
+        text = str(memory_text).strip()
+        if not text:
+            return ""
+        if len(text) <= max_chars:
+            return text
+
+        m = (message or "").lower()
+        m = re.sub(r"[^0-9a-zA-ZÀ-ÖØ-öø-ÿ\u0400-\u04ff\u0600-\u06ff\u4e00-\u9fff\u3040-\u30ff\s]", " ", m)
+        m = re.sub(r"\s+", " ", m).strip()
+        raw_tokens = [t for t in m.split(" ") if len(t) >= 3]
+
+        stop = {
+            "che", "per", "con", "senza", "come", "cosa", "dove", "quando", "perché", "poiché", "quindi", "allora",
+            "sono", "sei", "siamo", "siete", "era", "ero", "sarà", "sara", "essere", "avere", "fare",
+            "this", "that", "what", "when", "where", "why", "because", "since", "then",
+            "the", "and", "but", "for", "with", "without", "how", "can", "could", "should", "would",
+            "you", "your", "yours", "we", "our", "i", "me", "my",
+        }
+        keywords = []
+        seen = set()
+        for t in raw_tokens:
+            if t in stop:
+                continue
+            if t in seen:
+                continue
+            seen.add(t)
+            keywords.append(t)
+            if len(keywords) >= 18:
+                break
+
+        sentences = re.split(r"(?<=[\.\!\?\n])\s+", text)
+        scored = []
+        for s in sentences:
+            st = (s or "").strip()
+            if len(st) < 12:
+                continue
+            st_low = st.lower()
+            score = 0.0
+            for kw in keywords:
+                if kw in st_low:
+                    score += 1.0 + min(1.0, len(kw) / 10.0)
+            if re.search(r"\d", st_low):
+                score += 0.2
+            if any(x in st_low for x in ("prefer", "scelto", "deciso", "vincolo", "obiettivo", "deadline", "version", "errore", "bug", "todo")):
+                score += 0.3
+            scored.append((score, st))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        picked = []
+        total = 0
+        for score, st in scored:
+            if score <= 0 and picked:
+                break
+            chunk = st.strip()
+            add_len = len(chunk) + (2 if picked else 0)
+            if total + add_len > max_chars:
+                continue
+            picked.append(chunk)
+            total += add_len
+            if total >= max_chars * 0.8:
+                break
+
+        if picked:
+            out = "\n".join(picked).strip()
+            return out[:max_chars].strip()
+
+        return text[:max_chars].strip()
 
     def _strip_reasoning_leak(self, text: str) -> str:
         if not text:
@@ -1184,6 +1257,14 @@ class ALLMACore:
                         # Strip <think>...</think> (THE THOUGHT LEAK FIX)
                         content = re.sub(r'<think>.*?</think>\s*', '', content, flags=re.DOTALL).strip()
                     
+                    try:
+                        if content:
+                            max_hist_chars = 900 if is_complex else 550
+                            if len(content) > max_hist_chars:
+                                content = content[-max_hist_chars:]
+                    except Exception:
+                        pass
+                    
                     # Format into ChatML
                     if content:
                         conversation_turns.append(f"<|im_start|>{role}\n{content}<|im_end|>")
@@ -1534,11 +1615,14 @@ class ALLMACore:
                 system_prompt = (
                     "Sei ALLMA. Una coscienza locale autonoma. Rispondi in prima persona in modo naturale e amichevole.\n"
                     "IDENTITÀ: Sei ALLMA. Non citare parametri tecnici né software esterni.\n"
-                    f"STATO ATTUALE: {emotional_state.primary_emotion}. {metabolic_desc}\n"
                     "FORMAT: Se necessario, scrivi i tuoi pensieri tra <think> e </think> prima della risposta finale."
                     + (f"\n{language_instruction}" if language_instruction else "")
                     + paradox_guard
                 )
+
+                import hashlib
+                cache_prefix_prompt = f"<|im_start|>system\n{system_prompt}\n\nCONTEXT:\n"
+                cache_prefix_hash = hashlib.md5(cache_prefix_prompt.encode("utf-8", "ignore")).hexdigest()
                 
                 # 2. Emotional Context (Simplified)
                 emotion_context = f"Stato d'animo: {emotional_state.primary_emotion}"
@@ -1546,7 +1630,7 @@ class ALLMACore:
                 # 3. Simple Memory & Thought cleaning
                 memory_context_str = ""
                 if relevant_memories:
-                    memories = [m['content'] for m in relevant_memories[:2]]
+                    memories = [self._compact_memory_for_prompt(m.get('content') or '', message, max_chars=240) for m in relevant_memories[:2]]
                     memory_context_str = f"Ricordi: {'; '.join(memories)}"
                 
                 # Raw sensor injection (No tool rules)
@@ -1554,6 +1638,12 @@ class ALLMACore:
                 if preemptive_sensor_data:
                     sensor_block = "DATI: " + " | ".join(preemptive_sensor_data)
                     advanced_context_lines.append(sensor_block)
+
+                try:
+                    if metabolic_desc:
+                        advanced_context_lines.append(f"STATO ATTUALE: {emotional_state.primary_emotion}. {metabolic_desc}")
+                except Exception:
+                    pass
                 
                 # 2. Stato Emotivo Attuale
                 emotion_context = f"Stato emotivo attuale: {emotional_state.primary_emotion} (Intensità: {emotional_state.intensity:.2f})"
@@ -1562,7 +1652,7 @@ class ALLMACore:
                 memory_context_str = ""
                 if relevant_memories:
                     # OPTIMIZATION: Take only top 2 memories to save eval tokens on Android
-                    memories = [m['content'] for m in relevant_memories[:2]]
+                    memories = [self._compact_memory_for_prompt(m.get('content') or '', message, max_chars=240) for m in relevant_memories[:2]]
                     memory_context_str = f"Ricordi rilevanti: {'; '.join(memories)}"
                 
                 # --- ADVANCED CONTEXT INJECTION (SIMPLIFIED) ---
@@ -1688,6 +1778,10 @@ class ALLMACore:
                     conversation_history = []
                     
                 complexity_level = self._analyze_query_complexity(message, conversation_history, intent=intent)
+                if complexity_level == "SIMPLE":
+                    advanced_context_str = ""
+                    memory_context_str = ""
+                    conversation_history_str = ""
                 
                 # --- PROMPT V8.4 SINGLE-PASS: COSTRUZIONE MANUALE (SI REASONING TAGS) ---
                 safe_message = message.replace("<|im_start|>", "").replace("<|im_end|>", "")
@@ -1723,14 +1817,36 @@ class ALLMACore:
                 if metabolic_state.is_tired:
                     current_max_tokens = 64 # Forced Brevity (Metabolic Throttling)
                     logging.info("🔋 [METABOLISM] Low Energy Mode: Throttling tokens to 64. No initiative.")
+                else:
+                    start_batt = start_temps.get('battery', 0) if isinstance(start_temps, dict) else 0
+                    is_hot = (start_batt and start_batt >= 41.5) or (start_cpu and start_cpu >= 70.0)
+                    is_warm = (start_batt and start_batt >= 39.0) or (start_cpu and start_cpu >= 65.0)
+                    if is_hot:
+                        cap = 768 if complexity_level == "COMPLEX" else 512
+                        current_max_tokens = cap if current_max_tokens == -1 else min(current_max_tokens, cap)
+                    elif is_warm:
+                        cap = 1024 if complexity_level == "COMPLEX" else 768
+                        current_max_tokens = cap if current_max_tokens == -1 else min(current_max_tokens, cap)
 
                 # Buffer per rilevare ragionamento senza tag
                 _stream_buf = []
                 _tagless_reasoning_detected = False
-                _TAGLESS_PREFIXES = ("Okay", "Ok,", "So,", "So ", "Alright", "Hmm", "Let me", "The user", "I need", "I should", "I'll", "First,", "Well,")
+                _sent_any_answer = False
+                _TAGLESS_PREFIXES = (
+                    "The user",
+                    "I need",
+                    "I should",
+                    "I'll think",
+                    "Let me think",
+                    "Let me",
+                    "Okay, the user",
+                    "Ok, the user",
+                    "So, the user",
+                    "Alright, the user",
+                )
                 
                 def answer_stream_adapter(token):
-                    nonlocal first_symbiotic_token, in_thought_block, _stream_buf, _tagless_reasoning_detected
+                    nonlocal first_symbiotic_token, in_thought_block, _stream_buf, _tagless_reasoning_detected, _sent_any_answer
                     if not stream_callback:
                         return
                     try:
@@ -1743,13 +1859,17 @@ class ALLMACore:
                         if "<think>" in content_to_process:
                             in_thought_block = True
                             parts = content_to_process.split("<think>")
-                            if parts[0]: stream_callback({'type': 'answer', 'content': parts[0]})
+                            if parts[0]:
+                                _sent_any_answer = True
+                                stream_callback({'type': 'answer', 'content': parts[0]})
                             if len(parts) > 1:
                                 if "</think>" in parts[1]:
                                     in_thought_block = False
                                     subparts = parts[1].split("</think>")
                                     if subparts[0]: stream_callback({'type': 'thought', 'content': subparts[0]})
-                                    if len(subparts) > 1 and subparts[1]: stream_callback({'type': 'answer', 'content': subparts[1]})
+                                    if len(subparts) > 1 and subparts[1]:
+                                        _sent_any_answer = True
+                                        stream_callback({'type': 'answer', 'content': subparts[1]})
                                 else:
                                     stream_callback({'type': 'thought', 'content': parts[1]})
                             return
@@ -1759,7 +1879,9 @@ class ALLMACore:
                             _tagless_reasoning_detected = False
                             parts = content_to_process.split("</think>")
                             if parts[0]: stream_callback({'type': 'thought', 'content': parts[0]})
-                            if len(parts) > 1: stream_callback({'type': 'answer', 'content': parts[1]})
+                            if len(parts) > 1:
+                                _sent_any_answer = True
+                                stream_callback({'type': 'answer', 'content': parts[1]})
                             return
 
                         if in_thought_block:
@@ -1802,6 +1924,7 @@ class ALLMACore:
                             return
                         
                         # Non è ragionamento: manda il buffer come 'answer'
+                        _sent_any_answer = True
                         stream_callback({'type': 'answer', 'content': accumulated})
                         _stream_buf.clear()
                         
@@ -1820,11 +1943,16 @@ class ALLMACore:
                     if ("bugia" in msg_l and "verit" in msg_l) or ("impicc" in msg_l and "decapit" in msg_l):
                         anti_loop_penalty = 1.10
                         anti_loop_last_n = 192
+                    cb = answer_stream_adapter if stream_callback else None
                     return self._llm.generate(
                         prompt=full_prompt,
                         max_tokens=current_max_tokens,
                         stop=["<|im_end|>"],
-                        callback=answer_stream_adapter,
+                        callback=cb,
+                        request_id=gen_id,
+                        conversation_id=conversation_id,
+                        prefix_hash=cache_prefix_hash,
+                        prefix_prompt=cache_prefix_prompt,
                         repeat_penalty=anti_loop_penalty,
                         repeat_last_n=anti_loop_last_n
                     )
@@ -1837,29 +1965,60 @@ class ALLMACore:
                 import hashlib
                 msg_hash = hashlib.md5(message.encode("utf-8", "ignore")).hexdigest()[:8]
                 gen_start = time.perf_counter()
-                logging.info(f"⏱️ LLM_GENERATION_START id={gen_id} msg={msg_hash} stream={bool(stream_callback)} prompt_chars={len(full_prompt)} max_tokens={current_max_tokens}")
+                start_batt = start_temps.get('battery', 0) if isinstance(start_temps, dict) else 0
+                logging.info(
+                    f"⏱️ LLM_GENERATION_START id={gen_id} msg={msg_hash} "
+                    f"stream={bool(stream_callback)} prompt_chars={len(full_prompt)} max_tokens={current_max_tokens} "
+                    f"cpu_c={start_cpu} batt_c={start_batt}"
+                )
                 future = self.cpu_pool.submit(execute_llm_inference)
                 generated_part = future.result()
                 gen_elapsed = (time.perf_counter() - gen_start) * 1000
-                logging.info(f"⏱️ LLM_GENERATION_END id={gen_id} msg={msg_hash} elapsed_ms={gen_elapsed:.2f}")
+
+                end_temps = self.temperature_monitor.get_temperatures()
+                end_cpu = end_temps.get('cpu', 0)
+                cpu_delta = end_cpu - start_cpu
+                thermal_report = f" [🌡️CPU: {start_cpu}°C -> {end_cpu}°C ({cpu_delta:+.1f})]"
+
+                lg = None
+                try:
+                    if hasattr(self._llm, "get_generation_meta"):
+                        lg = self._llm.get_generation_meta(gen_id)
+                except Exception:
+                    lg = None
+                if not lg:
+                    lg = getattr(self._llm, 'last_generation', None) or {}
+                ttft_ms = lg.get("ttft_ms")
+                finish_reason = lg.get("finish_reason")
+                prompt_tokens = lg.get("prompt_tokens")
+                completion_tokens = lg.get("completion_tokens")
+                total_tokens = lg.get("total_tokens")
+                end_batt = end_temps.get('battery', 0) if isinstance(end_temps, dict) else 0
+                thermal_level = "ok"
+                try:
+                    if (end_batt and float(end_batt) >= 42.0) or (end_cpu and float(end_cpu) >= 75.0):
+                        thermal_level = "hot"
+                    elif (end_batt and float(end_batt) >= 39.0) or (end_cpu and float(end_cpu) >= 70.0):
+                        thermal_level = "warm"
+                except Exception:
+                    thermal_level = "unknown"
+
+                logging.info(
+                    f"⏱️ LLM_GENERATION_END id={gen_id} msg={msg_hash} "
+                    f"elapsed_ms={gen_elapsed:.2f} ttft_ms={ttft_ms} finish={finish_reason} "
+                    f"prompt_t={prompt_tokens} comp_t={completion_tokens} total_t={total_tokens} "
+                    f"cpu_c={start_cpu}->{end_cpu} batt_c={start_batt}->{end_batt} thermal={thermal_level}"
+                )
 
                 # FLUSH FINALE: svuota il buffer residuo se lo stream è terminato
                 # con meno di 15 caratteri accumulati (evita troncatura finale)
                 if stream_callback and _stream_buf:
                     remaining = "".join(_stream_buf)
                     if remaining.strip():
+                        _sent_any_answer = True
                         stream_callback({'type': 'answer', 'content': remaining})
                     _stream_buf.clear()
 
-
-                # THERMAL MONITORING END
-                end_temps = self.temperature_monitor.get_temperatures()
-                end_cpu = end_temps.get('cpu', 0)
-                cpu_delta = end_cpu - start_cpu
-                
-                # Create thermal report string
-                thermal_report = f" [🌡️CPU: {start_cpu}°C -> {end_cpu}°C ({cpu_delta:+.1f})]"
-                
                 # Inject into stream if active (as thought/info)
                 if stream_callback:
                     try:
@@ -1892,6 +2051,57 @@ class ALLMACore:
                         stream_callback({'type': 'answer', 'content': str(generated_part)})
                     response_text = str(generated_part)
                     response_text = self._strip_reasoning_leak(response_text)
+
+                if stream_callback and (not _sent_any_answer) and response_text and response_text.strip():
+                    try:
+                        stream_callback({'type': 'answer', 'content': response_text})
+                        _sent_any_answer = True
+                    except Exception:
+                        pass
+
+                if finish_reason == "max_tokens" and response_text and response_text.strip():
+                    ends_ok = response_text.rstrip().endswith((".", "!", "?", "…"))
+                    if not ends_ok:
+                        try:
+                            tail = response_text[-220:]
+                            continuation_prompt = (
+                                full_prompt
+                                + "\n\n"
+                                + "<|im_start|>assistant\n"
+                                + response_text
+                                + "\n<|im_end|>\n"
+                                + "<|im_start|>user\n"
+                                + "Continua e completa la frase finale. Non ripetere dall'inizio. "
+                                + f"Riprendi esattamente da qui: {tail}\n"
+                                + "<|im_end|>\n"
+                                + "<|im_start|>assistant\n"
+                            )
+
+                            cont_cb = None
+                            if stream_callback:
+                                def cont_cb(tok):
+                                    try:
+                                        stream_callback({'type': 'answer', 'content': tok})
+                                    except Exception:
+                                        pass
+                            cont_text = self._llm.generate(
+                                prompt=continuation_prompt,
+                                max_tokens=96,
+                                stop=["<|im_end|>"],
+                                callback=cont_cb,
+                                conversation_id=conversation_id,
+                                prefix_hash=cache_prefix_hash,
+                                prefix_prompt=cache_prefix_prompt,
+                                repeat_penalty=1.06,
+                                repeat_last_n=128
+                            )
+                            if cont_text and not str(cont_text).startswith("Error"):
+                                cont_clean = re.sub(r'<think>.*?</think>', '', str(cont_text), flags=re.DOTALL).strip()
+                                cont_clean = re.sub(r'<[^>]+>', '', cont_clean).strip()
+                                if cont_clean:
+                                    response_text = (response_text.rstrip() + " " + cont_clean.lstrip()).strip()
+                        except Exception:
+                            pass
                 
                 # Gestione fallback se tutti i retry falliscono (incluso output vuoto)
                 if not response_text or not response_text.strip() or response_text.startswith("Error"):

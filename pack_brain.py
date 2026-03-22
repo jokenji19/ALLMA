@@ -13,16 +13,27 @@ def pack_and_update():
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
         # 1. Walk allma_model
         for root, dirs, files in os.walk('allma_model'):
-            dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', '.DS_Store']]
+            dirs[:] = [d for d in dirs if d not in ['__pycache__', '.git', '.DS_Store', 'tests']]
+            if any(x in root for x in ['/tests', '/__pycache__']):
+                continue
             for file in files:
-                if file in ['.DS_Store', '.gitignore', 'allma_diary.json']: 
+                if file in ['.DS_Store', '.gitignore', 'allma_diary.json']:
                     continue
                 if file.endswith('.pyc'): continue
                 if file.endswith('.bak'): continue
                 if file.endswith('.log'): continue # Exclude logs
                 if file.endswith('.zip'): continue # Exclude zips (models should be downloaded)
+                if '.backup' in file: continue
+                if file.endswith('.backup'): continue
+                if file.endswith('.tmp'): continue
                 if file.startswith('debug_') and file.endswith('.txt'): continue # Exclude heavy debug dumps
                 if file.startswith('crash_') and file.endswith('.log'): continue # Exclude crash dumps
+                if file.startswith('demo_') and file.endswith('.py'): continue
+                if file.startswith('beta_test_') and file.endswith('.py'): continue
+                if file.startswith('test_') and file.endswith('.py'): continue
+                if file.startswith('performance_') and file.endswith('.py'): continue
+                if file in ['run_tests.py', 'complete_test.py', 'interactive_allma.py', 'performance_test.py', 'performance_profiler.py']:
+                    continue
                 
                 abs_path = os.path.join(root, file)
                 rel_path = os.path.relpath(abs_path, '.')

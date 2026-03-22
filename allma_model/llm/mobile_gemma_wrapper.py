@@ -7,6 +7,7 @@ import logging
 import threading
 import re
 from typing import List, Optional
+from collections import OrderedDict
 
 # Delayed import mechanism match
 # We set this to True to bypass allma_core checks and let _load() handle the actual import/failure
@@ -38,6 +39,9 @@ class MobileGemmaWrapper:
         self.system_monitor = system_monitor
         self.llm = None
         self.inference_lock = threading.Lock() # <--- CRITICAL FIX: Global Lock
+        self._conv_caches = OrderedDict()
+        self._conv_cache_prefix = {}
+        self._active_conv = None
         
         if not LLAMA_CPP_AVAILABLE:
             logging.error("Tentativo di inizializzare MobileGemmaWrapper senza llama_cpp installato.")
@@ -311,6 +315,45 @@ class MobileGemmaWrapper:
                     
                     from llama_cpp import Llama
                     print("[MobileGemma] RECOVERY SUCCESS: Llama class imported after reset.", flush=True)
+
+                    try:
+                        import ctypes
+                        import llama_cpp.llama_cpp as _llama_cpp
+
+                        if not getattr(Llama, "_allma_light_cache_patched", False):
+                            class _ALLMALightState:
+                                def __init__(self, input_ids, n_tokens: int, llama_state: bytes, llama_state_size: int):
+                                    self.input_ids = input_ids
+                                    self.n_tokens = n_tokens
+                                    self.llama_state = llama_state
+                                    self.llama_state_size = llama_state_size
+
+                            def _save_state_light(self):
+                                state_size = _llama_cpp.llama_get_state_size(self._ctx.ctx)
+                                llama_state = (ctypes.c_uint8 * int(state_size))()
+                                n_bytes = _llama_cpp.llama_copy_state_data(self._ctx.ctx, llama_state)
+                                llama_state_compact = (ctypes.c_uint8 * int(n_bytes))()
+                                ctypes.memmove(llama_state_compact, llama_state, int(n_bytes))
+                                return _ALLMALightState(
+                                    input_ids=self.input_ids.copy(),
+                                    n_tokens=self.n_tokens,
+                                    llama_state=bytes(llama_state_compact),
+                                    llama_state_size=int(n_bytes),
+                                )
+
+                            def _load_state_light(self, state):
+                                self.input_ids = state.input_ids.copy()
+                                self.n_tokens = int(state.n_tokens)
+                                LLamaStateArrayType = ctypes.c_uint8 * int(state.llama_state_size)
+                                llama_state = LLamaStateArrayType.from_buffer_copy(state.llama_state)
+                                if _llama_cpp.llama_set_state_data(self._ctx.ctx, llama_state) != int(state.llama_state_size):
+                                    raise RuntimeError("Failed to set llama state data")
+
+                            Llama.save_state = _save_state_light
+                            Llama.load_state = _load_state_light
+                            Llama._allma_light_cache_patched = True
+                    except Exception:
+                        pass
                     
                     # Limit threads based on environment
                     max_threads = 4 if getattr(self, 'models_dir', "").startswith("/data") else 8
@@ -330,6 +373,45 @@ class MobileGemmaWrapper:
                     print(f"[MobileGemma] RECOVERY FAILED: {e2}", flush=True)
                     # CRITICAL: Re-raise the ORIGINAL error to show in UI
                     raise e
+
+            try:
+                import ctypes
+                import llama_cpp.llama_cpp as _llama_cpp
+
+                if not getattr(Llama, "_allma_light_cache_patched", False):
+                    class _ALLMALightState:
+                        def __init__(self, input_ids, n_tokens: int, llama_state: bytes, llama_state_size: int):
+                            self.input_ids = input_ids
+                            self.n_tokens = n_tokens
+                            self.llama_state = llama_state
+                            self.llama_state_size = llama_state_size
+
+                    def _save_state_light(self):
+                        state_size = _llama_cpp.llama_get_state_size(self._ctx.ctx)
+                        llama_state = (ctypes.c_uint8 * int(state_size))()
+                        n_bytes = _llama_cpp.llama_copy_state_data(self._ctx.ctx, llama_state)
+                        llama_state_compact = (ctypes.c_uint8 * int(n_bytes))()
+                        ctypes.memmove(llama_state_compact, llama_state, int(n_bytes))
+                        return _ALLMALightState(
+                            input_ids=self.input_ids.copy(),
+                            n_tokens=self.n_tokens,
+                            llama_state=bytes(llama_state_compact),
+                            llama_state_size=int(n_bytes),
+                        )
+
+                    def _load_state_light(self, state):
+                        self.input_ids = state.input_ids.copy()
+                        self.n_tokens = int(state.n_tokens)
+                        LLamaStateArrayType = ctypes.c_uint8 * int(state.llama_state_size)
+                        llama_state = LLamaStateArrayType.from_buffer_copy(state.llama_state)
+                        if _llama_cpp.llama_set_state_data(self._ctx.ctx, llama_state) != int(state.llama_state_size):
+                            raise RuntimeError("Failed to set llama state data")
+
+                    Llama.save_state = _save_state_light
+                    Llama.load_state = _load_state_light
+                    Llama._allma_light_cache_patched = True
+            except Exception:
+                pass
 
             # PERFORMANCE OPTIMIZATION (2026-02-02):
             # Real-world testing revealed unacceptable slowness (20-40s responses).
@@ -412,6 +494,10 @@ class MobileGemmaWrapper:
         top_p: float = 0.9,
         stop: Optional[List[str]] = None,
         callback: Optional[callable] = None, # Support streaming
+        conversation_id: Optional[str] = None,
+        prefix_hash: Optional[str] = None,
+        prefix_prompt: Optional[str] = None,
+        request_id: Optional[str] = None,
         repeat_penalty: Optional[float] = None,
         repeat_last_n: Optional[int] = None
     ) -> str:
@@ -438,6 +524,7 @@ class MobileGemmaWrapper:
                 random_seed = random.randint(0, 2**31 - 1)
                 stream_mode = callback is not None
                 self.last_generation = {
+                    "request_id": request_id,
                     "max_tokens": max_tokens,
                     "temperature": temperature,
                     "top_p": top_p,
@@ -450,7 +537,79 @@ class MobileGemmaWrapper:
                     "completion_tokens": None,
                     "total_tokens": None,
                     "finish_reason": None,
+                    "ttft_ms": None,
                 }
+                if not hasattr(self, "_generation_meta_by_id"):
+                    self._generation_meta_by_id = {}
+
+                try:
+                    use_prefix_state_cache = bool(
+                        conversation_id
+                        and prefix_hash
+                        and prefix_prompt
+                        and hasattr(self.llm, "save_state")
+                        and hasattr(self.llm, "load_state")
+                        and hasattr(self.llm, "eval")
+                        and hasattr(self.llm, "reset")
+                    )
+
+                    if use_prefix_state_cache:
+                        if not hasattr(self, "_prefix_state_cache"):
+                            self._prefix_state_cache = OrderedDict()
+
+                        conv = str(conversation_id)
+                        key = f"{conv}:{prefix_hash}"
+                        state = self._prefix_state_cache.get(key)
+                        if state is None:
+                            try:
+                                self.llm.reset()
+                                prefix_tokens = self.llm.tokenize(prefix_prompt.encode("utf-8"))
+                                self.llm.eval(prefix_tokens)
+                                state = self.llm.save_state()
+                                self._prefix_state_cache[key] = state
+                                self._prefix_state_cache.move_to_end(key)
+                                while len(self._prefix_state_cache) > 2:
+                                    self._prefix_state_cache.popitem(last=False)
+                                logging.info(f"[MobileGemma] Prefix state cache MISS conv={conv}")
+                            except Exception:
+                                state = None
+                        else:
+                            self._prefix_state_cache.move_to_end(key)
+                            logging.info(f"[MobileGemma] Prefix state cache HIT conv={conv}")
+
+                        if state is not None:
+                            try:
+                                self.llm.load_state(state)
+                            except Exception:
+                                pass
+
+                    if (not use_prefix_state_cache) and conversation_id and hasattr(self.llm, "set_cache"):
+                        from llama_cpp import LlamaCache
+                        conv = str(conversation_id)
+                        prev_prefix = self._conv_cache_prefix.get(conv)
+                        if prev_prefix is None or (prefix_hash and prev_prefix != prefix_hash):
+                            self._conv_cache_prefix[conv] = prefix_hash or ""
+                            self._conv_caches.pop(conv, None)
+                            logging.info(f"[MobileGemma] Prompt cache invalidated conv={conv}")
+                        cache = self._conv_caches.get(conv)
+                        if cache is None:
+                            cache = LlamaCache(capacity_bytes=(128 << 20))
+                            self._conv_caches[conv] = cache
+                        self._conv_caches.move_to_end(conv)
+                        while len(self._conv_caches) > 2:
+                            old_conv, _ = self._conv_caches.popitem(last=False)
+                            self._conv_cache_prefix.pop(old_conv, None)
+                        self.llm.set_cache(cache)
+                        if getattr(self, "_active_conv", None) != conv:
+                            logging.info(f"[MobileGemma] Prompt cache enabled conv={conv}")
+                        self._active_conv = conv
+                    else:
+                        if getattr(self, "_active_conv", None) is not None and hasattr(self.llm, "set_cache"):
+                            self.llm.set_cache(None)
+                            logging.info("[MobileGemma] Prompt cache disabled")
+                        self._active_conv = None
+                except Exception:
+                    pass
 
                 # Calcola dinamicamente i token liberi nel contesto
                 if max_tokens == -1:
@@ -495,6 +654,8 @@ class MobileGemmaWrapper:
                 if stream_mode:
                     full_text = ""
                     import time
+                    gen_t0 = time.perf_counter()
+                    first_token_ts = None
                     
                     # --- V6.5 DECOUPLED THERMAL PACING (RACE TO SLEEP) ---
                     # Il vero pacing ora vive nell'UI JS (Buffer Sinuoso).
@@ -515,6 +676,12 @@ class MobileGemmaWrapper:
                     
                     for chunk in output:
                         token = chunk["choices"][0]["text"]
+                        if first_token_ts is None:
+                            first_token_ts = time.perf_counter()
+                            try:
+                                self.last_generation["ttft_ms"] = float((first_token_ts - gen_t0) * 1000.0)
+                            except Exception:
+                                pass
                         full_text += token
                         if callback:
                             try:
@@ -536,6 +703,13 @@ class MobileGemmaWrapper:
                             self.last_generation["finish_reason"] = "max_tokens"
                         else:
                             self.last_generation["finish_reason"] = "stop"
+                    except Exception:
+                        pass
+                    try:
+                        if request_id:
+                            self._generation_meta_by_id[request_id] = dict(self.last_generation)
+                            if len(self._generation_meta_by_id) > 32:
+                                self._generation_meta_by_id.pop(next(iter(self._generation_meta_by_id)))
                     except Exception:
                         pass
                     return strip_think(full_text)
@@ -573,8 +747,21 @@ class MobileGemmaWrapper:
                                 self.last_generation["finish_reason"] = self.last_generation.get("finish_reason") or "stop"
                         except Exception:
                             pass
+                    try:
+                        if request_id:
+                            self._generation_meta_by_id[request_id] = dict(self.last_generation)
+                            if len(self._generation_meta_by_id) > 32:
+                                self._generation_meta_by_id.pop(next(iter(self._generation_meta_by_id)))
+                    except Exception:
+                        pass
                     return strip_think(raw_text)
 
         except Exception as e:
             logging.error(f"[MobileGemma] Inference error: {e}")
             return f"Error during inference: {e}"
+
+    def get_generation_meta(self, request_id: str):
+        try:
+            return getattr(self, "_generation_meta_by_id", {}).get(request_id)
+        except Exception:
+            return None
