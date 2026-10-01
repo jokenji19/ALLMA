@@ -430,10 +430,11 @@ class SocialLearningSystem:
             self.current_context.update(context)
             
         # Analizza la formalità
-        formality = self._analyze_formality(input_text)
+        metrics = self._social_metrics(input_text)
+        formality = metrics['formality']
         
         # Analizza la distanza sociale
-        social_distance = self._analyze_social_distance(input_text)
+        social_distance = metrics['social_distance']
         
         # Aggiorna i livelli medi
         self.formality_level = (self.formality_level * 0.8 + formality * 0.2)
@@ -456,6 +457,7 @@ class SocialLearningSystem:
             'timestamp': time.time()
         })
         
+        del self.interaction_history[:-200]
         return social_context
         
     def generate_response(self, social_context: Dict[str, Any]) -> str:
@@ -619,9 +621,10 @@ class SocialLearningSystem:
             'adaptation_level': self.adaptation_level
         })
         
+        del self.interaction_history[:-200]
         return social_context
         
-    def analyze_social_context(self, text):
+    def _social_metrics(self, text):
         """Analizza il contesto sociale del testo"""
         # Analisi semplificata del contesto sociale
         formality_markers = {

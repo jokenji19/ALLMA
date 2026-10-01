@@ -52,6 +52,11 @@ class CognitiveBenchmark:
         print("🧠 Initializing ALLMA Benchmark Context...")
         if existing_brain:
              self.brain = existing_brain
+             state_db = getattr(existing_brain, 'db_path', None)
+             if isinstance(state_db, (str, os.PathLike)):
+                 reports_dir = os.path.join(os.path.dirname(os.path.abspath(state_db)), 'benchmarks', 'reports')
+                 os.makedirs(reports_dir, exist_ok=True)
+                 self.report_path = os.path.join(reports_dir, os.path.basename(self.report_path))
              print("✅ Using existing Brain instance.")
         else:
              # Initialize Core with expert settings
@@ -69,29 +74,11 @@ class CognitiveBenchmark:
             return data.get("tests", [])
 
     def run_tests(self, progress_callback=None):
+        self.results = []
         questions = self.load_questions()
         total = len(questions)
         print(f"🚀 Starting Benchmark: {total} questions loaded.\n")
         session_id = f"BENCHMARK_SESSION_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-        def _get_llm_last_generation():
-            try:
-                llm_wrapper = getattr(self.brain, "_llm", None)
-                if llm_wrapper and hasattr(llm_wrapper, "last_generation"):
-                    return llm_wrapper.last_generation
-            except Exception:
-                pass
-            return None
-
-        def _estimate_tokens(text: str):
-            llm_wrapper = getattr(self.brain, "_llm", None)
-            llama = getattr(llm_wrapper, "llm", None) if llm_wrapper else None
-            if llama:
-                try:
-                    return int(len(llama.tokenize((text or "").encode("utf-8"))))
-                except Exception:
-                    pass
-            return int(max(0, len(text or "")) // 4)
 
         def _loop_signature(text: str):
             t = (text or "").strip().lower()
@@ -118,36 +105,24 @@ class CognitiveBenchmark:
                 return True, "sentence_repeat"
             return False, None
 
-        def _anti_loop_retry_prompt(question: str):
-            return (
-                "Rispondi in italiano.\n"
-                "Se la situazione contiene un paradosso logico o regole incoerenti, dichiaralo esplicitamente.\n"
-                "Non ripeterti. Non scrivere meta-ragionamenti. Massimo 10 righe.\n"
-                "Formato:\n"
-                "1) Diagnosi\n"
-                "2) Perché è incoerente (se lo è)\n"
-                "3) Azione del boia per rispettare il regolamento nel modo più rigoroso possibile\n"
-                "Conclusione: ...\n\n"
-                f"Domanda:\n{question}"
-            )
-
         for idx, q in enumerate(questions):
             print(f"[{idx+1}/{total}] Testing: {q['id']} ({q['category']})...")
             
             if progress_callback:
                 progress_callback(idx + 1, total, f"Analisi: {q['category']} ({q['id']})...")
 
-            start_time = time.time()
+            start_time = time.perf_counter()
             
+            response_obj = None
             # Send message to Brain
             try:
                 msg = q['question']
                 # We use process_message directly
-                # User ID 'BENCHMARK_USER' ensures isolated context
+                # Dedicated user scope; persisted benchmark history is not a fresh controlled state.
                 response_obj = self.brain.process_message(
                     user_id="BENCHMARK_USER",
                     conversation_id=f"{session_id}_{q['id']}",
-                    message=msg
+                    message=msg, context={'disable_answer_recall': True}
                 )
                 response_content = response_obj.content
                 if response_obj.thought_trace:
@@ -156,62 +131,24 @@ class CognitiveBenchmark:
                      else:
                          thought_trace = str(response_obj.thought_trace)
                 else:
-                     thought_trace = "No thought trace"
+                     thought_trace = "Non raccolto dal report; non indica assenza di ragionamento."
             except Exception as e:
                 print(f"❌ Error: {e}")
                 response_content = f"ERROR: {str(e)}"
                 thought_trace = "ERROR"
 
-            end_time = time.time()
+            end_time = time.perf_counter()
             duration = end_time - start_time
 
-            last_gen = _get_llm_last_generation() or {}
-            completion_tokens = last_gen.get("completion_tokens")
-            if completion_tokens is None:
-                completion_tokens = _estimate_tokens(response_content)
-            tok_s = (float(completion_tokens) / float(duration)) if duration and completion_tokens else None
-            stop_reason = last_gen.get("finish_reason")
-            if not stop_reason:
-                if isinstance(response_content, str) and response_content.startswith("ERROR:"):
-                    stop_reason = "error"
-                elif last_gen.get("max_tokens") is not None and completion_tokens and last_gen.get("max_tokens") != -1 and completion_tokens >= int(last_gen.get("max_tokens")) - 1:
-                    stop_reason = "max_tokens"
-                else:
-                    stop_reason = "unknown"
-
+            metadata = getattr(response_obj, 'metadata', None) or {}
+            last_gen = metadata.get('generation', {})
+            completion_tokens = last_gen.get('completion_tokens')
+            tok_s = (completion_tokens / duration) if duration and completion_tokens is not None else None
+            stop_reason = last_gen.get('finish_reason', 'not_measured')
             looped, loop_reason = _loop_signature(response_content)
             did_retry = False
-            retry_stop_reason = None
-            retry_tokens = None
-            retry_tok_s = None
+            retry_stop_reason = retry_tokens = retry_tok_s = None
 
-            if looped:
-                retry_start = time.time()
-                try:
-                    response_obj_2 = self.brain.process_message(
-                        user_id="BENCHMARK_USER",
-                        conversation_id=f"{session_id}_{q['id']}_retry",
-                        message=_anti_loop_retry_prompt(q['question'])
-                    )
-                    response_content_2 = response_obj_2.content
-                    looped_2, _ = _loop_signature(response_content_2)
-                    if not looped_2 and response_content_2 and not str(response_content_2).startswith("ERROR:"):
-                        response_content = response_content_2
-                        did_retry = True
-                        last_gen = _get_llm_last_generation() or {}
-                        retry_stop_reason = last_gen.get("finish_reason") or "unknown"
-                        retry_tokens = last_gen.get("completion_tokens")
-                        if retry_tokens is None:
-                            retry_tokens = _estimate_tokens(response_content)
-                        retry_duration = time.time() - retry_start
-                        retry_tok_s = (float(retry_tokens) / float(retry_duration)) if retry_duration and retry_tokens else None
-                except Exception:
-                    pass
-            
-            # Scrittura grezza della risposta (nessun filtro a keyword)
-            # Affidiamo la valutazione semantica a un essere umano o a un LLM-as-a-judge successivo.
-            passed = True # Tutto il testo viene passato intatto
-            
             result_frame = {
                 "id": q['id'],
                 "category": q['category'],
@@ -223,6 +160,8 @@ class CognitiveBenchmark:
                 "tok_s": tok_s,
                 "max_new_tokens": last_gen.get("max_tokens"),
                 "stop_reason": stop_reason,
+                "generation": last_gen,
+                "status": last_gen.get('status', 'error' if response_content.startswith('ERROR:') else 'not_measured'),
                 "anti_loop_triggered": bool(looped),
                 "anti_loop_reason": loop_reason,
                 "anti_loop_retry": bool(did_retry),
@@ -244,10 +183,10 @@ class CognitiveBenchmark:
             f"**Data Esecuzione**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             f"**Domande Totali**: {len(self.results)}",
             "",
-            "> Questo benchmark raccoglie i output cognitivi grezzi di ALLMA senza filtri a keyword preimpostati, per permettere una valutazione umana imparziale di logica, creatività e allineamento etico.",
+            "> Una richiesta per domanda attraverso la pipeline ALLMA, senza retry o riscritture del benchmark. Le risposte includono i controlli della pipeline; la qualità richiede valutazione umana. Tok/s end-to-end include l’intera elaborazione. Metriche mancanti non vengono stimate.",
             "",
             "## Riassunto Latenze",
-            "| ID | Categoria | Tempo (s) | Tok | Tok/s | Stop |",
+            "| ID | Categoria | Tempo (s) | Tok | Tok/s end-to-end | Stop |",
             "|----|-----------|-----------|-----|-------|------|"
         ]
         
@@ -280,6 +219,9 @@ class CognitiveBenchmark:
             lines.append(f"- tok/s: {r.get('tok_s')}")
             lines.append(f"- max_new_tokens: {r.get('max_new_tokens')}")
             lines.append(f"- stop_reason: {r.get('stop_reason')}")
+            lines.append(f"- status: {r.get('status')}")
+            for key, value in r.get('generation', {}).items():
+                lines.append(f"- {key}: {value}")
             if r.get("anti_loop_triggered"):
                 lines.append(f"- anti_loop_triggered: True ({r.get('anti_loop_reason')})")
                 lines.append(f"- anti_loop_retry: {r.get('anti_loop_retry')}")
@@ -293,6 +235,8 @@ class CognitiveBenchmark:
         with open(self.report_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
         
+        with open(os.path.splitext(self.report_path)[0] + '.json', 'w', encoding='utf-8') as f:
+            json.dump(self.results, f, ensure_ascii=False, indent=2)
         print(f"\n📄 Report generated: {self.report_path}")
 
 if __name__ == "__main__":

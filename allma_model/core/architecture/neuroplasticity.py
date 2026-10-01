@@ -53,20 +53,8 @@ class NeuroplasticitySystem:
     def _bootstrap_memory(self):
         """Carica le regole innate (hardcoded) nella memoria plastica."""
         # Copia delle regole di base del StructuralCore per tracciarle
-        initial_patterns = [
-            (r"sono un'intelligenza artificiale", ""),
-            (r"sono un'ia", ""),
-            (r"in quanto ia", ""),
-            (r"sono un modello linguistico", ""),
-            (r"sono un assistente virtuale", ""),
-            (r"sono un programma", ""),
-            (r"come modello linguistico", ""),
-            (r"openai", ""),
-            (r"anthropic", ""),
-            (r"chatgpt", ""),
-            (r"gpt-", ""),
-            (r"google deepmind", ""),
-        ]
+        # Identity is checked separately; do not delete general knowledge or quoted text.
+        initial_patterns = []
         
         for p, r in initial_patterns:
             # Le regole base partono con un'attivazione alta per non essere dimenticate subito

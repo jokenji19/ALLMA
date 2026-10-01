@@ -382,7 +382,8 @@ class ResponseGenerator:
                 "È un argomento interessante! Cosa ne pensi?",
                 "Non ho molte informazioni su questo, ma sono curioso/a di imparare!"
             ]
-            return random.choice(templates)
+            response = random.choice(templates)
+            return self._informalize_content(response) if emotion in ("joy", "surprise") else self._formalize_content(response)
             
         # Costruisce risposta base
         base_response = self._build_base_response(relevant_knowledge, topic_continuity)

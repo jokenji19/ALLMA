@@ -52,20 +52,8 @@ class StructuralCore:
         self.logger = logging.getLogger(__name__)
         # Regole di base (Hard-coded per sicurezza iniziale)
         # Queste possono essere estese dal Neuroplastic Governance in futuro
-        self._base_blacklist = [
-            (r"sono un'intelligenza artificiale", ""),
-            (r"sono un'ia", ""),
-            (r"in quanto ia", ""),
-            (r"sono un modello linguistico", ""),
-            (r"sono un assistente virtuale", ""),
-            (r"sono un programma", ""),
-            (r"come modello linguistico", ""),
-            (r"openai", ""),
-            (r"anthropic", ""),
-            (r"chatgpt", ""),
-            (r"gpt-", ""),
-            (r"google deepmind", ""),
-        ]
+        # Identity is checked separately; do not delete general knowledge or quoted text.
+        self._base_blacklist = []
         
         self._current_snapshot: Optional[PatternContract] = None
         self._create_snapshot() # Inizializza snapshot base

@@ -646,23 +646,6 @@ class KnowledgeMemory:
             for concept, related in data['concept_relationships'].items()
         }
         
-    def get_related_concepts(self, concept: str, max_distance: int = 2) -> List[str]:
-        """Trova concetti correlati entro una certa distanza nel grafo"""
-        if concept not in self.concept_relationships:
-            return []
-            
-        related = set()
-        current_level = {concept}
-        
-        for distance in range(max_distance):
-            next_level = set()
-            for c in current_level:
-                if c in self.concept_relationships:
-                    next_level.update(self.concept_relationships[c])
-            related.update(next_level)
-            current_level = next_level
-            
-        return list(related - {concept})
 
     def add_concept(self, concept: str, description: str, confidence: float = 0.5):
         """Aggiunge un nuovo concetto alla memoria"""

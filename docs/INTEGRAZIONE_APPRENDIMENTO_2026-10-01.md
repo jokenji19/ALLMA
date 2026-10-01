@@ -1,0 +1,29 @@
+# Apprendimento e integrazione — 1 ottobre 2026
+
+## Modifiche
+- Deposito persistente separato di risposte candidate (`answer_recall.json`). Non modifica i pesi GGUF, l’identità originaria o la conoscenza autobiografica.
+- Recupero diretto senza inizializzare l’LLM dopo due conferme esplicite della stessa risposta. Utente, domanda normalizzata, contesto recente e lingua devono coincidere. Le conferme duplicate non contano; un nuovo testo di risposta perde le conferme precedenti. Le domande dinamiche, personali e alcune richieste delicate sono escluse conservativamente; non è un classificatore esaustivo.
+- Conferme supportate: «Risposta corretta», «Confermo la risposta», «Esatto», «Corretto» e equivalenti definiti nel codice. Correzioni come «Risposta sbagliata» revocano il riuso. La conferma dell’utente indica approvazione, non una verifica fattuale indipendente: `knowledge_verified` resta falso.
+- Feedback collegato ai moduli di strategia e tracking. I livelli del tracker sono indicatori interni aggiornati dal feedback, non misure dimostrate di intelligenza.
+- Contratto orchestratore/core corretto: le istruzioni di testo non vengono più unite carattere per carattere. Conservati i campi comuni di curiosità ed emozione, recuperati gli alias del tracking, eliminati hint identici. Le preferenze iniziali a confidenza 0,5 non vengono presentate come preferenze apprese.
+- Intenti italiani riconosciuti dal filtro dei moduli; la creatività valuta anche la richiesta effettiva. Un modulo troppo costoso non impedisce l’esecuzione di uno successivo più economico. Il tempo dei moduli falliti conta nel budget; storico limitato a 100 esecuzioni. Il budget è cooperativo, non un’interruzione forzata dei moduli.
+- Eliminati metodi duplicati sovrascritti in KnowledgeMemory e PatternRecognitionSystem. SocialLearningSystem restituisce nuovamente l’oggetto SocialContext previsto dall’adattatore, aggiornando lo storico; eliminata la versione che lo sovrascriveva con un dizionario.
+- Database dei moduli collegato alla directory persistente del core, insieme alle memorie; aggiunto alla migrazione conservativa. Report benchmark su directory persistente quando usa il core dell’app. Import del Dream corretto. Rimosso import duplicato della creatività. Il log di apprendimento ora descrive correttamente la dichiarazione dell’utente conservata.
+
+## Verifiche
+358 test superati, 15 saltati. Test mirati coprono conferme duplicate, separazione utente/contesto, esclusione delle domande dinamiche, riavvio del deposito, revoca e recupero integrato senza caricamento del modello. Quattro scenari runtime hanno eseguito tutti i nove moduli registrati almeno una volta, senza errori. I sette sistemi registrati dall’adattatore legacy risultano inizializzati: ciò non dimostra ogni loro funzione.
+
+## Inventario e limiti
+Inventario AST di 184 file Python fuori dalla cartella tests: nessun errore sintattico. 86 file risultano raggiungibili tramite import statici dai tre ingressi principali; gli altri includono package, demo, API alternative, strumenti e sistemi precedenti. L’assenza dal grafo statico non prova che un file sia inutilizzato: nessun file è stato cancellato sulla sola base del grafo.
+Restano import obsoleti nelle demo complete, legati a componenti già in `_quarantine`, e il vocabolario legacy richiede un file dati assente. Questi ingressi non sono stati dichiarati funzionanti o sostituiti con implementazioni incompatibili. Rimangono famiglie alternative di memoria, personalità, apprendimento, estrazione topic e project tracking: l’app usa quelle raggiungibili dal core, le altre necessitano decisioni di migrazione e verifica dei chiamanti esterni.
+I test locali non certificano tutte le funzioni hardware Android, ogni percorso opzionale o la qualità semantica del modello. Nessun nuovo miglioramento percentuale di qualità o temperatura è stato misurato. La cache serve risposte confermate in contesti compatibili, non risolve il ragionamento su domande nuove.
+
+Artefatti di verifica nella cartella superiore `analisi/2026-10-01/integrazione`.
+
+Eliminata la gestione duplicata delle barre Android: il punto di ingresso usa il modulo condiviso, con `android.os.Build$VERSION` e `WindowManager$LayoutParams`, e colori coerenti con la WebView. Suite isolata in directory temporanee: 358 test passati e 15 saltati; i test non scrivono più diari e memorie nel checkout.
+APK verificato e installato con aggiornamento conservativo, SHA256 `618755dfb5b7aa339f08fe737e18697e8ddbfedca8709470d0017da7d35bdb27`. Collaudo del recupero su Android concluso.
+
+## Collaudo Android
+Domanda: «Quanto fa 7 + 5? Rispondi solo con il numero.» Prima generazione: 25,60 s osservati (22,19 s inferenza nei log), risposta «12». Prima conferma esplicita registrata; seconda generazione ancora tramite modello, risposta «12»; seconda conferma registrata. Terza richiesta identica: «12» da `confirmed_answer_recall`, `llm_used: false`, 0,18 s osservati. Una correzione esplicita di collaudo («Risposta sbagliata») ha poi revocato la risposta: nel file persistente `rejected: true`, conferme azzerate. La correzione finale è stata usata per testare la revoca, non indica che 7 + 5 sia diverso da 12.
+Il polling ADB del secondo segmento è ogni 6 s, quindi i tempi osservati di quel segmento sono quantizzati e includono l’automazione. La risposta recuperata era già presente al primo controllo. I timestamp di memoria separano domanda e risposta recuperata di circa 26 ms; non misurano il tempo di rendering sullo schermo. Questo singolo esempio dimostra il percorso senza LLM, non una percentuale generale di prestazioni o temperatura. I log Android confermano anche l’avvio senza gli errori precedenti delle barre.
+Tutte le modifiche sono salvate localmente. APK installato con dati conservati. Nessun commit o push Git eseguito.

@@ -244,6 +244,8 @@ class PatternRecognitionSystem:
             raise ValueError("Il testo non può essere None")
             
         # Preprocessa il testo
+        if not isinstance(text, str):
+            return {}
         preprocessed = self.preprocess_text(text)
         tokens = self._tokenize(preprocessed)
         stemmed = [self.stemmer.stem(token) for token in tokens]
@@ -400,6 +402,8 @@ class PatternRecognitionSystem:
             Pattern: Pattern con categoria di sentiment e confidence
         """
         # Preprocessa il testo
+        if not isinstance(text, str):
+            return {}
         preprocessed = self.preprocess_text(text)
         tokens = self._tokenize(preprocessed)
         stemmed = [self.stemmer.stem(token) for token in tokens]
@@ -648,28 +652,6 @@ class PatternRecognitionSystem:
             
         return all_patterns
 
-    def _extract_pattern_features(self, text: Union[str, List[float]]) -> Dict[str, float]:
-        """Estrae feature dal pattern (Pure Python)"""
-        if not isinstance(text, str):
-            return {}
-            
-        features = {}
-        text_lower = text.lower()
-        words = re.findall(r'\w+', text_lower)
-        total_words = len(words) if words else 1
-        
-        # 1. Sentiment Score (Simple)
-        features['sentiment_score'] = self._calculate_sentiment_score(words)
-        
-        # 2. Avg word length
-        features['avg_word_len'] = sum(len(w) for w in words) / total_words
-        
-        # 3. Category coverage
-        for cat, keywords in self.keywords.items():
-             match_count = sum(1 for w in words if w in keywords or self.stemmer.stem(w) in self.stemmed_keywords.get(cat, set()))
-             features[f'{cat}_coverage'] = match_count / total_words
-             
-        return features
 
     def _update_pattern_statistics(self, pattern: Pattern, response: str, context: Dict[str, Any]):
         """Aggiorna le statistiche del pattern"""
@@ -830,6 +812,8 @@ class PatternRecognitionSystem:
             text = text.text
             
         # Preprocessa il testo
+        if not isinstance(text, str):
+            return {}
         preprocessed = self.preprocess_text(text)
         tokens = self._tokenize(preprocessed)
         stemmed = [self.stemmer.stem(token) for token in tokens]
@@ -858,6 +842,8 @@ class PatternRecognitionSystem:
         Returns:
             dict: Dizionario con le feature estratte
         """
+        if not isinstance(text, str):
+            return {}
         preprocessed = self.preprocess_text(text)
         tokens = self._tokenize(preprocessed)
         stemmed_tokens = [self.stemmer.stem(token) for token in tokens]

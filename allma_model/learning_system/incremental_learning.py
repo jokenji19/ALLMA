@@ -9,6 +9,17 @@ import logging
 import numpy as np
 from allma_model.utils.text_processing import SimpleTfidf, cosine_similarity
 import threading
+from functools import wraps
+from allma_model.utils.persistence import atomic_write_json
+
+
+def synchronized(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return call
+
 
 class ConfidenceLevel(Enum):
     """Livelli di confidenza possibili."""
@@ -60,7 +71,7 @@ class IncrementalLearner:
         self.vectorizer = SimpleTfidf()
         self.topic_vectors = {}
         self.success_counters: Dict[str, int] = {}  # topic -> count of successful independent responses
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         # Pool di varianti per i topic HIGH confidence (raffinato dal Dream)
         self.responses_pool: Dict[str, List[str]] = {}  # topic → [variant1, variant2, ...]
         # Persistenza su disco
@@ -68,6 +79,7 @@ class IncrementalLearner:
         if self.storage_path:
             self.load_state()
         
+    @synchronized
     def save_state(self) -> None:
         """Serializza knowledge_states e success_counters su JSON per la persistenza."""
         if not self.storage_path:
@@ -75,6 +87,12 @@ class IncrementalLearner:
         import json, os
         try:
             data = {
+                "schema_version": 2,
+                "knowledge_base": {t: [{
+                    "topic": u.topic, "content": u.content, "source": u.source,
+                    "confidence": u.confidence.value, "timestamp": u.timestamp.isoformat(),
+                    "metadata": u.metadata} for u in units]
+                    for t, units in self.knowledge_base.items()},
                 "knowledge_states": {
                     t: {
                         "topic": s.topic,
@@ -82,20 +100,29 @@ class IncrementalLearner:
                         "confidence": s.confidence.value,
                         "sources": list(s.sources),
                         "last_updated": s.last_updated.isoformat(),
+                        "feedback_history": [
+                            [v.value if isinstance(v, Enum) else v.isoformat() if isinstance(v, datetime) else v for v in row]
+                            for row in s.feedback_history],
+                        "improvement_areas": sorted(s.improvement_areas),
                         "metadata": s.metadata
                     }
                     for t, s in self.knowledge_states.items()
                 },
                 "success_counters": self.success_counters,
-                "responses_pool": self.responses_pool
+                "responses_pool": self.responses_pool,
+                "user_progress": {u: {
+                    "topics": sorted(p["topics"]),
+                    "confidence_levels": {k.value: v for k, v in p["confidence_levels"].items()},
+                    "recent_learning": p["recent_learning"],
+                    "improvement_areas": sorted(p["improvement_areas"])
+                } for u, p in self.user_progress.items()}
             }
-            os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
-            with open(self.storage_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False)
+            atomic_write_json(self.storage_path, data)
             logging.info(f"[IncrementalLearner] State saved ({len(self.knowledge_states)} topics).")
         except Exception as e:
             logging.warning(f"[IncrementalLearner] save_state failed: {e}")
 
+    @synchronized
     def load_state(self) -> None:
         """Carica knowledge_states da JSON se esiste."""
         if not self.storage_path:
@@ -112,17 +139,46 @@ class IncrementalLearner:
                     content=d["content"],
                     confidence=ConfidenceLevel(d["confidence"]),
                     sources=set(d.get("sources", [])),
-                    feedback_history=[],
-                    improvement_areas=set(),
+                    feedback_history=[
+                        (FeedbackType(row[0]), row[1], datetime.fromisoformat(row[2])) if len(row) == 3
+                        else (row[0], datetime.fromisoformat(row[1]))
+                        for row in d.get("feedback_history", [])],
+                    improvement_areas=set(d.get("improvement_areas", [])),
                     last_updated=datetime.fromisoformat(d["last_updated"]),
                     metadata=d.get("metadata", {})
                 )
+            if "knowledge_base" in data:
+                for topic, units in data['knowledge_base'].items():
+                    self.knowledge_base[topic] = [LearningUnit(
+                        topic=u['topic'], content=u['content'], source=u['source'],
+                        confidence=ConfidenceLevel(u['confidence']),
+                        timestamp=datetime.fromisoformat(u['timestamp']), metadata=u.get('metadata', {}))
+                        for u in units]
+            else:
+                # Compatibility with old snapshots which only stored aggregate states.
+                for topic, state in self.knowledge_states.items():
+                    self.knowledge_base[topic] = [LearningUnit(topic, state.content,
+                        next(iter(sorted(state.sources)), 'legacy'), state.confidence,
+                        state.last_updated, dict(state.metadata))]
+            if self.knowledge_base:
+                topics = list(self.knowledge_base)
+                docs = [t + ' ' + ' '.join(u.content for u in self.knowledge_base[t]) for t in topics]
+                vectors = self.vectorizer.fit_transform(docs)
+                vectors = vectors.toarray() if hasattr(vectors, 'toarray') else vectors
+                self.topic_vectors = dict(zip(topics, vectors))
+            for user, saved in data.get("user_progress", {}).items():
+                progress = self.user_progress[user]
+                progress["topics"] = set(saved.get("topics", []))
+                progress["improvement_areas"] = set(saved.get("improvement_areas", []))
+                progress["recent_learning"] = saved.get("recent_learning", [])
+                progress["confidence_levels"].update({ConfidenceLevel(int(k)): v for k, v in saved.get("confidence_levels", {}).items()})
             self.success_counters = data.get("success_counters", {})
             self.responses_pool = data.get("responses_pool", {})
             logging.info(f"[IncrementalLearner] State loaded ({len(self.knowledge_states)} topics, {len(self.responses_pool)} pooled).")
         except Exception as e:
             logging.warning(f"[IncrementalLearner] load_state failed: {e}")
 
+    @synchronized
     def add_response_variants(self, topic: str, variants: List[str]) -> None:
         """Aggiunge varianti di risposta per un topic (usato dal Dream)."""
         topic = topic.lower().strip()
@@ -130,6 +186,7 @@ class IncrementalLearner:
         # Mantieni originale + nuove varianti, max 5
         merged = list(dict.fromkeys(existing + variants))[:5]
         self.responses_pool[topic] = merged
+        self.save_state()
         logging.info(f"[responses_pool] Topic '{topic}': {len(merged)} varianti disponibili.")
 
     def get_response_variant(self, topic: str) -> Optional[str]:
@@ -143,6 +200,7 @@ class IncrementalLearner:
         state = self.knowledge_states.get(topic)
         return state.content if state else None
 
+    @synchronized
     def add_learning_unit(
         self,
         unit: LearningUnit
@@ -181,8 +239,10 @@ class IncrementalLearner:
             except Exception as e:
                 print(f"Errore nel calcolo embeddings: {e}")
                 
+            self.save_state()
             return True
         
+    @synchronized
     def integrate_feedback(
         self,
         topic: str,
@@ -230,6 +290,8 @@ class IncrementalLearner:
         if metadata:
             state.metadata.update(metadata)
             
+        self.save_state()
+
     def get_knowledge_state(
         self,
         topic: str
@@ -245,6 +307,7 @@ class IncrementalLearner:
         """
         return self.knowledge_states.get(topic)
     
+    @synchronized
     def record_success(self, topic: str, threshold: int = 3) -> bool:
         """
         Registra un successo per una risposta indipendente e aumenta la confidenza
@@ -278,6 +341,7 @@ class IncrementalLearner:
                         self.save_state()
                         return True
             
+            self.save_state()
             return False
         
     def find_related_knowledge(
@@ -368,6 +432,7 @@ class IncrementalLearner:
             state.sources.add(unit.source)
             state.last_updated = unit.timestamp
             
+    @synchronized
     def learn_from_interaction(self, interaction: Dict[str, str], user_id: str) -> Optional[LearningUnit]:
         """
         Apprende dall'interazione con l'utente
@@ -381,6 +446,9 @@ class IncrementalLearner:
         """
         input_text = interaction.get('input', '')
         response = interaction.get('response', '')
+        unverified = interaction.get('response_verified') is False
+        if unverified:
+            response = input_text  # attributed user report, never the model's invention
         feedback = interaction.get('feedback', '')
         
         # Usa il topic fornito dal chiamante (già estratto con topic_extractor)
@@ -398,12 +466,14 @@ class IncrementalLearner:
             topic=topic,
             content=f"Input: {input_text}\nResponse: {response}",
             source=f"user_{user_id}",
-            confidence=ConfidenceLevel.MEDIUM,
+            confidence=ConfidenceLevel.LOW if unverified else ConfidenceLevel.MEDIUM,
             timestamp=datetime.now(),
             metadata={
                 'feedback': feedback,
                 'user_id': user_id,
-                'original_input': input_text
+                'original_input': input_text,
+                'source_kind': 'user_statement' if unverified else 'interaction',
+                'knowledge_verified': not unverified
             }
         )
         
@@ -417,7 +487,7 @@ class IncrementalLearner:
             self.knowledge_states[topic] = KnowledgeState(
                 topic=topic,
                 content=response,
-                confidence=ConfidenceLevel.MEDIUM,
+                confidence=ConfidenceLevel.LOW if unverified else ConfidenceLevel.MEDIUM,
                 sources={f"user_{user_id}"},
                 feedback_history=[(feedback, datetime.now())],
                 improvement_areas=set(),
@@ -425,7 +495,9 @@ class IncrementalLearner:
                 metadata={
                     'feedback': feedback,
                     'user_id': user_id,
-                    'original_input': input_text
+                    'original_input': input_text,
+                'source_kind': 'user_statement' if unverified else 'interaction',
+                'knowledge_verified': not unverified
                 }
             )
         else:
@@ -437,17 +509,14 @@ class IncrementalLearner:
             state.metadata.update({
                 'feedback': feedback,
                 'user_id': user_id,
-                'original_input': input_text
+                'original_input': input_text,
+                'source_kind': 'user_statement' if unverified else 'interaction',
+                'knowledge_verified': not unverified
             })
             
         # Aggiorna il progresso dell'utente
-        if user_id not in self.user_progress:
-            self.user_progress[user_id] = {
-                "topics": set(),
-                "recent_learning": []
-            }
-        
         progress = self.user_progress[user_id]
+        progress["confidence_levels"][unit.confidence] += 1
         progress["topics"].add(topic)
         progress["recent_learning"].append({
             "topic": topic,
@@ -455,6 +524,7 @@ class IncrementalLearner:
             "confidence": ConfidenceLevel.MEDIUM.value
         })
         
+        self.save_state()
         return unit
 
     def get_knowledge(self, topic: str) -> List[Dict[str, Any]]:
@@ -483,6 +553,7 @@ class IncrementalLearner:
             for unit in units
         ]
 
+    @synchronized
     def get_knowledge_by_topic(self, topic: str) -> List[Dict[str, Any]]:
         """
         Recupera la conoscenza per un determinato topic.

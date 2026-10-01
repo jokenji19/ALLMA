@@ -11,6 +11,8 @@
     <link rel="stylesheet" href="style_v24.css?v=59">
     <link rel="stylesheet" href="settings_ui.css">
 
+    <link rel="stylesheet" href="sky.css">
+
     <style>
         /* CRITICAL VIEW SYSTEM STYLES (Inlined for reliability) */
         body.boot-loading #boot-splash {
@@ -348,14 +350,14 @@
         <div class="sidebar-header">
             <div class="brand">
                 <span class="logo-text">ALLMA</span>
-                <span class="version-tag">v0.80</span>
+                <svg class="planet-logo" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="29" cy="33" r="17"/><path d="M17 21l7 3 1 6-5 4 4 4 2 10m12-30-4 7 6 4 5-1m-11 8 7 4-4 8"/><ellipse cx="29" cy="33" rx="28" ry="9" transform="rotate(-30 29 33)"/><path d="m50 4 1.5 5.5L57 11l-5.5 1.5L50 18l-1.5-5.5L43 11l5.5-1.5ZM10 7v8m-4-4h8"/></svg>
             </div>
         </div>
 
         <div class="sidebar-content">
             <!-- 1. CHAT SECTION -->
             <div class="nav-section">
-                <div class="nav-label">MAIN</div>
+                <div class="nav-label">CONVERSAZIONI</div>
                 <button class="nav-item primary-action" onclick="startNewChat()">
                     <span class="icon">✨</span>
                     <span class="nav-text">Nuova Chat</span>
@@ -367,7 +369,7 @@
 
             <!-- 2. INTELLIGENCE SECTION -->
             <div class="nav-section">
-                <div class="nav-label">INTELLIGENCE</div>
+                <div class="nav-label">IL MONDO DI ALLMA</div>
 
                 <button class="nav-item" onclick="openPanel('memory')">
                     <span class="icon icon-purple">🧠</span>
@@ -387,7 +389,7 @@
 
             <!-- 3. SYSTEM SECTION -->
             <div class="nav-section">
-                <div class="nav-label">SYSTEM</div>
+                <div class="nav-label">PREFERENZE</div>
 
                 <button class="nav-item" onclick="openPanel('settings')">
                     <span class="icon icon-slate">⚙️</span>
@@ -535,8 +537,8 @@
                     <span class="setting-value">✅ Attivo</span>
                 </div>
                 <div class="setting-item">
-                    <span>Mostra pensieri</span>
-                    <span class="setting-value">✅ Attivo</span>
+                    <span>Dettagli delle risposte</span>
+                    <span class="setting-value">Apri in chat</span>
                 </div>
                 <!-- Status Chips moved here -->
                 <div class="setting-item">
@@ -592,37 +594,31 @@
         </div>
     </div>
 
-    <!-- Top Floating Header (Menu Button) -->
-    <div id="top-header">
-        <button id="menu-btn" onclick="toggleSidebar()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" />
-            </svg>
+    <header id="top-header">
+        <button id="menu-btn" class="icon-button" aria-label="Apri menu" onclick="toggleSidebar()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" d="M4 7h16M4 12h12M4 17h8"/></svg>
         </button>
-    </div>
+        <div class="header-brand"><svg class="planet-logo" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="29" cy="33" r="17"/><path d="M17 21l7 3 1 6-5 4 4 4 2 10m12-30-4 7 6 4 5-1m-11 8 7 4-4 8"/><ellipse cx="29" cy="33" rx="28" ry="9" transform="rotate(-30 29 33)"/><path d="m50 4 1.5 5.5L57 11l-5.5 1.5L50 18l-1.5-5.5L43 11l5.5-1.5ZM10 7v8m-4-4h8"/></svg><div><div class="wordmark">ALLMA</div><div id="chat-status" role="status">Parliamone insieme</div></div></div>
+        <button id="new-chat-btn" class="icon-button" aria-label="Nuova chat" onclick="startNewChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7M15 4l5 5M10 14l1-5 7-7 4 4-7 7-5 1Z"/></svg></button>
+    </header>
 
     <!-- VIEW: CHAT -->
     <div id="view-chat" class="app-view active">
         <!-- Main Chat Container -->
         <div id="chat-container">
-            <div class="spacer-top"></div>
+            <div class="empty-chat"><svg class="planet-logo" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="29" cy="33" r="17"/><path d="M17 21l7 3 1 6-5 4 4 4 2 10m12-30-4 7 6 4 5-1m-11 8 7 4-4 8"/><ellipse cx="29" cy="33" rx="28" ry="9" transform="rotate(-30 29 33)"/><path d="m50 4 1.5 5.5L57 11l-5.5 1.5L50 18l-1.5-5.5L43 11l5.5-1.5ZM10 7v8m-4-4h8"/></svg><h1>Da dove iniziamo?</h1><p>Una domanda, un’idea, qualcosa da raccontare.</p></div>
         </div>
 
         <!-- Input Area -->
+        <div id="chat-notice" role="status" aria-live="polite"></div>
+        <div class="chat-caption">La nostra storia, un messaggio alla volta.</div>
         <div id="input-area">
             <div class="capsule">
-                <input type="text" id="message-input" placeholder="Messaggio..." autocomplete="off"
-                    onkeypress="handleInputKey(event)">
+                <input type="text" id="message-input" placeholder="Scrivi ad ALLMA…" aria-label="Messaggio" autocomplete="off" enterkeyhint="send" onkeypress="handleInputKey(event)">
+                <button id="voice-mode-btn" class="icon-button" aria-label="Apri modalità vocale" onclick="openVoiceMode()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path stroke-linecap="round" d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6"/></svg></button>
+                <button id="send-btn" aria-label="Invia messaggio" onclick="sendMessage()" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+                <button id="cancel-generation-btn" hidden onclick="cancelGeneration()">Interrompi</button>
             </div>
-
-            <button id="voice-mode-btn" onclick="openVoiceMode()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                    stroke-linejoin="round">
-                    <line x1="12" y1="20" x2="12" y2="10"></line>
-                    <line x1="18" y1="20" x2="18" y2="4"></line>
-                    <line x1="6" y1="20" x2="6" y2="16"></line>
-                </svg>
-            </button>
         </div>
     </div>
 
@@ -724,14 +720,11 @@
 
     <template id="tmpl-bot">
         <div class="message-wrapper bot">
+            <div class="assistant-label"><span aria-hidden="true">✧</span> ALLMA</div>
+            <div class="message-bubble bot"><div class="content"></div></div>
             <div class="reasoning-container hidden">
-                <div class="reasoning-header" onclick="toggleReasoning(this)">
-                    <span>💡 Pensiero</span>
-                </div>
+                <button class="reasoning-header" aria-expanded="false" onclick="toggleReasoning(this)"><span>Dettagli</span><span class="details-chevron" aria-hidden="true">⌄</span></button>
                 <div class="reasoning-content"></div>
-            </div>
-            <div class="message-bubble bot">
-                <span class="content"></span>
             </div>
         </div>
     </template>
@@ -765,6 +758,7 @@
         </div>
     </div>
 
+    <script src="marked.min.js"></script>
     <script src="script_v24.js"></script>
 </body>
 

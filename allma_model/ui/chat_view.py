@@ -25,6 +25,8 @@ from kivy.animation import Animation
 from kivy.metrics import dp
 
 # Import Theme
+from allma_model.ui.chat_session import ChatSession
+from allma_model.utils.generation_control import GenerationCancelled, check_cancelled
 from allma_model.ui.theme import Theme
 from allma_model.core.allma_core import ALLMACore
 
@@ -82,10 +84,16 @@ class ChatView(MDScreen):
             print(f"ChatView: Initializing Core with models_dir={models_dir}")
             
             # Initialize with Model Path
-            self.core = ALLMACore(models_dir=models_dir)
+            db_path = "allma.db"
+            if platform == "android":
+                from allma_model.utils.runtime_storage import prepare_runtime_storage
+                storage_dir = prepare_runtime_storage(os.path.dirname(models_dir), os.getcwd())
+                db_path = os.path.join(storage_dir, "allma.db")
+            self.core = ALLMACore(db_path=db_path, models_dir=models_dir, mobile_mode=(platform == "android"))
             
             # Start a conversation session
-            self.conversation_id = self.core.start_conversation("user_default")
+            self.chat_session = ChatSession(lambda: self.core.start_conversation("user_default"))
+            self.conversation_id = self.chat_session.conversation_id
             print(f"ChatView: Started conversation {self.conversation_id}")
             
             # PHASE 14: Start Dream System Loop (Background)
@@ -107,6 +115,21 @@ class ChatView(MDScreen):
                         msg_type = data.get('type')
                         action = data.get('action')
                         
+                        if msg_type == 'action' and action in ('new_chat', 'cancel_generation'):
+                            if self.tts:
+                                self.tts.stop()
+                            if action == 'cancel_generation':
+                                self.chat_session.cancel()
+                            else:
+                                try:
+                                    conversation = self.chat_session.new_conversation()
+                                    if conversation is not None:
+                                        self.conversation_id = conversation
+                                        self.bridge.call_js_function('newChatReady', json.dumps(conversation))
+                                except Exception:
+                                    self.bridge.call_js_function('newChatFailed')
+                            return
+
                         # System Actions (Profile)
                         if msg_type == 'system':
                             if action == 'update_profile':
@@ -222,17 +245,53 @@ class ChatView(MDScreen):
                 if message == "__REQUEST_MEMORY_UPDATE__":
                     if self.bridge:
                         try:
-                            # Use existing api instance (AllmaAndroidBridge) initialized in ChatView
-                            memory_data = self.api.get_memory_data(self.user_id)
+                            memory_data = {"facts": {}, "logs": []}
+                            if self.core:
+                                # Popula i "facts" dal profilo utente (se esiste)
+                                if hasattr(self.core, 'user_profile') and self.core.user_profile:
+                                    prefs = self.core.user_profile.get_preferences()
+                                    memory_data["facts"] = {
+                                        "Stile Comunicazione": prefs.get('communication_style', 'neutral'),
+                                        "Sensibilità Emotiva (0-1)": f"{prefs.get('emotional_sensitivity', 0.5):.2f}",
+                                        "Coinvolgimento Sociale (0-1)": f"{prefs.get('social_engagement', 0.5):.2f}",
+                                    }
+                                    topics = prefs.get('favorite_topics', [])
+                                    if topics:
+                                        memory_data["facts"]["Argomenti Preferiti"] = ", ".join(topics)
+
+                                # Aggiungi la cronologia vettoriale se disponibile
+                                if hasattr(self.core, 'conversational_memory') and self.core.conversational_memory:
+                                    mem = self.core.conversational_memory
+                                    if hasattr(mem, 'vector_engine') and mem.vector_engine:
+                                        memory_data["facts"]["Vettori Memorizzati"] = str(mem.vector_engine.count())
+
+                                    # Popola i Logs (ultimi 10 messaggi)
+                                    history = []
+                                    if hasattr(mem, 'messages') and mem.messages:
+                                        history = mem.messages[-10:]
+
+                                    for msg in history:
+                                        ts = msg.timestamp.isoformat() if hasattr(msg, 'timestamp') and hasattr(msg.timestamp, 'isoformat') else ""
+                                        content = getattr(msg, 'content', '')
+                                        role = getattr(msg, 'role', 'system')
+                                        memory_data["logs"].append({
+                                            "role": role,
+                                            "content": content,
+                                            "timestamp": ts,
+                                            "is_thought": '[[TH:' in content
+                                        })
+
                             import json
                             safe_data = json.dumps(memory_data)
                             self.bridge.execute_js(f"window.updateMemory({safe_data})")
                         except Exception as e:
                             print(f"[ChatView] Error fetching memory: {e}")
+                            import traceback
+                            traceback.print_exc()
                     return
 
                 # Send to Core (Standard Chat)
-                Thread(target=self.process_message, args=(message,)).start()
+                self.submit_message(message)
                 
             # Initialize TTS Engine
             try:
@@ -267,13 +326,8 @@ class ChatView(MDScreen):
                         # 2. SEND TO LLM (Critical Fix!)
                         # User wants it treated "As if written"
                         if text and len(text.strip()) > 1:
-                            # Inject into chat UI to show user what was heard
-                            if self.bridge:
-                                self.bridge.send_message_to_js(text, 'user')
-                            
-                            # Process Request
-                            Thread(target=self.process_message, args=(text,)).start()
-                            
+                            self.submit_message(text, echo_user=True)
+
                             # Restart Listening after processing? 
                             # Usually LLM speaking stops listening. 
                             # We'll rely on user to tap again or implement auto-listen logic later.
@@ -296,7 +350,7 @@ class ChatView(MDScreen):
             self._report_voice_stack_status()
 
             # Start Learning Status Loop (Every 5 seconds)
-            Clock.schedule_interval(self.update_learning_status, 5.0)
+            self._learning_status_event = Clock.schedule_interval(self.update_learning_status, 5.0)
             
         except Exception as e:
             print(f"Error initializing ChatView: {e}")
@@ -304,83 +358,75 @@ class ChatView(MDScreen):
             traceback.print_exc()
 
     
-    def process_message(self, user_text):
-        if not self.core:
-            return
+    def submit_message(self, user_text, echo_user=False):
+        """Reserve the turn before starting a worker, so reset/cancel cannot overtake it."""
+        if not self.core or not isinstance(user_text, str) or not user_text.strip():
+            return False
+        import json
+        try:
+            control = json.loads(user_text)
+            if isinstance(control, dict) and control.get('type') in ('system', 'action'):
+                return False
+        except (ValueError, TypeError):
+            pass
+        turn = self.chat_session.begin()
+        if turn is None:
+            self.bridge.call_js_function('chatNotice', '"Attendi la risposta o premi Interrompi."')
+            return False
+        try:
+            Thread(target=self.process_message, args=(user_text,),
+                   kwargs={'echo_user': echo_user, 'turn': turn}, daemon=True).start()
+        except Exception:
+            self.chat_session.finish(turn)
+            self.bridge.call_js_function('newChatFailed')
+            raise
+        return True
 
-        # BUG FIX: Ignore JSON control messages leaking into chat
-        # BUG FIX: Ignore JSON control messages leaking into chat
-        # Checks for standard JSON object start OR escaped JSON string start
-        stripped = user_text.strip()
-        if (stripped.startswith('{') or stripped.startswith('"{') or stripped.startswith(r'{\"')) and ('"type":' in user_text or r'\"type\":' in user_text):
-             print(f"ChatView: Ignoring Control Message in Chat -> {user_text[:50]}...")
-             return
+    def process_message(self, user_text, echo_user=False, turn=None):
+        if turn is None:
+            turn = self.chat_session.begin()
+        if turn is None:
+            self.bridge.call_js_function('chatNotice', '"Attendi la risposta o premi Interrompi."')
+            return
 
         try:
             # Call the ACTUAL Core API
             print(f"Processing message: {user_text}")
             
             # Start Stream UI
-            self.bridge.start_stream()
+            if echo_user:
+                self.bridge.send_message_to_js(user_text, "user")
+            self.bridge.start_stream(turn.request_id)
             
             # Stop any previous speech & Clear Queue
             if self.tts:
                 self.tts.stop()
             
-            # TTS Buffer
-            tts_buffer = ""
-            
             voice_params = self.current_voice_params
             
             def on_stream_data(data):
-                nonlocal tts_buffer
+                check_cancelled(turn.cancelled)
                 msg_type = data.get('type')
                 content = data.get('content')
                 
                 if not content: return
                 
                 is_thought = (msg_type == 'thought')
-                self.bridge.stream_chunk(content, is_thought)
+                self.bridge.stream_chunk(content, is_thought, turn.request_id)
                 
-                # TTS Logic: Accumulate and speak on punctuation/phrases
-                if not is_thought and self.tts and self.voice_mode_enabled:
-                    tts_buffer += content
-                    
-                    # Delimiters for natural pauses
-                    delimiters = ['.', '!', '?', '\n', ',', ';', ':']
-                    
-                    while True:
-                        # Find the earliest delimiter
-                        earliest_idx = -1
-                        for d in delimiters:
-                            try:
-                                idx = tts_buffer.index(d)
-                                if earliest_idx == -1 or idx < earliest_idx:
-                                    earliest_idx = idx
-                            except ValueError:
-                                continue
-                        
-                        if earliest_idx != -1:
-                            # Extract phrase INCLUDING the delimiter (pause)
-                            phrase = tts_buffer[:earliest_idx+1]
-                            tts_buffer = tts_buffer[earliest_idx+1:]
-                            
-                            if phrase.strip():
-                                self.tts.speak(phrase.strip(), voice_params=voice_params)
-                        else:
-                            # No more delimiters, wait for more data
-                            break
-            
             # Call Core with Callback
+            check_cancelled(turn.cancelled)
             processed_response = self.core.process_message(
                 user_id="user_default",
-                conversation_id=self.conversation_id,
+                conversation_id=turn.conversation_id,
                 message=user_text,
+                cancel_event=turn.cancelled,
                 stream_callback=on_stream_data
             )
             
             # End Stream
-            self.bridge.end_stream()
+            check_cancelled(turn.cancelled)
+            self.bridge.end_stream(processed_response.content, turn.request_id)
 
             if self.bridge and self.voice_mode_enabled:
                 try:
@@ -410,18 +456,28 @@ class ChatView(MDScreen):
                 self.current_voice_params = processed_response.voice_params
                 voice_params = self.current_voice_params
             
-            if self.tts and tts_buffer.strip() and self.voice_mode_enabled:
-                self.tts.speak(tts_buffer.strip(), voice_params=voice_params)
+            if self.tts and processed_response.content.strip() and self.voice_mode_enabled:
+                self.tts.speak(processed_response.content.strip(), voice_params=voice_params)
             
-            # Fallback checks?
-            if not processed_response.is_valid:
-                 self.bridge.stream_chunk("\n[Errore Generazione]", False)
 
-        except Exception as e:
-            print(f"Error processing message: {e}")
-            import traceback
-            traceback.print_exc()
-            self.bridge.end_stream()
+        except GenerationCancelled:
+            self.bridge.end_stream('Risposta interrotta.', turn.request_id)
+        except Exception:
+            import logging
+            logging.exception('Errore durante la risposta')
+            self.bridge.end_stream('Non sono riuscita a completare la risposta. Riprova.', turn.request_id)
+        finally:
+            try:
+                import json
+                conversation = self.chat_session.finish(turn)
+                self.bridge.call_js_function("turnFinished", json.dumps(turn.request_id))
+                if conversation is not None:
+                    self.conversation_id = conversation
+                    self.bridge.call_js_function('newChatReady', json.dumps(conversation))
+            except Exception:
+                import logging
+                logging.exception('Impossibile creare la nuova conversazione')
+                self.bridge.call_js_function('newChatFailed')
 
     def _report_voice_stack_status(self):
         stt_ok = self.stt is not None

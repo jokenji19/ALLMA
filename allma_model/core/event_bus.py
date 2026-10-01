@@ -1,7 +1,7 @@
 """
 EventBus — ALLMA V6 Sprint 2
 
-Un bus di messaggi asincrono Pub/Sub basato su asyncio.Queue.
+Un bus di messaggi asincrono Pub/Sub con coda thread-safe e consumer asyncio.
 
 Scopo:
     Disaccoppiare il Subconscio (Soul, Dream, Proactive) dal Core LLM.
@@ -9,7 +9,7 @@ Scopo:
     allma_core direttamente. Il Core li consuma quando è libero.
 
 Architettura:
-    Producers → publish(event)  → asyncio.Queue
+    Producers → publish(event)  → queue.Queue
     Consumer  → subscribe(loop) → processa eventi in sicurezza
 
 Tipi di eventi:
@@ -20,6 +20,8 @@ Tipi di eventi:
 
 from __future__ import annotations
 import asyncio
+import queue
+import threading
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Callable, Awaitable
@@ -57,14 +59,15 @@ class EventBus:
     """
 
     _instance: Optional['EventBus'] = None
+    _instance_lock = threading.Lock()
 
     def __init__(self, maxsize: int = 50):
         """
         Args:
             maxsize: Numero massimo di eventi in coda. Se piena, publish() dropppa
-                     eventi a bassa priorità invece di bloccare il producer.
+                     gli eventi in arrivo invece di bloccare il producer.
         """
-        self._queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
+        self._queue = queue.Queue(maxsize=maxsize)
         self._consumer: Optional[Callable[[BusEvent], Awaitable[None]]] = None
         self._running = False
         self._dropped = 0
@@ -72,8 +75,9 @@ class EventBus:
     @classmethod
     def get_instance(cls) -> 'EventBus':
         """Singleton thread-safe (da usare fuori dal loop async)."""
-        if cls._instance is None:
-            cls._instance = cls()
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = cls()
         return cls._instance
 
     def register_consumer(self, handler: Callable[[BusEvent], Awaitable[None]]):
@@ -92,17 +96,7 @@ class EventBus:
         Returns:
             True se l'evento è stato accodato, False se droppato.
         """
-        if self._queue.full():
-            self._dropped += 1
-            logger.warning(
-                f"[EventBus] Queue full! Dropping event '{event.event_type}' "
-                f"from '{event.source}'. Total dropped: {self._dropped}"
-            )
-            return False
-
-        await self._queue.put(event)
-        logger.debug(f"[EventBus] Event published: {event.event_type} from {event.source}")
-        return True
+        return self.publish_sync(event)
 
     def publish_sync(self, event: BusEvent) -> bool:
         """
@@ -113,7 +107,7 @@ class EventBus:
             self._queue.put_nowait(event)
             logger.debug(f"[EventBus] Sync event published: {event.event_type}")
             return True
-        except asyncio.QueueFull:
+        except queue.Full:
             self._dropped += 1
             logger.warning(
                 f"[EventBus] Queue full (sync)! Dropping '{event.event_type}'. "
@@ -127,13 +121,19 @@ class EventBus:
         Consuma eventi dalla coda e li passa al consumer registrato.
         Si ferma automaticamente se non c'è un consumer registrato.
         """
+        if self._running:
+            raise RuntimeError("EventBus already has an active consumer")
         self._running = True
         logger.info("[EventBus] Consume loop started.")
 
         while self._running:
             try:
                 # Attendi un evento con timeout per non bloccare il loop
-                event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+                try:
+                    event = self._queue.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(0.05)
+                    continue
 
                 if self._consumer:
                     try:
@@ -155,6 +155,7 @@ class EventBus:
                 continue
             except Exception as e:
                 logger.error(f"[EventBus] Unexpected error in consume loop: {e}", exc_info=True)
+                await asyncio.sleep(0.1)
 
     def stop(self):
         """Ferma il consume loop al prossimo ciclo."""

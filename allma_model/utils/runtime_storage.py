@@ -1,0 +1,41 @@
+"""Keep mutable Android state outside python-for-android's replaceable app tree."""
+import os
+import shutil
+import sqlite3
+import tempfile
+from pathlib import Path
+
+STATE_FILES = (
+    'allma.db', 'allma_memory.json', 'allma_settings.json', 'allma_modules.db', 'answer_recall.json',
+    'incremental_cache/knowledge_states.json',
+    'data/allma_vectors.db', 'data/dream_journal.json',
+)
+
+
+def prepare_runtime_storage(private_dir, legacy_dir=None):
+    destination = Path(private_dir).resolve() / 'allma_state'
+    destination.mkdir(parents=True, exist_ok=True)
+    if legacy_dir is not None:
+        legacy = Path(legacy_dir).resolve()
+        for relative in STATE_FILES:
+            source, target = legacy / relative, destination / relative
+            if not source.is_file() or target.exists() or source == target:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=target.name + '.', dir=target.parent)
+            os.close(fd)
+            try:
+                if source.suffix == '.db':
+                    # backup includes committed WAL records; never copy an open DB blindly.
+                    with sqlite3.connect(source.as_uri() + '?mode=ro', uri=True) as reader:
+                        with sqlite3.connect(temporary) as writer:
+                            reader.backup(writer)
+                else:
+                    shutil.copyfile(source, temporary)
+                with open(temporary, 'rb') as handle:
+                    os.fsync(handle.fileno())
+                os.replace(temporary, target)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+    return str(destination)

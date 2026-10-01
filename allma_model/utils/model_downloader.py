@@ -1,200 +1,197 @@
-import os
-import requests
+"""Verified, resumable downloads. Only complete models get their final filename."""
+import hashlib
 import logging
+import os
+import re
+import threading
+import time
+
+import requests
 from kivy.utils import platform
-from threading import Thread
+
 
 class ModelDownloader:
-    """
-    Gestisce il download dei modelli AI (GGUF) per l'esecuzione locale su Android.
-    """
-    
-    def __init__(self):
+    _locks = {}
+    _locks_guard = threading.Lock()
+
+    def __init__(self, models_dir=None):
         self.logger = logging.getLogger(__name__)
-        self.models_dir = self._get_models_dir()
-        
-        # URL dei modelli (GGUF quantizzati per mobile)
-        # Nota: Usiamo link diretti a HuggingFace GGUF
-        # NOTA: Il repo ufficiale Qwen/Qwen3-1.7B-GGUF contiene SOLO Q8_0
+        self.models_dir = models_dir or self._get_models_dir()
+        self.max_retries = 5
+        self.retry_delay = 2
+        self._verified = {}
+        # Official LFS metadata, verified on 2026-09-29:
+        # https://huggingface.co/api/models/Qwen/Qwen3-1.7B-GGUF?blobs=true
         self.models = {
-            "gemma": {
-                "url": "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf?download=true",
-                "filename": "qwen3-1.7b-q8_0.gguf",
-                "size_mb": 1650
+            'gemma': {
+                'url': 'https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/'
+                       '90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf?download=true',
+                'filename': 'qwen3-1.7b-q8_0.gguf',
+                'size_bytes': 1834426016,
+                'sha256': '061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a',
+                'size_mb': 1834426016 / (1024 * 1024),
             }
         }
 
     def _get_models_dir(self):
-        """Restituisce la cartella dove salvare i modelli."""
         if platform == 'android':
             from android.storage import app_storage_path
-            # Salviamo nella root di files/ per persistenza sicura
-            # app_storage_path returns /data/user/0/org.../files
             return os.path.join(app_storage_path(), 'models')
-        else:
-            # Desktop (macOS/Linux/Windows)
-            return os.path.join(os.getcwd(), 'models')
+        return os.path.join(os.getcwd(), 'models')
+
+    def _valid(self, path, info):
+        """Cache a successful hash only while the file's identity and metadata match."""
+        try:
+            stat = os.stat(path)
+            fingerprint = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns,
+                           info['sha256'])
+            if stat.st_size != info['size_bytes']:
+                return False
+            if self._verified.get(path) == fingerprint:
+                return True
+            digest = hashlib.sha256()
+            with open(path, 'rb') as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                    digest.update(chunk)
+            if digest.hexdigest() != info['sha256']:
+                return False
+            # Do not certify a file changed while hashing.
+            after = os.stat(path)
+            if (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != fingerprint[:4]:
+                return False
+            self._verified[path] = fingerprint
+            return True
+        except (OSError, KeyError):
+            return False
 
     def check_models_missing(self):
-        """Ritorna la lista dei modelli mancanti."""
-        self.logger.info(f"[DEBUG] Models Dir: {self.models_dir}")
-        missing = []
-        if not os.path.exists(self.models_dir):
-            self.logger.info(f"[DEBUG] Models dir does not exist.")
-            return list(self.models.keys())
-            
-        # HOUSEKEEPING: Rimuovi vecchi modelli non più usati
-        self.cleanup_old_models()
-        
-        for key, info in self.models.items():
-            path = os.path.join(self.models_dir, info['filename'])
-            exists = os.path.exists(path)
-            self.logger.info(f"[DEBUG] Checking {key} at {path} -> Exists: {exists}")
-            
-            if not exists:
-                missing.append(key)
-            else:
-                size = os.path.getsize(path)
-                expected_mb = info.get('size_mb', 100)
-                expected_bytes_min = (expected_mb * 1024 * 1024) * 0.99
-                
-                self.logger.info(f"[DEBUG] File size for {key}: {size} bytes (Expected > {expected_bytes_min})")
-                
-                if size < expected_bytes_min:
-                    # File exists but is smaller than expected.
-                    # DO NOT DELETE IT. We will try to RESUME it.
-                    self.logger.info(f"[DEBUG] File {key} is incomplete ({size} bytes). Marking for Resume.")
-                    missing.append(key)
-                else:
-                    self.logger.info(f"[DEBUG] File {key} seems complete.")
-                    
-        return missing
+        # This method is deliberately read-only, including unknown/custom models.
+        return [key for key, info in self.models.items()
+                if not self._valid(os.path.join(self.models_dir, info['filename']), info)]
 
     def cleanup_old_models(self):
-        """Rimuove i modelli non più in uso (es. vecchi Qwen/Vyvo/Kokoro) per liberare spazio."""
-        if not os.path.exists(self.models_dir):
-            return
-
-        # Lista dei file legittimi (quelli attuali)
-        allowed_files = {info['filename'] for info in self.models.values()}
-        
-        try:
-            for filename in os.listdir(self.models_dir):
-                file_path = os.path.join(self.models_dir, filename)
-                
-                # Se è un file e non è nella lista dei permessi (e non è un hidden file di sistema)
-                if os.path.isfile(file_path) and filename not in allowed_files and not filename.startswith('.'):
-                    self.logger.info(f"[CLEANUP] Trovato file obsoleto/sconosciuto: {filename}. Eliminazione...")
-                    try:
-                        os.remove(file_path)
-                        self.logger.info(f"[CLEANUP] {filename} eliminato con successo.")
-                    except Exception as e:
-                        self.logger.error(f"[CLEANUP] Errore eliminazione {filename}: {e}")
-        except Exception as e:
-            self.logger.error(f"[CLEANUP] Errore durante la scansione directory: {e}")
+        """Compatibility API: list unrecognized files without deleting user assets."""
+        if not os.path.isdir(self.models_dir):
+            return []
+        known = {info['filename'] + suffix for info in self.models.values()
+                 for suffix in ('', '.part')}
+        return [name for name in os.listdir(self.models_dir) if name not in known]
 
     def download_model(self, model_key, progress_callback=None):
-        """
-        Scarica un modello specifico con supporto RESUME e RETRY.
-        """
-        if model_key not in self.models:
-            return False, f"Modello sconosciuto: {model_key}"
-
-        info = self.models[model_key]
-        url = info['url']
+        info = self.models.get(model_key)
+        if info is None:
+            return False, f'Modello sconosciuto: {model_key}'
         filename = info['filename']
-        
-        if not os.path.exists(self.models_dir):
-            try: os.makedirs(self.models_dir)
-            except OSError as e: return False, f"FS Error: {e}"
-            
-        path = os.path.join(self.models_dir, filename)
-        
-        # --- RESUME LOGIC ---
-        resume_byte_pos = 0
-        file_mode = 'wb'
-        if os.path.exists(path):
-            resume_byte_pos = os.path.getsize(path)
-            file_mode = 'ab' # Append mode
-            self.logger.info(f"[Resuming] {model_key} from byte {resume_byte_pos}")
+        if (os.path.basename(filename) != filename or filename in ('', '.', '..')
+                or not re.fullmatch(r'[0-9a-f]{64}', info.get('sha256', ''))
+                or not isinstance(info.get('size_bytes'), int) or info['size_bytes'] <= 0):
+            return False, 'Manifest del modello non valido'
+        path = os.path.abspath(os.path.join(self.models_dir, filename))
+        with self._locks_guard:
+            lock = self._locks.setdefault(path, threading.Lock())
+        if not lock.acquire(blocking=False):
+            return False, 'Download già in corso per questo modello'
+        try:
+            return self._download_locked(path, info, progress_callback)
+        except (OSError, requests.RequestException, ValueError) as exc:
+            self.logger.warning('Download non riuscito: %s', exc)
+            return False, str(exc)
+        finally:
+            lock.release()
 
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Android 10; Mobile; rv:91.0) Gecko/91.0 Firefox/91.0'
-        }
-        if resume_byte_pos > 0:
-            headers['Range'] = f"bytes={resume_byte_pos}-"
-
-        # --- RETRY LOOP ---
-        max_retries = 5
-        for attempt in range(max_retries):
+    def _download_locked(self, path, info, progress_callback):
+        os.makedirs(self.models_dir, exist_ok=True)
+        if self._valid(path, info):
+            return True, None
+        partial = path + '.part'
+        expected = info['size_bytes']
+        # Migrate incomplete files written by older versions, preserving their bytes.
+        if not os.path.exists(partial) and os.path.isfile(path) and os.path.getsize(path) < expected:
+            os.replace(path, partial)
+        last_error = 'Download incompleto'
+        for attempt in range(self.max_retries):
             try:
-                self.logger.info(f"[Download] {model_key} Attempt {attempt+1}/{max_retries}")
-                
-                # Timeout increased to 60s for slow starts
-                with requests.get(url, stream=True, timeout=60, headers=headers) as response:
-                    
-                    # Handle Range Not Satisfiable (416) -> Likely file is already done
+                if self._valid(partial, info):
+                    os.replace(partial, path)
+                    return True, None
+                offset = os.path.getsize(partial) if os.path.exists(partial) else 0
+                if offset >= expected:
+                    # Only our own incomplete/corrupt transfer file is reset.
+                    with open(partial, 'wb'):
+                        pass
+                    offset = 0
+                headers = {'Accept-Encoding': 'identity', 'User-Agent': 'ALLMA-model-downloader'}
+                if offset:
+                    headers['Range'] = f'bytes={offset}-'
+                with requests.get(info['url'], stream=True, timeout=(15, 60), headers=headers) as response:
                     if response.status_code == 416:
-                         self.logger.info(f"[Download] 416 Range Not Satisfiable. File likely complete.")
-                         return True, None
-
+                        # Never treat 416 as success: the complete hash was checked above.
+                        with open(partial, 'wb'):
+                            pass
+                        raise ValueError('Ripresa rifiutata: riavvio del download necessario')
                     response.raise_for_status()
-                    
-                    # Content-Length is only the remaining chunk if 206 Partial Content
-                    total_size = int(response.headers.get('content-length', 0))
-                    total_downloaded = resume_byte_pos
-                    full_file_size = total_size + resume_byte_pos
-                    
-                    with open(path, file_mode) as f:
-                        # Increased chunk size to 64KB for better throughput
+                    if response.status_code == 206:
+                        match = re.fullmatch(r'bytes (\d+)-(\d+)/(\d+)', response.headers.get('Content-Range', ''))
+                        if not match:
+                            raise ValueError('Content-Range mancante o non valido')
+                        start, end, total = map(int, match.groups())
+                        if start != offset or total != expected or not start <= end < total:
+                            raise ValueError('Content-Range incompatibile con il modello')
+                        segment_size = end - start + 1
+                        mode = 'ab' if offset else 'wb'
+                    elif response.status_code == 200:
+                        # The server ignored Range: restart, never append a full response.
+                        offset = 0
+                        mode = 'wb'
+                        segment_size = expected
+                    else:
+                        raise ValueError(f'Risposta HTTP inattesa: {response.status_code}')
+                    length = response.headers.get('Content-Length')
+                    if length is not None and int(length) != segment_size:
+                        raise ValueError('Dimensione HTTP incompatibile con il modello')
+                    if response.headers.get('Content-Encoding', 'identity') != 'identity':
+                        raise ValueError('Codifica HTTP non supportata per la ripresa')
+                    received = 0
+                    with open(partial, mode) as handle:
                         for chunk in response.iter_content(chunk_size=65536):
-                            if chunk:
-                                f.write(chunk)
-                                total_downloaded += len(chunk)
-                                if progress_callback:
-                                    progress_callback(total_downloaded, full_file_size)
-                
-                # If we get here, download finished cleanly
-                self.logger.info(f"Download completato: {model_key}")
+                            if not chunk:
+                                continue
+                            if received + len(chunk) > segment_size:
+                                raise ValueError('Il server ha inviato più dati del previsto')
+                            handle.write(chunk)
+                            received += len(chunk)
+                            if progress_callback:
+                                progress_callback(offset + received, expected)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    if received != segment_size:
+                        raise ValueError('Connessione terminata prima del completamento')
+                if not self._valid(partial, info):
+                    raise ValueError('Modello incompleto o checksum SHA-256 non valido')
+                os.replace(partial, path)
                 return True, None
-                
-            except (requests.exceptions.RequestException, IOError) as e:
-                self.logger.error(f"[Download Error] Attempt {attempt+1}: {e}")
-                # If error, update resume position for next try
-                if os.path.exists(path):
-                    resume_byte_pos = os.path.getsize(path)
-                    headers['Range'] = f"bytes={resume_byte_pos}-"
-                    file_mode = 'ab'
-                
-                # If it was IncompleteRead, the loop continues immediately
-                # If it's the last attempt, fail.
-                if attempt == max_retries - 1:
-                    return False, f"Failed after {max_retries} attempts: {str(e)[:50]}"
-                
-                import time
-                time.sleep(2) # Wait a bit before retry
-
-        return False, "Unknown Error"
+            except (OSError, requests.RequestException, ValueError) as exc:
+                last_error = str(exc)
+                self.logger.warning('Download tentativo %s/%s: %s', attempt + 1, self.max_retries, exc)
+                if attempt + 1 < self.max_retries:
+                    time.sleep(self.retry_delay)
+        return False, last_error
 
     def start_background_download(self, model_keys, progress_callback, completion_callback, on_model_complete=None):
-        """Avvia il download in un thread separato. completion_callback(success, error_msg)"""
-        def _download_thread():
-            success_all = True
-            last_error = None
-            
-            for key in model_keys:
-                success, error = self.download_model(key, lambda d, t: progress_callback(key, d, t))
-                if success:
+        def run():
+            success, error = True, None
+            try:
+                for key in model_keys:
+                    callback = (lambda d, t: progress_callback(key, d, t)) if progress_callback else None
+                    success, error = self.download_model(key, callback)
+                    if not success:
+                        break
                     if on_model_complete:
-                        try:
-                            on_model_complete(key)
-                        except Exception as e:
-                            self.logger.error(f"Error in on_model_complete: {e}")
-                else:
-                    success_all = False
-                    last_error = error
-                    break
-            
-            completion_callback(success_all, last_error)
-
-        Thread(target=_download_thread).start()
+                        on_model_complete(key)
+            except Exception as exc:
+                self.logger.exception('Errore nel download in background')
+                success, error = False, str(exc)
+            completion_callback(success, error)
+        thread = threading.Thread(target=run, daemon=True, name='ModelDownload')
+        thread.start()
+        return thread

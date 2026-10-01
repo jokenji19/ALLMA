@@ -25,7 +25,8 @@ class DreamManager:
     Funziona in background per non rallentare l'interazione utente.
     """
     
-    def __init__(self, memory_system, incremental_learner, reasoning_engine=None, coalescence_processor=None, system_monitor=None, llm_wrapper=None):
+    def __init__(self, memory_system, incremental_learner, reasoning_engine=None, coalescence_processor=None, system_monitor=None, llm_wrapper=None, journal_path=None):
+        self.journal_path = os.path.abspath(journal_path or DREAM_JOURNAL_PATH)
         self.memory_system = memory_system
         self.incremental_learner = incremental_learner
         self.reasoning_engine = reasoning_engine
@@ -50,9 +51,9 @@ class DreamManager:
 
     def _load_dream_journal(self):
         """Carica lo storico dei sogni dal file JSON."""
-        if os.path.exists(DREAM_JOURNAL_PATH):
+        if os.path.exists(self.journal_path):
             try:
-                with open(DREAM_JOURNAL_PATH, 'r', encoding='utf-8') as f:
+                with open(self.journal_path, 'r', encoding='utf-8') as f:
                     self.dream_history = json.load(f)
             except Exception as e:
                 self.logger.error(f"Errore nel caricamento del diario dei sogni: {e}")
@@ -61,13 +62,13 @@ class DreamManager:
     def _save_dream_journal(self):
         """Salva lo storico dei sogni su file (mantenendo solo gli ultimi N)."""
         try:
-            os.makedirs(os.path.dirname(DREAM_JOURNAL_PATH), exist_ok=True)
+            os.makedirs(os.path.dirname(self.journal_path), exist_ok=True)
             # Mantieni solo gli ultimi MAX_DREAM_ENTRIES
             if len(self.dream_history) > MAX_DREAM_ENTRIES:
                 self.dream_history = self.dream_history[-MAX_DREAM_ENTRIES:]
                 
-            with open(DREAM_JOURNAL_PATH, 'w', encoding='utf-8') as f:
-                json.dump(self.dream_history, f, ensure_ascii=False, indent=2)
+            from allma_model.utils.persistence import atomic_write_json
+            atomic_write_json(self.journal_path, self.dream_history)
         except Exception as e:
             self.logger.error(f"Errore nel salvataggio del diario dei sogni: {e}")
     @property
@@ -107,7 +108,7 @@ class DreamManager:
         Controlla se è il momento di sognare e avvia il thread.
         Non bloccante.
         """
-        if self.is_dreaming:
+        if self.is_dreaming or not user_id or self.llm_wrapper is None:
             return
             
         self.current_user_id = user_id
@@ -254,7 +255,7 @@ class DreamManager:
             return
 
         try:
-            from ..learning_system.incremental_learning import ConfidenceLevel
+            from allma_model.learning_system.incremental_learning import ConfidenceLevel
         except ImportError:
             from allma_model.learning_system.incremental_learning import ConfidenceLevel
 
@@ -391,7 +392,7 @@ class DreamManager:
                 # V6 Sprint 2: Pubblica l'insight sul bus per il Core consumer
                 try:
                     from allma_model.core.event_bus import EventBus, BusEvent
-                    bus = EventBus.get_instance()
+                    bus = getattr(self, "event_bus", None) or EventBus.get_instance()
                     bus.publish_sync(BusEvent(
                         event_type='dream_insight',
                         payload={'insight': insight},

@@ -226,50 +226,24 @@ class WebViewBridge:
                             activity_window.clearFlags(FLAG_TRANSLUCENT_STATUS)
                             activity_window.clearFlags(FLAG_TRANSLUCENT_NAVIGATION)
                             
-                            # 3. APPLY NO_LIMITS (Visuals)
-                            # This forces content to go behind bars
-                            activity_window.setFlags(
-                                LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                                LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                            )
-
-                            # 4. BACKGROUND & COLOR
-                            FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS = -2147483648 # 0x80000000
-                            activity_window.addFlags(FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-                            
-                            # Use 0x01FFFFFF (Almost Transparent White) to force drawing
-                            # Some OEMs ignore 0 (Transparent) and fall back to Black
-                            ALMOST_TRANSPARENT = 0x01FFFFFF 
-                            activity_window.setNavigationBarColor(ALMOST_TRANSPARENT)
-                            activity_window.setStatusBarColor(ALMOST_TRANSPARENT)
-                            
-                            # 5. DECOR VIEW (Icons & Layout Force)
+                            # Keep the WebView inside system bars and resize for IME.
+                            # NO_LIMITS forced Android to pan the entire header offscreen.
+                            activity_window.clearFlags(LayoutParams.FLAG_LAYOUT_NO_LIMITS | LayoutParams.FLAG_FULLSCREEN)
+                            activity_window.setSoftInputMode(LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+                            if Version.SDK_INT >= 30:
+                                activity_window.setDecorFitsSystemWindows(True)
+                            activity_window.addFlags(-2147483648)  # DRAWS_SYSTEM_BAR_BACKGROUNDS
+                            activity_window.setStatusBarColor(Color.parseColor("#E7F4FE"))
+                            activity_window.setNavigationBarColor(Color.parseColor("#E7F4FE"))
                             decorView = activity_window.getDecorView()
-                            
-                            # Light Status Bar (8192) + Light Nav Bar (16)
-                            # This makes icons dark (for light backgrounds)
-                            # We assume Light Mode default for now.
-                            # TODO: Toggle this based on Theme in future!
-                            # Light Status Bar (8192) + Light Nav Bar (16)
-                            SYSTEM_UI_FLAG_LIGHT_STATUS_BAR = 8192
-                            SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR = 16
-                            
-                            # CRITICAL: Flags to tell Layout to IGNORE bars (draw behind them)
-                            SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION = 512
-                            SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN = 1024
-                            SYSTEM_UI_FLAG_LAYOUT_STABLE = 256
-                            
                             sys_flags = decorView.getSystemUiVisibility()
-                            sys_flags |= SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                            sys_flags |= SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-                            sys_flags |= SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            sys_flags |= SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                            sys_flags |= SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            sys_flags &= ~(512 | 1024 | 4 | 2 | 2048 | 4096)
+                            sys_flags |= 8192 | 16 | 256
                             decorView.setSystemUiVisibility(sys_flags)
-                            
+
                             # 6. FORCE LAYOUT
                             decorView.requestLayout()
-                            log("Edge-to-Edge v0.55 Applied (With LightBar Flags).")
+                            log("System bars and keyboard resize applied.")
 
                             # 7. DIVIDER
                             if Version.SDK_INT >= 28:
@@ -312,6 +286,14 @@ class WebViewBridge:
                 if os.path.exists(settings_path):
                     with open(settings_path, 'r') as f:
                         settings_css = f.read()
+
+                # Load marked.js
+                marked_js = ""
+                marked_path = os.path.join(base_path, 'marked.min.js')
+                if os.path.exists(marked_path):
+                    with open(marked_path, 'r') as f:
+                        marked_js = f.read()
+
                 with open(os.path.join(base_path, 'script_v24.js'), 'r') as f:
                     js = f.read()
 
@@ -419,6 +401,9 @@ class WebViewBridge:
                 };
                 """
                 
+                from allma_model.ui.web_assets import inline_stylesheets
+                html = inline_stylesheets(html, base_path)
+
                 # INLINE REPLACEMENT
                 # CRITICAL FIX: Do NOT use f-strings for CSS/JS as they contain curly braces!
                 # Robust Injection Strategy:
@@ -436,10 +421,11 @@ class WebViewBridge:
                 };
                 """
                 
-                full_js = error_handler + "\n" + js_patch + "\n" + js
+                full_js = error_handler + "\n" + marked_js + "\n" + js_patch + "\n" + js
                 
                 # 2. Inject CSS/JS into head/body explicitly
-                style_tag = '<style>' + css + '\n' + settings_css + '</style>'
+                # Native window now reserves system bars; avoid double CSS insets.
+                style_tag = '<style>:root{--native-top:0px;--native-bottom:0px;}</style>'
                 script_tag = '<script>' + full_js + '</script>'
                 
                 html = html.replace('</head>', style_tag + '</head>')
@@ -535,16 +521,16 @@ class WebViewBridge:
             self.webview.evaluateJavascript(js_code, None)
         run_js()
 
-    def start_stream(self):
-        self.call_js_function("startStream")
+    def start_stream(self, request_id=None):
+        self.call_js_function("startStream", json.dumps(request_id))
 
-    def stream_chunk(self, text, is_thought=False):
+    def stream_chunk(self, text, is_thought=False, request_id=None):
         safe_text = json.dumps(text)
         is_thought_js = "true" if is_thought else "false"
-        self.call_js_function("streamChunk", f"{safe_text}, {is_thought_js}")
+        self.call_js_function("streamChunk", f"{safe_text}, {is_thought_js}, {json.dumps(request_id)}")
 
-    def end_stream(self):
-        self.call_js_function("endStream")
+    def end_stream(self, final_content=None, request_id=None):
+        self.call_js_function("endStream", f"{json.dumps(final_content)}, {json.dumps(request_id)}")
 
     def update_voice_internal_state(self, payload):
         if not self.webview:

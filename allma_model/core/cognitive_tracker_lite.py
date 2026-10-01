@@ -19,7 +19,7 @@ class CognitiveTrackerLite:
     Priority: LOW (4/10)
     """
     
-    def __init__(self):
+    def __init__(self, db_path="allma_modules.db"):
         # 3 core abilities (simplified from 10)
         self.abilities = {
             'understanding': 0.5,  # Comprehension level
@@ -32,7 +32,7 @@ class CognitiveTrackerLite:
         self.successful_interactions = 0
         
         # Persistence
-        self.state_manager = ModuleStateManager()
+        self.state_manager = ModuleStateManager(db_path)
         self._load_state()
 
     def _load_state(self):
@@ -150,7 +150,6 @@ class CognitiveTrackerLite:
             self.successful_interactions += 1
         else:
             # Decrease ability slightly
-            decrease = 0.02
             decrease = 0.02
             self.abilities[ability_name] = max(0.0, current - decrease)
 

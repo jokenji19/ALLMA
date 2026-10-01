@@ -13,7 +13,7 @@ package.domain = org.allma
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin,html,css,js
+source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin,html,css,js,woff2
 
 # (list) List of inclusions using pattern matching
 # Build 148: Explicit Code Blob Include
@@ -23,7 +23,7 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin,html,css,js
 source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer, unpacked_brain
+source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer, unpacked_brain, tmp_llama_check, allma_model/tests
 
 # (list) List of exclusions using pattern matching
 # Removed *.txt exclusion to allow requirements.txt
@@ -37,7 +37,7 @@ version = 0.56
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded# (list) Application requirements
 # Build 136: Full Restoration (Standard + Graphics + Math)
-requirements = python3,kivy,sqlite3,requests,plyer,kivymd,pillow,numpy,llamacpp_android,diskcache,typing_extensions,jinja2,MarkupSafe,pytz
+requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.1,sqlite3,requests,plyer,kivymd==1.2.0,pillow,numpy,llamacpp_android,diskcache,typing_extensions,jinja2,markupsafe,pytz
 
 # (str) Python for android branch to use, if not master, useful to try new features
 p4a.branch = develop
@@ -91,6 +91,7 @@ android.minapi = 24
 #android.sdk = 20
 
 # (str) Android NDK version to use
+android.ndk = 27d
 android.sdk_path = ./.buildozer_local/android/platform/android-sdk
 android.ndk_path = ./.buildozer_local/android/platform/android-ndk-r27d
 

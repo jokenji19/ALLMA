@@ -15,11 +15,19 @@ def iter_files():
         ROOT / "allma_model",
         ROOT / "assets",
         ROOT / "libs" / "recipes",
+        ROOT / "libs_custom",
+        ROOT / "benchmarks",
     ]
     include_files = [
         ROOT / "main.py",
         ROOT / "buildozer.spec",
         ROOT / "pack_brain.py",
+        ROOT / "tools" / "verify_android_apk.py",
+        ROOT / "service.py",
+        ROOT / "AndroidManifest.xml",
+        ROOT / "benchmark_iq.py",
+        ROOT / "reproduce_memory_fail.py",
+        ROOT / "verify_soul.py",
     ]
     exclude_dirs = {".git", ".buildozer", "__pycache__", "unpacked_brain", "bin", "venv", ".venv"}
     exclude_exts = {".pyc", ".bak"}
@@ -80,6 +88,8 @@ def main():
     args = parser.parse_args()
 
     state_path = ROOT / ".buildozer" / "allma_build_state.json"
+    if not args.dry_run:
+        run_command([sys.executable, "pack_brain.py"])
     current_hash = compute_hash()
     previous_state = load_state(state_path)
     needs_clean = previous_state is None or previous_state.get("hash") != current_hash
@@ -88,10 +98,14 @@ def main():
         print("clean_required" if needs_clean else "clean_not_required")
         return
 
-    run_command([sys.executable, "pack_brain.py"])
     if needs_clean:
         run_command(["buildozer", "android", "clean"])
     run_command(["buildozer", "android", "debug"])
+    apks = list((ROOT / "bin").glob("*.apk"))
+    if not apks:
+        raise RuntimeError("Build completed without an APK")
+    apk = max(apks, key=lambda path: path.stat().st_mtime_ns)
+    run_command([sys.executable, "tools/verify_android_apk.py", str(apk)])
     save_state(state_path, {"hash": current_hash})
 
 

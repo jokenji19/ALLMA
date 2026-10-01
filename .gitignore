@@ -89,3 +89,9 @@ unpacked_brain/
 
 # Visual Memory (troppo grande per Git)
 visual_memory/
+
+# Generated local checks and runtime state
+.coverage.*
+/tmp_llama_check/
+/beta_test_conversations.json
+/personality_state.json

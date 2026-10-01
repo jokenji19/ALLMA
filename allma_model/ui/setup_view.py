@@ -99,6 +99,8 @@ class SetupView(Screen):
         self.missing_models = []
         self.completion_callback = None
         self.tick = 0
+        self._downloading = False
+        self._heartbeat_event = None
 
     def set_callback(self, callback):
         self.completion_callback = callback
@@ -107,7 +109,13 @@ class SetupView(Screen):
         # Start check on enter
         Clock.schedule_once(self.check_requirements, 0.5)
         # Start visual heartbeat
-        Clock.schedule_interval(self._heartbeat, 0.5)
+        if self._heartbeat_event is None:
+            self._heartbeat_event = Clock.schedule_interval(self._heartbeat, 0.5)
+
+    def on_leave(self):
+        if self._heartbeat_event is not None:
+            self._heartbeat_event.cancel()
+            self._heartbeat_event = None
 
     def _heartbeat(self, dt):
         self.tick += 1
@@ -118,15 +126,36 @@ class SetupView(Screen):
              pass
 
     def check_requirements(self, dt):
-        self.ids.status_label.text = "CHECK FILE..."
-        self.missing_models = self.downloader.check_models_missing()
-        
-        if not self.missing_models:
-            self.finish_setup()
-        else:
-            self.start_downloads()
+        if getattr(self, '_checking', False) or self._downloading:
+            return
+        self._checking = True
+        self.ids.status_label.text = "VERIFICO MODELLO..."
+        # Hashing a large GGUF must not block Kivy's UI thread.
+        from threading import Thread
+        def check():
+            try:
+                missing = self.downloader.check_models_missing()
+                error = None
+            except Exception as exc:
+                missing, error = [], str(exc)
+            def apply(dt):
+                self._checking = False
+                if error:
+                    self.ids.status_label.text = "VERIFICA NON RIUSCITA"
+                    self.ids.details_label.text = error
+                    return
+                self.missing_models = missing
+                if missing:
+                    self.start_downloads()
+                else:
+                    self.finish_setup()
+            Clock.schedule_once(apply)
+        Thread(target=check, daemon=True, name='ModelVerification').start()
 
     def start_downloads(self):
+        if self._downloading:
+            return
+        self._downloading = True
         count = len(self.missing_models)
         self.ids.status_label.text = f"SCARICO {count} MODULI"
         self.ids.details_label.text = "Inizio download... NON DIINSTALLARE!"
@@ -183,6 +212,7 @@ class SetupView(Screen):
         Clock.schedule_once(lambda dt: self._handle_complete(success, error_msg))
 
     def _handle_complete(self, success, error_msg):
+        self._downloading = False
         if success:
             self.finish_setup()
         else:

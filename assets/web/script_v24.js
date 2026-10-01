@@ -15,8 +15,78 @@ if (!window.pyBridge) {
 const chatContainer = document.getElementById('chat-container');
 const messageInput = document.getElementById('message-input');
 
+let chatBusy = false;
+let backendBusy = false;
+let newChatPending = false;
+let activeRequestId = null;
+let lastRequestId = 0;
+let drainTimer = null;
+
+const emptyChatMarkup = chatContainer.innerHTML;
+function updateComposer() {
+    document.getElementById('send-btn').disabled = chatBusy || !messageInput.value.trim();
+    document.getElementById('send-btn').hidden = chatBusy;
+    document.getElementById('voice-mode-btn').hidden = chatBusy;
+}
+messageInput.addEventListener('input', updateComposer);
+function prepareConversation() {
+    const empty = chatContainer.querySelector('.empty-chat');
+    if (empty) empty.remove();
+}
+
+function setChatBusy(busy) {
+    chatBusy = busy;
+    messageInput.disabled = busy;
+    document.getElementById('chat-status').textContent = busy ? (newChatPending ? 'Nuova conversazione…' : 'Sto rispondendo…') : 'Parliamone insieme';
+    updateComposer();
+    const stop = document.getElementById('cancel-generation-btn');
+    if (stop) {
+        stop.hidden = !busy;
+        stop.disabled = newChatPending;
+        stop.textContent = 'Interrompi';
+    }
+}
+
+window.chatNotice = function (text) {
+    const notice = document.getElementById('chat-notice');
+    if (notice) notice.textContent = text;
+};
+
+window.turnFinished = function (requestId) {
+    if (requestId !== lastRequestId) return;
+    backendBusy = false;
+    setChatBusy(newChatPending || currentStreamBubble !== null);
+};
+
+window.cancelGeneration = function () {
+    if (!chatBusy) return;
+    const stop = document.getElementById('cancel-generation-btn');
+    if (stop) { stop.disabled = true; stop.textContent = 'Interruzione…'; }
+    window.pyBridge.postMessage(JSON.stringify({type: 'action', action: 'cancel_generation'}));
+};
+
+window.newChatReady = function () {
+    backendBusy = false;
+    responseBuffer = '';
+    finishStreamUI();
+    activeRequestId = null;
+    newChatPending = false;
+    chatContainer.innerHTML = emptyChatMarkup;
+    window.chatNotice('');
+    setChatBusy(false);
+};
+
+window.newChatFailed = function () {
+    backendBusy = false;
+    newChatPending = false;
+    setChatBusy(false);
+    window.chatNotice('Non è stato possibile aprire una nuova chat. Riprova.');
+};
+
 // --- MESSAGING ---
 function sendMessage() {
+    if (chatBusy || newChatPending) return;
+    window.chatNotice('');
     const text = messageInput.value.trim();
     if (text) {
         addMessage(text, 'user', null);
@@ -34,12 +104,52 @@ function sendMessage() {
     }
 }
 
+// Only inert formatting is allowed in generated Markdown, including streamed text.
+function renderSafeMarkdown(target, text) {
+    if (typeof marked === 'undefined') {
+        target.textContent = text;
+        return;
+    }
+    const template = document.createElement('template');
+    template.innerHTML = marked.parse(String(text));
+    const allowed = new Set(['P', 'BR', 'STRONG', 'EM', 'DEL', 'S', 'CODE', 'PRE',
+        'BLOCKQUOTE', 'UL', 'OL', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+        'HR', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'A']);
+    function clean(parent) {
+        for (const node of Array.from(parent.childNodes)) {
+            if (node.nodeType === 3) continue;
+            if (node.nodeType !== 1 || !allowed.has(node.tagName)) {
+                node.remove();
+                continue;
+            }
+            const href = node.tagName === 'A' ? node.getAttribute('href') : null;
+            for (const attr of Array.from(node.attributes)) node.removeAttribute(attr.name);
+            if (href) {
+                try {
+                    const url = new URL(href); // Absolute links only; never javascript/data/file.
+                    if (['https:', 'http:'].includes(url.protocol)) {
+                        node.setAttribute('href', url.href);
+                        node.setAttribute('rel', 'noopener noreferrer');
+                    }
+                } catch (_) { /* Leave unsafe/relative links as plain text. */ }
+            }
+            clean(node);
+        }
+    }
+    clean(template.content);
+    target.replaceChildren(template.content);
+}
+
 function addMessage(text, sender, thoughtText) {
     const template = document.getElementById(sender === 'user' ? 'tmpl-user' : 'tmpl-bot');
     const clone = template.content.cloneNode(true);
 
     const contentSpan = clone.querySelector('.content');
-    contentSpan.textContent = text;
+    if (typeof marked !== 'undefined' && sender === 'bot') {
+        renderSafeMarkdown(contentSpan, text);
+    } else {
+        contentSpan.textContent = text;
+    }
 
     if (sender === 'bot' && thoughtText) {
         const reasoningContainer = clone.querySelector('.reasoning-container');
@@ -51,12 +161,14 @@ function addMessage(text, sender, thoughtText) {
     }
 
     const wrapper = clone.querySelector('.message-wrapper');
+    prepareConversation();
     chatContainer.appendChild(wrapper);
     scrollToBottom();
 }
 
 function toggleReasoning(header) {
-    header.parentElement.classList.toggle('open');
+    const expanded = header.parentElement.classList.toggle('open');
+    header.setAttribute('aria-expanded', String(expanded));
 }
 
 function scrollToBottom(force = false) {
@@ -116,6 +228,7 @@ window.setInputText = function (text) {
     const input = document.getElementById('message-input');
     if (input) {
         input.value = text;
+        updateComposer();
         input.focus();
     }
 };
@@ -162,14 +275,30 @@ function drainBuffer() {
     if (responseBuffer.length > 0) {
         // Dynamic chunk size: if buffer gets too large (backend is VERY fast), take more chars to catch up smoothly
         let charsToTake = 1;
-        if (responseBuffer.length > 500) charsToTake = 6;
-        else if (responseBuffer.length > 200) charsToTake = 3;
-        else if (responseBuffer.length > 50) charsToTake = 2;
+        if (responseBuffer.length > 600) charsToTake = 12;
+        else if (responseBuffer.length > 300) charsToTake = 6;
+        else if (responseBuffer.length > 100) charsToTake = 3;
 
-            const chunk = responseBuffer.substring(0, charsToTake);
-            responseBuffer = responseBuffer.substring(charsToTake);
-            currentStreamBubble.content.textContent += chunk;
-            scrollToBottom();
+        const chunk = responseBuffer.substring(0, charsToTake);
+        responseBuffer = responseBuffer.substring(charsToTake);
+
+        currentStreamBubble.rawFullText = (currentStreamBubble.rawFullText || "") + chunk;
+
+        // Throttling Markdown parsing to 150ms (or when backend finishes) to prevent DOM thrashing
+        const now = Date.now();
+        const lastParse = currentStreamBubble.lastParse || 0;
+        const timeSinceLastParse = now - lastParse;
+
+        if (typeof marked !== 'undefined') {
+            if (timeSinceLastParse > 150 || (responseBuffer.length === 0 && isBackendFinished)) {
+                renderSafeMarkdown(currentStreamBubble.content, currentStreamBubble.rawFullText);
+                currentStreamBubble.lastParse = now;
+            }
+        } else {
+            currentStreamBubble.content.textContent = currentStreamBubble.rawFullText;
+        }
+
+        scrollToBottom();
     }
 
     if (responseBuffer.length === 0 && isBackendFinished) {
@@ -177,11 +306,13 @@ function drainBuffer() {
     } else {
         // Sinuous delay: ~15ms base + slight human randomizer
         let delay = Math.random() * 10 + 15;
-        setTimeout(drainBuffer, delay);
+        drainTimer = setTimeout(drainBuffer, delay);
     }
 }
 
 function finishStreamUI() {
+    if (drainTimer) clearTimeout(drainTimer);
+    drainTimer = null;
     isDraining = false;
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = null;
@@ -193,6 +324,8 @@ function finishStreamUI() {
     }
     currentStreamBubble = null;
     streamStartTime = 0;
+    activeRequestId = null;
+    setChatBusy(newChatPending || backendBusy);
 }
 
 // --- SIDEBAR LOGIC (v0.47) ---
@@ -206,10 +339,12 @@ function toggleSidebar() {
 }
 
 function startNewChat() {
-    console.log("New Chat Started");
-    toggleSidebar();
-    const chatContainer = document.getElementById('chat-container');
-    chatContainer.innerHTML = '<div class="spacer-top"></div>';
+    if (newChatPending) return;
+    newChatPending = true;
+    setChatBusy(true);
+    if (document.getElementById('sidebar').classList.contains('active')) toggleSidebar();
+    window.chatNotice('Apertura nuova chat…');
+    window.pyBridge.postMessage(JSON.stringify({type: 'action', action: 'new_chat'}));
 }
 
 // --- VOICE MODE (v0.55) ---
@@ -1302,7 +1437,15 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ---------------------------
-window.startStream = function () {
+window.startStream = function (requestId = null) {
+    if (requestId !== null) {
+        if (requestId <= lastRequestId) return;
+        if (activeRequestId !== null && activeRequestId !== requestId) return;
+        backendBusy = true;
+        activeRequestId = requestId;
+        lastRequestId = requestId;
+    }
+    setChatBusy(true);
     if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
         VoiceFX.setState('thinking');
         VoiceFX.bump(0.35);
@@ -1328,11 +1471,12 @@ window.startStream = function () {
     // Create Timer
     const timerDiv = document.createElement('div');
     timerDiv.className = 'generation-timer';
-    timerDiv.innerHTML = '<span>⚡</span> <span class="timer-text">0.0s</span>';
+    timerDiv.innerHTML = '<span>Elaborazione ·</span> <span class="timer-text">0.0s</span>';
 
     const wrapper = clone.querySelector('.message-wrapper');
-    wrapper.appendChild(timerDiv);
+    reasoningContainer.appendChild(timerDiv);
 
+    prepareConversation();
     chatContainer.appendChild(wrapper);
     scrollToBottom(true);
 
@@ -1361,13 +1505,13 @@ window.startStream = function () {
     }, 200);
 };
 
-window.streamChunk = function (text, isThought) {
+window.streamChunk = function (text, isThought, requestId = null) {
+    if (requestId !== null && requestId !== activeRequestId) return;
     if (!currentStreamBubble) window.startStream();
     if (isThought) {
         if (currentStreamBubble.reasoningContainer.classList.contains('hidden')) {
             currentStreamBubble.reasoningContainer.classList.remove('hidden');
-            // Auto-open while streaming to show progress
-            currentStreamBubble.reasoningContainer.classList.add('open');
+            // The user chooses whether to expand response details.
         }
         currentStreamBubble.reasoning.textContent += text;
         scrollToBottom();
@@ -1391,7 +1535,7 @@ window.streamChunk = function (text, isThought) {
             if (currentStreamBubble && streamStartTime > 0) {
                 const duration = (Date.now() - streamStartTime) / 1000;
                 const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
-                if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (Thought End)";
+                if (textSpan) textSpan.textContent = duration.toFixed(2) + " s";
             }
         }
 
@@ -1406,7 +1550,14 @@ window.streamChunk = function (text, isThought) {
     }
 };
 
-window.endStream = function () {
+window.endStream = function (finalContent, requestId = null) {
+    if (requestId !== null && requestId !== activeRequestId) return;
+    if (typeof finalContent === 'string' && currentStreamBubble) {
+        responseBuffer = '';
+        currentStreamBubble.rawFullText = finalContent;
+        // Final text is authoritative even if the token stream was revised.
+        renderSafeMarkdown(currentStreamBubble.content, finalContent);
+    }
     isBackendFinished = true;
     if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
         VoiceFX.setState(VoiceFX.getMicRequested && VoiceFX.getMicRequested() ? 'listening' : 'idle');
@@ -1421,7 +1572,7 @@ window.endStream = function () {
     if (currentStreamBubble && streamStartTime > 0 && !currentStreamBubble.timerFrozen) {
         const duration = (Date.now() - streamStartTime) / 1000;
         const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
-        if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (Core Done)";
+        if (textSpan) textSpan.textContent = duration.toFixed(2) + " s";
     }
 
     // If the buffer is already empty and draining finished, clean up UI instantly.

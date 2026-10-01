@@ -19,7 +19,7 @@ class LanguageProcessorLite:
     Priority: MEDIUM (5/10)
     """
     
-    def __init__(self):
+    def __init__(self, db_path="allma_modules.db"):
         # Intent detection keywords
         self.intent_patterns = {
             'question': ['?', 'come', 'cosa', 'quando', 'dove', 'perché', 'chi', 'quale'],
@@ -49,7 +49,7 @@ class LanguageProcessorLite:
         }
         
         # Persistence
-        self.state_manager = ModuleStateManager()
+        self.state_manager = ModuleStateManager(db_path)
         self._load_state()
 
     def _load_state(self):

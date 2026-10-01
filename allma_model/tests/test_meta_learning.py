@@ -11,12 +11,29 @@ from allma_model.incremental_learning.meta_learning_system import (
     LearningExperience,
     LearningInsight
 )
-from allma_model.incremental_learning.user_profile import UserProfile
+from types import SimpleNamespace
+
+class ProfileInput:
+    """Fixture for the numeric preference protocol consumed by MetaLearningSystem."""
+    def __init__(self, user_id):
+        self.preferences = SimpleNamespace(technical_level=0.5)
+        self._interactions = []
+    def update_from_interaction(self, interaction):
+        self._interactions.append(interaction)
+        self.preferences.technical_level = self.get_communication_style()['technical_level']
+    def get_communication_style(self):
+        rows = self._interactions
+        def average(key):
+            return sum(r.get(key, 0.5) for r in rows) / len(rows) if rows else 0.5
+        return {'technical_level': average('technical_feedback'),
+                'verbosity': average('verbosity_feedback'), 'formality': average('formality_feedback'),
+                'preferred_topics': list({r['topic'] for r in rows if 'topic' in r}), 'avoided_topics': []}
+
 
 def test_strategy_adaptation():
     """Test dell'adattamento delle strategie al profilo utente"""
     meta_system = MetaLearningSystem()
-    user_profile = UserProfile("test_user")
+    user_profile = ProfileInput("test_user")
     
     # Simula una serie di interazioni per costruire il profilo
     interactions = [
@@ -86,7 +103,7 @@ def test_learning_from_interaction():
 def test_learning_recommendations():
     """Test delle raccomandazioni di apprendimento"""
     meta_system = MetaLearningSystem()
-    user_profile = UserProfile("test_user")
+    user_profile = ProfileInput("test_user")
     
     # Imposta il profilo utente
     user_profile.update_from_interaction({
@@ -137,7 +154,7 @@ def test_strategy_evolution():
 def test_strategy_compatibility():
     """Test della compatibilità delle strategie con il profilo utente"""
     meta_system = MetaLearningSystem()
-    user_profile = UserProfile("test_user")
+    user_profile = ProfileInput("test_user")
     
     # Simula una serie di interazioni per costruire un profilo tecnico
     interactions = [

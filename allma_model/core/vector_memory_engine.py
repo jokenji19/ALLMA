@@ -15,13 +15,11 @@ Architettura:
     RAM Index (self._index):
       numpy matrix (n_docs × vocab_size) — rebuild on load, aggiornato incrementalmente
 
-Complessità:
-    Inserimento:  O(vocab_size)   — encoding TF-IDF + INSERT SQL
-    Ricerca:      O(n)            — prodotto matriciale NumPy vs tutti i vettori in RAM
-    (già O(n) prima, ma ora:
-      - nessun ricalcolo del vocabolario per ogni query
-      - nessun re-fit del vectorizer ad ogni retrieve_relevant_context()
-      - indice persistente su disco: si ricarica in <100ms anche con 10k memorie)
+Consistenza:
+    Il testo SQLite è la fonte autorevole. Il vocabolario e tutti i vettori
+    vengono ricostruiti al riavvio e alla prima ricerca dopo una modifica.
+    Il confronto dimensionale resta coerente; il costo della ricostruzione
+    cresce con il corpus e deve essere misurato sul dispositivo di destinazione.
 
 Uso:
     engine = VectorMemoryEngine(db_path="data/allma_vectors.db")
@@ -147,7 +145,7 @@ class _LightTfidf:
         vec = np.zeros(len(self.vocab), dtype=np.float32)
         for word, cnt in counts.items():
             if word in self.vocab:
-                idf = math.log((self.n_docs + 1) / (self.df.get(word, 0) + 1))
+                idf = 1.0 + math.log((self.n_docs + 1) / (self.df.get(word, 0) + 1))
                 vec[self.vocab[word]] = cnt * idf
         norm = np.linalg.norm(vec)
         if norm > 0:
@@ -244,24 +242,14 @@ class VectorMemoryEngine:
             c.execute("PRAGMA journal_mode=WAL;")
             c.execute("PRAGMA synchronous=NORMAL;")
             c.executescript(self.SCHEMA)
+            columns = {row[1] for row in c.execute("PRAGMA table_info(memories)")}
+            if "source_key" not in columns:
+                c.execute("ALTER TABLE memories ADD COLUMN source_key TEXT")
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_source ON memories(user_id, source_key)")
 
     def _load_state(self) -> None:
-        """Carica lo stato TF-IDF e ricostruisce l'indice RAM."""
-        try:
-            with self._conn() as c:
-                row = c.execute("SELECT state FROM tfidf_state WHERE id=1").fetchone()
-                if row:
-                    self._tfidf = _LightTfidf.from_dict(json.loads(row[0]))
-
-                rows = c.execute(
-                    "SELECT id, user_id, vector_blob FROM memories WHERE vector_blob IS NOT NULL"
-                ).fetchall()
-                self._index = [
-                    (r[0], r[1], _blob_to_vec(r[2])) for r in rows
-                ]
-            logger.info(f"[VectorMemory] Loaded {len(self._index)} memories from {self.db_path}")
-        except Exception as e:
-            logger.warning(f"[VectorMemory] Could not load state: {e}")
+        # Content is authoritative: old releases persisted incompatible vectors.
+        self._rebuild_index()
 
     def _save_tfidf_state(self, cursor: sqlite3.Cursor) -> None:
         state_json = json.dumps(self._tfidf.to_dict())
@@ -278,6 +266,7 @@ class VectorMemoryEngine:
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
         timestamp: Optional[datetime] = None,
+        source_key: Optional[str] = None,
     ) -> int:
         """
         Aggiunge una memoria al DB e all'indice RAM.
@@ -300,10 +289,16 @@ class VectorMemoryEngine:
 
             # 3. Inserisci su DB
             with self._conn() as c:
+                if source_key is not None:
+                    existing = c.execute("SELECT id FROM memories WHERE user_id=? AND source_key=?",
+                                         (user_id, source_key)).fetchone()
+                    if existing:
+                        self._index_dirty = True
+                        return existing[0]
                 cursor = c.execute(
-                    "INSERT INTO memories (user_id, content, vector_blob, timestamp, metadata) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (user_id, content, blob, ts, json.dumps(metadata))
+                    "INSERT INTO memories (user_id, content, vector_blob, timestamp, metadata, source_key) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (user_id, content, blob, ts, json.dumps(metadata), source_key)
                 )
                 row_id = cursor.lastrowid
                 self._save_tfidf_state(cursor)
@@ -324,7 +319,8 @@ class VectorMemoryEngine:
         user_id: str,
         query: str,
         top_k: int = 5,
-        use_expansion: bool = True
+        use_expansion: bool = True,
+        allowed_roles=None
     ) -> List[Dict[str, Any]]:
         """
         Ricerca semantica: restituisce le `top_k` memorie più simili alla query.
@@ -332,11 +328,13 @@ class VectorMemoryEngine:
         Returns:
             Lista di dict: {id, content, score, metadata, timestamp}
         """
-        if not self._index:
+        if not query.strip() or top_k <= 0:
             return []
 
         with self._lock:
-            if self._index_dirty:
+            with self._conn() as c:
+                signature = c.execute("SELECT COUNT(*), MAX(id) FROM memories").fetchone()
+            if self._index_dirty or signature != getattr(self, '_signature', None):
                 self._rebuild_index()
 
             # Filtra per user_id
@@ -371,7 +369,9 @@ class VectorMemoryEngine:
                 max_scores = np.maximum(max_scores, scores_variant)
 
             # Top-k basato sul Max-Score
-            top_indices = np.argsort(max_scores)[::-1][:top_k]
+            top_indices = np.argsort(max_scores)[::-1]
+            if allowed_roles is None:
+                top_indices = top_indices[:top_k]
 
         # Fetch da DB i record selezionati
         selected_ids = [ids[i] for i in top_indices]
@@ -386,15 +386,20 @@ class VectorMemoryEngine:
                 row_map = {r[0]: r for r in rows}
 
             for i, sid in zip(top_indices, selected_ids):
-                if sid in row_map:
+                if sid in row_map and max_scores[i] > 0:
                     r = row_map[sid]
+                    metadata = json.loads(r[2] or '{}')
+                    if allowed_roles is not None and (metadata.get('role') not in allowed_roles or metadata.get('is_valid') is False):
+                        continue
                     results.append({
                         "id": r[0],
                         "content": r[1],
                         "score": float(max_scores[i]),
-                        "metadata": json.loads(r[2] or "{}"),
+                        "metadata": metadata,
                         "timestamp": r[3],
                     })
+                    if len(results) >= top_k:
+                        break
         except Exception as e:
             logger.error(f"[VectorMemory] Search fetch error: {e}")
 
@@ -414,7 +419,8 @@ class VectorMemoryEngine:
         with self._lock:
             with self._conn() as c:
                 c.execute("DELETE FROM memories WHERE user_id=?", (user_id,))
-            self._index = [(rid, uid, v) for rid, uid, v in self._index if uid != user_id]
+            self._index_dirty = True
+            self._rebuild_index()
 
     # ── Internal ──────────────────────────────────────────
 
@@ -432,6 +438,9 @@ class VectorMemoryEngine:
                     "SELECT id, user_id, content FROM memories"
                 ).fetchall()
 
+            self._tfidf = _LightTfidf()
+            for _, _, content in rows:
+                self._tfidf.partial_fit(content)
             new_index = []
             updated_blobs = []
             for row_id, uid, content in rows:
@@ -449,6 +458,8 @@ class VectorMemoryEngine:
 
             self._index = new_index
             self._index_dirty = False
+            self._signature = (len(rows), max((row[0] for row in rows), default=None))
             logger.info(f"[VectorMemory] Index rebuilt: {len(self._index)} entries")
         except Exception as e:
             logger.error(f"[VectorMemory] Rebuild failed: {e}", exc_info=True)
+            raise

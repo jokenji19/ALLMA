@@ -3,9 +3,13 @@
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 import json
+import os
+import hashlib
+from allma_model.utils.persistence import atomic_write_json
 import re
 from collections import defaultdict, Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict, is_dataclass
+from enum import Enum
 import numpy as np
 from allma_model.utils.text_processing import SimpleTfidf, cosine_similarity
 # V6 Sprint 3: Vector Engine
@@ -42,8 +46,11 @@ class Message:
 class ConversationalMemory:
     """Sistema di memoria conversazionale."""
     
-    def __init__(self, load_persistent: bool = True):
+    def __init__(self, load_persistent: bool = True, storage_dir: Optional[str] = None):
         """Inizializza il sistema di memoria conversazionale."""
+        self.storage_dir = os.path.abspath(storage_dir or os.getcwd())
+        self.memory_path = os.path.join(self.storage_dir, "allma_memory.json")
+        self.user_data = {}
         self.conversations: Dict[str, List[Conversation]] = defaultdict(list)
         self.vectorizer = SimpleTfidf()
         self.conversation_vectors = {}
@@ -57,7 +64,7 @@ class ConversationalMemory:
         # V6 Sprint 3: Vector Engine (SQLite-backed)
         if _VECTOR_ENGINE_AVAILABLE:
             try:
-                self.vector_engine = VectorMemoryEngine(db_path="data/allma_vectors.db")
+                self.vector_engine = VectorMemoryEngine(db_path=os.path.join(self.storage_dir, "data", "allma_vectors.db"))
                 import logging
                 logging.getLogger(__name__).info(
                     f"[V6.3] VectorMemoryEngine attivo: {self.vector_engine.count()} memorie in DB."
@@ -71,7 +78,26 @@ class ConversationalMemory:
         
         if load_persistent:
             self.load_memory()
+            self._index_messages()
         
+    def _index_messages(self, messages=None):
+        if self.vector_engine is None:
+            return
+        for message in self.messages if messages is None else messages:
+            if not message.content.strip() or message.metadata.get('is_valid') is False:
+                continue
+            uid = message.user_id or message.metadata.get('user_id')
+            if not uid:
+                uid = next((u for u, cs in self.conversations.items()
+                            if any(c.id == message.conversation_id for c in cs)), None)
+            if not uid:
+                continue  # Never guess the owner of legacy records.
+            key = hashlib.sha256(json.dumps([message.conversation_id, message.role,
+                message.timestamp.isoformat(), message.content], ensure_ascii=False).encode()).hexdigest()
+            self.vector_engine.add(uid, message.content, metadata={**message.metadata,
+                'role': message.role, 'conversation_id': message.conversation_id},
+                timestamp=message.timestamp, source_key=key)
+
     def add_trauma_event(self, description: str, context: Dict = None) -> None:
         """
         Axiom 3: Sedimentation.
@@ -494,7 +520,11 @@ class ConversationalMemory:
         except Exception as e:
             import logging
             logging.error(f"[ConversationalMemory] GC Condensation failed: {e}", exc_info=True)
-            
+            return 0  # Keep original records when extraction fails.
+
+        if not extracted_facts or not any(isinstance(v, str) and v.strip() for v in extracted_facts.values()):
+            return 0
+        self.save_memory()  # Commit facts before removing source messages.
         # Ora che abbiamo salvato i macro concetti, procediamo col wiping pesante
         
         with self.lock:
@@ -543,6 +573,7 @@ class ConversationalMemory:
             )
             self.messages.append(message)
             self.save_memory()
+            self._index_messages([message])
 
     def save_interaction(self, user_id: str, message: str, role: str):
         """Salva una interazione nella memoria."""
@@ -641,7 +672,9 @@ class ConversationalMemory:
         """
         # If user_id is not provided, try to infer or get all (simplified for now)
         # For mobile single user, we iterate all.
-        msgs = self.messages[-limit:]
+        owned = [m for m in self.messages if user_id is None or m.user_id == user_id
+                 or (m.user_id is None and m.conversation_id in {c.id for c in self.conversations.get(user_id, [])})]
+        msgs = owned[-limit:] if limit > 0 else []
         
         history = []
         for m in msgs:
@@ -764,10 +797,18 @@ class ConversationalMemory:
         """JSON serializer for objects not serializable by default json code"""
         if isinstance(obj, datetime):
             return obj.isoformat()
+        if isinstance(obj, Enum):
+            return obj.value
+        if is_dataclass(obj) and not isinstance(obj, type):
+            return asdict(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, np.generic):
+            return obj.item()
         raise TypeError (f"Type {type(obj)} not serializable")
 
     def save_memory(self):
-        """Salva lo stato della memoria su file JSON."""
+        """Serialize and replace while holding the same lock as mutations."""
         with self.lock:
             data = {
                 "conversations": {
@@ -792,43 +833,16 @@ class ConversationalMemory:
                         "user_id": getattr(m, 'user_id', None)
                     } for m in self.messages
                 ],
+                "user_data": self.user_data,
                 "trauma_log": self.trauma_log  # AXIOM 3: Persist Scars
             }
-        
-        try:
-            import os
-            # Use internal storage path or current dir
-            file_path = os.path.join(os.getcwd(), 'allma_memory.json')
-            temp_path = file_path + ".tmp"
-            
-            # ATOMIC WRITE: Write to .tmp first, then rename
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, default=self._json_serial, ensure_ascii=False, indent=2)
-                f.flush()
-                os.fsync(f.fileno()) # Ensure write to disk
-            
-            # Rename is atomic on POSIX
-            if os.path.exists(file_path):
-                os.remove(file_path) # Windows compatibility (rename might fail if exists)
-            os.rename(temp_path, file_path)
-            
-            print(f"💾 MEMORY SAVED (ATOMIC) to {file_path}")
-        except Exception as e:
-            print(f"❌ MEMORY SAVE FAILED: {e}")
-            import logging
-            logging.error(f"[ConversationalMemory] Save failed: {e}", exc_info=True)
-            # Try cleanup
-            if 'temp_path' in locals() and os.path.exists(temp_path):
-                try: 
-                    os.remove(temp_path)
-                except Exception as cleanup_err: 
-                    logging.error(f"[ConversationalMemory] Cleanup failed during save error: {cleanup_err}")
+            atomic_write_json(self.memory_path, data, default=self._json_serial)
 
     def load_memory(self):
         """Carica lo stato della memoria da file JSON."""
         try:
             import os
-            file_path = os.path.join(os.getcwd(), 'allma_memory.json')
+            file_path = self.memory_path
             
             with self.lock:
                 if not os.path.exists(file_path):

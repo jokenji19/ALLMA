@@ -120,12 +120,12 @@ class ModuleOrchestrator:
         Returns:
             Risultati aggregati da tutti i moduli
         """
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         # Filtra moduli abilitati e ordinali per priorità
         active_modules = [
             m for m in self.modules.values()
-            if m.enabled and self._is_relevant(m, intent, context)
+            if m.enabled and self._is_relevant(m, intent, dict(context, user_input=user_input))
         ]
         active_modules.sort(key=lambda x: x.priority, reverse=True)
         
@@ -140,11 +140,11 @@ class ModuleOrchestrator:
                     f"Budget exceeded, skipping module '{module.name}' "
                     f"(used {time_used_ms}ms / {self.performance_budget}ms)"
                 )
-                break
+                continue
             
             # Esecuzione modulo
             try:
-                module_start = time.time()
+                module_start = time.perf_counter()
                 
                 # Chiama metodo 'process' del modulo se esiste
                 if hasattr(module.instance, 'process'):
@@ -155,7 +155,7 @@ class ModuleOrchestrator:
                     logger.warning(f"Module '{module.name}' has no process/analyze method")
                     continue
                 
-                module_time_ms = (time.time() - module_start) * 1000
+                module_time_ms = (time.perf_counter() - module_start) * 1000
                 
                 # Update stats
                 module.success_count += 1
@@ -173,6 +173,7 @@ class ModuleOrchestrator:
                 )
                 
             except Exception as e:
+                time_used_ms += (time.perf_counter() - module_start) * 1000
                 module.failure_count += 1
                 logger.error(f"Module '{module.name}' failed: {e}", exc_info=True)
                 
@@ -181,7 +182,7 @@ class ModuleOrchestrator:
                     self.disable_module(module.name)
                     logger.error(f"Module '{module.name}' auto-disabled (too many failures)")
         
-        total_time_ms = (time.time() - start_time) * 1000
+        total_time_ms = (time.perf_counter() - start_time) * 1000
         
         # Log performance
         self.execution_history.append({
@@ -191,6 +192,8 @@ class ModuleOrchestrator:
             'budget_used_pct': (time_used_ms / self.performance_budget) * 100
         })
         
+        del self.execution_history[:-100]
+
         logger.info(
             f"Orchestrator executed {executed_count} modules in {total_time_ms:.1f}ms "
             f"({time_used_ms:.0f}/{self.performance_budget}ms budget)"
@@ -198,18 +201,21 @@ class ModuleOrchestrator:
         
         return self.coalescence(results)
     
-    def _is_relevant(self, module: ModuleConfig, intent: Optional[str], context: Dict[str, Any] = {}) -> bool:
+    def _is_relevant(self, module: ModuleConfig, intent: Optional[str], context: Optional[Dict[str, Any]] = None) -> bool:
         """
         Determina se un modulo è rilevante per l'intent corrente.
         
         Future enhancement: intent-based filtering
         Per ora ritorna sempre True (esegui tutti i moduli abilitati)
         """
+        context = context or {}
+        intent = {'domanda': 'question', 'richiesta': 'request', 'emozione': 'emotional',
+                  'accordo': 'agreement', 'disaccordo': 'disagreement', 'chiarimento': 'confused'}.get(intent, intent)
         if module.priority == ModulePriority.CRITICAL:
             return True
             
         # Cognitive Tracker is always relevant for monitoring
-        if module.name == 'cognitive_tracker':
+        if module.name in {'cognitive_tracker', 'cognitive_tracking'}:
             return True
             
         # Default to True if no intent provided (conservative fallback)
@@ -223,15 +229,17 @@ class ModuleOrchestrator:
             intensity = context.get('emotional_intensity', 0.0)
             return (intent in emotional_intents) or (intensity > 0.6)
             
-        if module.name == 'curiosity_system':
+        if module.name in {'curiosity_system', 'curiosity'}:
             curiosity_intents = {'question', 'learning', 'unknown', 'confused', 'curiosity'}
-            return intent in curiosity_intents
+            return intent in curiosity_intents or intent == 'request'
             
-        if module.name == 'meta_learner':
+        if module.name in {'meta_learner', 'meta_learning'}:
             learning_intents = {'learning', 'study', 'analyze', 'explain', 'practice'}
-            return intent in learning_intents
+            return True  # this adapter learns feedback and explicit style requests on every turn
             
-        if module.name == 'creativity_enhancer':
+        if module.name in {'creativity_enhancer', 'creativity'}:
+            if hasattr(module.instance, 'is_creative_request'):
+                return module.instance.is_creative_request(context.get('user_input', ''))
             creative_intents = {'creative', 'story', 'generate', 'write', 'imagine'}
             return intent in creative_intents
             
@@ -278,6 +286,17 @@ class ModuleOrchestrator:
             'raw_results': results
         }
         
+        # All current adapters share these fields; preserve their outputs.
+        for result in results.values():
+            if not isinstance(result, dict):
+                continue
+            for field in ('system_instruction', 'user_prefix'):
+                value = result.get(field, [])
+                if isinstance(value, str):
+                    value = [value]
+                if isinstance(value, (list, tuple)):
+                    merged[field].extend(v for v in value if isinstance(v, str) and v.strip())
+
         # 1. Emotional Adaptation
         if 'emotional_adaptation' in results:
             emo_res = results['emotional_adaptation']
@@ -287,8 +306,8 @@ class ModuleOrchestrator:
                 merged['user_prefix'].append(emo_res['response'])
                 
         # 2. Curiosity System
-        if 'curiosity_system' in results:
-            cur_res = results['curiosity_system']
+        if 'curiosity_system' in results or 'curiosity' in results:
+            cur_res = results.get('curiosity_system') or results.get('curiosity')
             if 'questions' in cur_res:
                 questions = cur_res['questions']
                 if questions:
@@ -302,7 +321,7 @@ class ModuleOrchestrator:
         # Check both keys for safety during migration, prioritize 'meta_learning'
         meta_res = results.get('meta_learning') or results.get('meta_learner')
         
-        if meta_res:
+        if isinstance(meta_res, dict) and meta_res.get('confidence', 0.0) > 0.55:
             
             # Phase 19: Style & Communication
             if 'suggested_style' in meta_res:
@@ -323,10 +342,14 @@ class ModuleOrchestrator:
                 merged['system_instruction'].append(f"[MUSE]: {muse_res['instruction']}")
 
         # 5. Cognitive Tracker
-        if 'cognitive_tracker' in results:
-            cog_res = results['cognitive_tracker']
+        if 'cognitive_tracker' in results or 'cognitive_tracking' in results:
+            cog_res = results.get('cognitive_tracker') or results.get('cognitive_tracking')
             merged['memory_updates'].update(cog_res.get('abilities', {}))
             
+        # Remove identical hints from overlapping adapters without changing order.
+        merged['user_prefix'] = list(dict.fromkeys(merged['user_prefix']))
+        merged['system_instruction'] = list(dict.fromkeys(merged['system_instruction']))
+
         # Cleanup
         merged['user_prefix'] = " ".join(merged['user_prefix'])
         merged['system_instruction'] = "\n".join(merged['system_instruction'])

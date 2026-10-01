@@ -152,7 +152,7 @@ class ContextualResponseGenerator:
         context: ResponseContext
     ) -> str:
         """Genera una risposta che inizia con il codice"""
-        if "parametr" in context.conversation_history[-1].lower():
+        if context.conversation_history and "parametr" in context.conversation_history[-1].lower():
             return """
 def esempio_funzione(param1: str, param2: int = 0):
     '''

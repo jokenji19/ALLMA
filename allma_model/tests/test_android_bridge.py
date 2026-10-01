@@ -4,6 +4,7 @@ Test del bridge API per l'integrazione Android
 
 import unittest
 import tempfile
+import shutil
 import os
 import json
 from datetime import datetime
@@ -26,9 +27,8 @@ class TestAndroidBridge(unittest.TestCase):
         
     def tearDown(self):
         """Cleanup dopo i test"""
-        if os.path.exists(self.db_path):
-            os.remove(self.db_path)
-        os.rmdir(self.temp_dir)
+        self.bridge.allma.close()
+        shutil.rmtree(self.temp_dir)
         
     def test_session_initialization(self):
         """Test dell'inizializzazione della sessione"""

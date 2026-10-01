@@ -29,7 +29,8 @@ class AndroidBars:
             Color = autoclass("android.graphics.Color")
             WindowManager = autoclass("android.view.WindowManager")
             View = autoclass("android.view.View")
-            Build = autoclass("android.os.Build") 
+            Version = autoclass("android.os.Build$VERSION")
+            LayoutParams = autoclass("android.view.WindowManager$LayoutParams")
             
             @run_on_ui_thread
             def _set_bars_ui():
@@ -41,7 +42,7 @@ class AndroidBars:
                     decor_view = window.getDecorView()
 
                     # 1. HANDLE CUTOUT (NOTCH) - API 28+
-                    if Build.VERSION.SDK_INT >= 28:
+                    if Version.SDK_INT >= 28:
                         params = window.getAttributes()
                         params.layoutInDisplayCutoutMode = 1 
                         window.setAttributes(params)
@@ -50,23 +51,23 @@ class AndroidBars:
                     # 2. VISIBILITY FLAGS
                     new_flags = decor_view.getSystemUiVisibility()
                     new_flags |= 0x00002000 # Light Status
-                    if Build.VERSION.SDK_INT >= 26:
+                    if Version.SDK_INT >= 26:
                         new_flags |= 0x00000010 # Light Nav
                     
                     decor_view.setSystemUiVisibility(new_flags)
 
                     # 3. WINDOW FLAGS
-                    window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
-                    window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+                    window.addFlags(LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+                    window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_STATUS)
+                    window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                     
                     # 4. SET COLORS (WHITE)
-                    white = Color.parseColor("#FFFFFF")
+                    white = Color.parseColor("#E7F4FE")
                     window.setStatusBarColor(white)
                     window.setNavigationBarColor(white)
                     
                     # 5. Nav Bar Divider
-                    if Build.VERSION.SDK_INT >= 28:
+                    if Version.SDK_INT >= 28:
                         window.setNavigationBarDividerColor(Color.parseColor("#00FFFFFF"))
 
                     print(f"!!!! [AndroidBars] Attempt {attempt}: SUCCESS !!!!")

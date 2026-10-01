@@ -1,3 +1,4 @@
+import tempfile
 import unittest
 import pytest
 from unittest.mock import MagicMock, patch
@@ -44,7 +45,8 @@ class TestALLMACore(unittest.TestCase):
     
     def setUp(self):
         """Setup per i test"""
-        self.test_db = "test_allma.db"
+        self.test_directory = tempfile.TemporaryDirectory()
+        self.test_db = os.path.join(self.test_directory.name, "test_allma.db")
         self.test_user_id = "test_user_123"
         
         # Inizializza il database
@@ -77,8 +79,8 @@ class TestALLMACore(unittest.TestCase):
     
     def tearDown(self):
         """Cleanup dopo i test"""
-        if os.path.exists(self.test_db):
-            os.remove(self.test_db)
+        self.core.close()
+        self.test_directory.cleanup()
     
     def test_process_interaction(self):
         """Test del processamento di un'interazione"""
@@ -113,7 +115,7 @@ class TestALLMACore(unittest.TestCase):
         self.assertIn('preferences', profile)
         self.assertIn('temporal_patterns', profile)
         self.assertIn('interaction_count', profile)
-        self.assertEqual(profile['interaction_count'], 0)  # Per ora è 0 finché non implementiamo get_user_interactions
+        self.assertEqual(profile['interaction_count'], 3)  # Tre turni utente, non sei messaggi.
     
     def test_multiple_interactions(self):
         """Test di multiple interazioni e loro effetti"""
@@ -167,6 +169,8 @@ class TestALLMACore(unittest.TestCase):
     
     def test_response_adaptations(self):
         """Test delle varie modalità di adattamento delle risposte"""
+        self.core._llm = MagicMock()
+        self.core._llm.generate.return_value = "Contenuto generato per il test di adattamento."
         test_response = """
         Come potrai immaginare, al fine di implementare questa funzionalità,
         è importante sottolineare che dobbiamo utilizzare un design pattern appropriato.
@@ -249,6 +253,8 @@ class TestALLMACore(unittest.TestCase):
     
     def test_adaptation_combinations(self):
         """Test di combinazioni di adattamenti"""
+        self.core._llm = MagicMock()
+        self.core._llm.generate.return_value = "Contenuto generato per il test di adattamento."
         # Crea una risposta complessa
         response = """
         Implementiamo un nuovo design pattern per gestire le connessioni al database.
@@ -490,6 +496,8 @@ class TestALLMACoreEdgeCases(unittest.TestCase):
     
     def test_adaptation_combinations(self):
         """Test di combinazioni di adattamenti"""
+        self.core._llm = MagicMock()
+        self.core._llm.generate.return_value = "Contenuto generato per il test di adattamento."
         # Crea una risposta complessa
         response = """
         Implementiamo un nuovo design pattern per gestire le connessioni al database.

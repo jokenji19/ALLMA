@@ -18,30 +18,17 @@ jobs:
           # Fix permissions for the workspace
           chmod -R 777 .
 
-          # ZIP STRATEGY DISABLED (Build 97): Using Monolith Blob in main.py
-          # mkdir -p assets
-          # if [ -d "libs/Model" ]; then
-          #   echo "Zipping libs/Model into assets..."
-          #   # Install zip if missing
-          #   sudo apt-get update && sudo apt-get install -y zip
-          #   zip -r assets/model_code.zip libs/Model
-          # elif [ -d "Model" ]; then
-          #    echo "Zipping Model into assets..."
-          #    zip -r assets/model_code.zip Model
-          # else
-          #    echo "WARNING: Model directory not found for zipping!"
-          #    ls -R
-          # fi
-
-          # Remove move artifacts if any
-          rm -rf Model
+          # Regenerate the embedded sources before compiling the APK.
+          python3 pack_brain.py
 
           # Run buildozer inside the official Kivy Docker container
           docker run --rm \
             --volume "$PWD":/home/user/hostcwd \
+            --env APP_ANDROID_NDK_PATH= \
+            --env APP_ANDROID_SDK_PATH= \
             --entrypoint /bin/bash \
             kivy/buildozer \
-            -c "yes | buildozer android debug"
+            -c "python3 tools/build_android_safe.py"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

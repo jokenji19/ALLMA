@@ -271,14 +271,17 @@ def test_contextual_pattern_analysis():
     )
     memory_system.nodes[node2].timestamp = now.replace(hour=15)
     
+    # La creazione ha già registrato due eventi nell'ora corrente.
+    before = list(memory_system.contextual_patterns['time_patterns']['hourly'])
+
     # Aggiorna i pattern contestuali
     memory_system._update_contextual_patterns(memory_system.nodes[node1])
     memory_system._update_contextual_patterns(memory_system.nodes[node2])
     
     # Verifica che i pattern orari siano stati registrati
     assert 'time_patterns' in memory_system.contextual_patterns
-    assert memory_system.contextual_patterns['time_patterns']['hourly'][10] == 1
-    assert memory_system.contextual_patterns['time_patterns']['hourly'][15] == 1
+    assert memory_system.contextual_patterns['time_patterns']['hourly'][10] == before[10] + 1
+    assert memory_system.contextual_patterns['time_patterns']['hourly'][15] == before[15] + 1
 
 def test_emotional_similarity():
     """Test del calcolo della similarità emotiva"""

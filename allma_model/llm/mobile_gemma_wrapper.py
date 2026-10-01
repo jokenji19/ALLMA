@@ -1,6 +1,7 @@
 """MobileGemmaWrapper - Wrapper per il modello Gemma-2b su Android via llama.cpp"""
 
 from __future__ import annotations
+from allma_model.utils.generation_control import GenerationCancelled, check_cancelled
 
 import os
 import logging
@@ -499,7 +500,9 @@ class MobileGemmaWrapper:
         prefix_prompt: Optional[str] = None,
         request_id: Optional[str] = None,
         repeat_penalty: Optional[float] = None,
-        repeat_last_n: Optional[int] = None
+        repeat_last_n: Optional[int] = None,
+        cancel_event=None,
+        thought_budget=None
     ) -> str:
         """
         Genera testo dato un prompt.
@@ -508,6 +511,7 @@ class MobileGemmaWrapper:
             max_tokens: Limite token generati.
             callback: Funzione(str) chiamata per ogni token generato.
         """
+        check_cancelled(cancel_event)
         if not self.llm:
             return "Error: Model not loaded."
 
@@ -517,12 +521,14 @@ class MobileGemmaWrapper:
 
         try:
             def strip_think(text: str) -> str:
-                return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL).strip()
+                from allma_model.utils.thinking_stream import answer_from_completion
+                return answer_from_completion(text, prompt)
 
             with self.inference_lock:
+                check_cancelled(cancel_event)
                 import random
                 random_seed = random.randint(0, 2**31 - 1)
-                stream_mode = callback is not None
+                stream_mode = callback is not None or cancel_event is not None
                 self.last_generation = {
                     "request_id": request_id,
                     "max_tokens": max_tokens,
@@ -606,12 +612,19 @@ class MobileGemmaWrapper:
                 if repeat_last_n is not None:
                     llm_kwargs["repeat_last_n"] = int(repeat_last_n)
 
-                try:
-                    output = self.llm(prompt, **llm_kwargs)
-                except TypeError:
-                    llm_kwargs.pop("repeat_penalty", None)
-                    llm_kwargs.pop("repeat_last_n", None)
-                    output = self.llm(prompt, **llm_kwargs)
+                if thought_budget is not None and prompt.rstrip().endswith('<think>'):
+                    from allma_model.utils.generation_budget import bounded_completion
+                    output = bounded_completion(self.llm, prompt, llm_kwargs, thought_budget,
+                                                callback, cancel_event)
+                    self.last_generation.update(output['budget_meta'])
+                    stream_mode = False  # callbacks were delivered by the bounded iterator
+                else:
+                    try:
+                        output = self.llm(prompt, **llm_kwargs)
+                    except TypeError:
+                        llm_kwargs.pop("repeat_penalty", None)
+                        llm_kwargs.pop("repeat_last_n", None)
+                        output = self.llm(prompt, **llm_kwargs)
 
                 if stream_mode:
                     full_text = ""
@@ -636,22 +649,28 @@ class MobileGemmaWrapper:
                         except Exception as e:
                             logging.error(f"[MobileGemma] Thermal Pacing exception: {e}")
                     
-                    for chunk in output:
-                        token = chunk["choices"][0]["text"]
-                        if first_token_ts is None:
-                            first_token_ts = time.perf_counter()
-                            try:
-                                self.last_generation["ttft_ms"] = float((first_token_ts - gen_t0) * 1000.0)
-                            except Exception:
-                                pass
-                        full_text += token
-                        if callback:
-                            try:
-                                callback(token)
-                            except Exception as cb_err:
-                                logging.error(f"[MobileGemma] Stream callback error: {cb_err}")
-                        if pacing_delay > 0:
-                            time.sleep(pacing_delay)
+                    try:
+                        for chunk in output:
+                            check_cancelled(cancel_event)
+                            token = chunk["choices"][0]["text"]
+                            if first_token_ts is None:
+                                first_token_ts = time.perf_counter()
+                                try:
+                                    self.last_generation["ttft_ms"] = float((first_token_ts - gen_t0) * 1000.0)
+                                except Exception:
+                                    pass
+                            full_text += token
+                            if callback:
+                                try:
+                                    callback(token)
+                                except Exception as cb_err:
+                                    logging.error(f"[MobileGemma] Stream callback error: {cb_err}")
+                            if pacing_delay > 0:
+                                time.sleep(pacing_delay)
+                    finally:
+                        if hasattr(output, 'close'):
+                            output.close()
+                    check_cancelled(cancel_event)
                     try:
                         self.last_generation["completion_tokens"] = int(len(self.llm.tokenize(full_text.encode("utf-8"))))
                         if self.last_generation.get("prompt_tokens") is not None:
@@ -718,6 +737,8 @@ class MobileGemmaWrapper:
                         pass
                     return strip_think(raw_text)
 
+        except GenerationCancelled:
+            raise
         except Exception as e:
             logging.error(f"[MobileGemma] Inference error: {e}")
             return f"Error during inference: {e}"
