@@ -30,7 +30,8 @@ source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .githu
 source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md,*.bak
 
 # (str) Application versioning (method 1)
-version = 0.56
+version = 0.9.0.0
+android.numeric_version = 102457
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
