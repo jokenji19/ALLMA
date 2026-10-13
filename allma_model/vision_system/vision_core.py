@@ -32,9 +32,8 @@ class VisionSystem:
         self.logger.info(f"👁️ Analisi visiva richiesta per: {image_path}")
         
         if not self.vlm_client:
-            # Fallback / Mock per sviluppo senza modello caricato
-            self.logger.warning("⚠️ Nessun modello VLM caricato. Uso mock.")
-            return self._mock_analysis(image_path)
+            self.logger.warning("Nessun modello visivo caricato.")
+            return "L’analisi delle immagini non è ancora disponibile: non posso osservare il contenuto di questa immagine."
             
         try:
             # Qui andrebbe la chiamata reale a llama-cpp-python con llava

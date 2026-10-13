@@ -42,3 +42,104 @@ def test_creativity_receives_italian_request_intent():
     orchestrator.register_module('creativity', CreativitySystem(), ModulePriority.MEDIUM, 20)
     result = orchestrator.process('Inventa una poesia', {}, intent='richiesta')
     assert '[MUSE]' in result['system_instruction']
+
+
+def test_malformed_outputs_are_isolated_and_reported():
+    from unittest.mock import Mock
+    o = ModuleOrchestrator()
+    o.register_module('curiosity', Mock(process=Mock(return_value=['wrong'])), ModulePriority.HIGH, 1)
+    o.register_module('meta_learning', Mock(process=Mock(return_value={
+        'confidence': 'high', 'suggested_style': 42, 'hints': [None]})), ModulePriority.LOW, 1)
+    o.register_module('cognitive_tracking', Mock(process=Mock(return_value={'abilities': None})), ModulePriority.LOW, 1)
+    o.register_module('valid', Mock(process=Mock(return_value={'system_instruction': ['Usa i dati disponibili']})), ModulePriority.LOW, 1)
+    result = o.process('ciao', {}, 'question')
+    assert result['system_instruction'] == 'Usa i dati disponibili'
+    assert result['execution_report']['outcomes']['curiosity']['status'] == 'failed'
+    assert result['memory_updates'] == {}
+
+
+def test_selection_failure_does_not_abort_other_modules():
+    from unittest.mock import Mock
+    o = ModuleOrchestrator()
+    o.register_module('creativity', Mock(is_creative_request=Mock(side_effect=ValueError('broken selector'))), ModulePriority.HIGH, 1)
+    o.register_module('valid', Mock(process=Mock(return_value={'system_instruction': ['Continua']})), ModulePriority.LOW, 1)
+    result = o.process('crea', {}, 'request')
+    assert result['system_instruction'] == 'Continua'
+    assert result['execution_report']['outcomes']['creativity']['stage'] == 'selection'
+
+
+def test_intermittent_failures_do_not_disable_a_recovered_module():
+    from unittest.mock import Mock
+    module = Mock(process=Mock(side_effect=[value for _ in range(7)
+                              for value in (RuntimeError('temporary'), {})]))
+    o = ModuleOrchestrator()
+    o.register_module('valid', module, ModulePriority.LOW, 1)
+    for _ in range(14):
+        o.process('ciao', {})
+    assert o.modules['valid'].enabled
+    assert o.modules['valid'].failure_count == 7
+    assert o.modules['valid'].consecutive_failures == 0
+
+
+def test_missing_handler_is_disabled_after_consecutive_failures():
+    o = ModuleOrchestrator()
+    o.register_module('broken', object(), ModulePriority.LOW, 1)
+    for _ in range(6):
+        o.process('ciao', {})
+    result = o.process('ciao', {})
+    assert not o.modules['broken'].enabled
+    assert result['execution_report']['outcomes']['broken']['status'] == 'disabled'
+
+
+def test_admission_uses_measured_cost_including_failed_calls(monkeypatch):
+    from unittest.mock import Mock
+    import allma_model.core.module_orchestrator as source
+    clock = [0.]
+    from types import SimpleNamespace
+    import time
+    monkeypatch.setattr(source, 'time', SimpleNamespace(perf_counter=lambda: clock[0], time=time.time))
+    def slow(*args):
+        clock[0] += .08
+        raise RuntimeError('slow failure')
+    module = Mock(process=Mock(side_effect=slow))
+    o = ModuleOrchestrator(100)
+    o.register_module('slow', module, ModulePriority.HIGH, 1)
+    o.process('ciao', {})
+    o.performance_budget = 50
+    result = o.process('ciao', {})
+    assert module.process.call_count == 1
+    assert result['execution_report']['outcomes']['slow']['status'] == 'budget_skipped'
+    assert o.get_stats()['modules']['slow']['avg_exec_time_ms'] == 80
+
+
+def test_planning_and_personality_hints_reach_merged_guidance():
+    from allma_model.core.planning_adapter import PlanningSystemAdapter
+    from allma_model.core.personality_adapter import PersonalityAdapterLite
+    o = ModuleOrchestrator()
+    o.register_module('planning', PlanningSystemAdapter(), ModulePriority.MEDIUM, 1)
+    o.register_module('personality_style', PersonalityAdapterLite(), ModulePriority.LOW, 1)
+    plain = o.process('Ciao', {}, 'statement')
+    assert plain['execution_report']['outcomes']['planning']['status'] == 'not_relevant'
+    plan = o.process('Pianifica il progetto', {}, 'request')
+    assert 'non inventare tempi' in plan['system_instruction']
+    assert plan['raw_results']['personality_style']['style_hint'] in plan['system_instruction']
+
+
+def test_perception_does_not_mix_users_or_conversations():
+    from allma_model.core.perception_lite import PerceptionSystemLite
+    module = PerceptionSystemLite()
+    text = 'Perché il cielo è blu?'
+    module.process(text, {'user_id': 'u', 'conversation_id': 'a'})
+    assert 'repetition' in module.process(text, {'user_id': 'u', 'conversation_id': 'a'})
+    assert 'repetition' not in module.process(text, {'user_id': 'v', 'conversation_id': 'a'})
+    assert 'repetition' not in module.process(text, {'user_id': 'v', 'conversation_id': 'b'})
+
+
+def test_transient_personality_style_does_not_leak_between_users():
+    from allma_model.core.personality_adapter import PersonalityAdapterLite
+    module = PersonalityAdapterLite()
+    for _ in range(8):
+        module.process('Cortesemente, per favore', {'user_id': 'u'})
+    assert module.style.formality > .7
+    module.process('Una domanda neutra', {'user_id': 'other'})
+    assert module.style.formality == .5

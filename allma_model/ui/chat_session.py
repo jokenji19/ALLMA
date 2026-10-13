@@ -19,6 +19,11 @@ class ChatSession:
         self._next_id = 0
         self._reset_pending = False
 
+    @property
+    def is_busy(self):
+        with self._lock:
+            return self._active is not None
+
     def begin(self):
         with self._lock:
             if self._active is not None:

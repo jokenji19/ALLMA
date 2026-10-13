@@ -85,6 +85,7 @@ class PlanningSystemAdapter:
         )
         
         return {
+            'system_instruction': ['Per questa richiesta di pianificazione, proponi passi legati ai vincoli dell’utente; chiedi i dati mancanti e non inventare tempi o risorse.'],
             'has_plan': True,
             'goal': plan.goal,
             'tasks': [{'name': t.name, 'time': t.estimated_time, 'priority': t.priority} 

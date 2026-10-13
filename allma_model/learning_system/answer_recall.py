@@ -5,8 +5,11 @@ import logging
 import re
 import threading
 import unicodedata
+import shutil
 from pathlib import Path
 from allma_model.utils.persistence import atomic_write_json
+from allma_model.utils.repetition_guard import repetition_start, requested_repetition
+from allma_model.utils.output_contract import requested_contract, valid_contract, borrowed_user_experience, requested_sentence_count, valid_sentence_count
 
 
 def normalize(text):
@@ -41,12 +44,43 @@ class AnswerRecall:
         self.records = {}
         try:
             data = json.loads(self.path.read_text())
-            if data.get('version') == 1:
-                self.records = data.get('records', {})
+            if not isinstance(data, dict) or data.get('version') != 1 or not isinstance(data.get('records'), dict):
+                raise ValueError('Invalid recall schema')
+            invalid = False
+            for key, record in data['records'].items():
+                if self._valid_record(key, record):
+                    self.records[key] = dict(record)
+                else:
+                    invalid = True
+            if invalid:
+                self._preserve_invalid_state()
         except FileNotFoundError:
             pass
         except (ValueError, OSError, AttributeError):
+            self._preserve_invalid_state()
             logging.warning('AnswerRecall: unreadable state; recall disabled for saved entries')
+
+    @staticmethod
+    def _valid_record(key, record):
+        return (isinstance(key, str) and isinstance(record, dict)
+                and all(isinstance(record.get(field), str) and record[field].strip()
+                        for field in ('user', 'question', 'answer'))
+                and type(record.get('observations')) is int and record['observations'] >= 1
+                and type(record.get('rejected')) is bool
+                and isinstance(record.get('confirmations'), list)
+                and all(isinstance(event, str) and event for event in record['confirmations'])
+                and len(set(record['confirmations'])) == len(record['confirmations']))
+
+    def _preserve_invalid_state(self):
+        # Preserve original bytes before any later successful learning overwrites them.
+        if not self.path.exists():
+            return
+        backup = self.path.with_name(self.path.name + '.invalid.bak')
+        try:
+            if not backup.exists():
+                shutil.copy2(self.path, backup)
+        except OSError:
+            logging.warning('AnswerRecall: cannot preserve invalid state')
 
     def key(self, user, question, history, context=None):
         q = normalize(question)
@@ -69,7 +103,10 @@ class AnswerRecall:
         atomic_write_json(self.path, {'version': 1, 'records': self.records})
 
     def observe(self, key, user, question, answer, event):
-        if not eligible(question):
+        if (not eligible(question) or not valid_contract(answer, requested_contract(question))
+                or not valid_sentence_count(answer, requested_sentence_count(question))
+                or borrowed_user_experience(answer, question)
+                or (not requested_repetition(question) and repetition_start(answer) is not None)):
             return
         with self.lock:
             previous = self.records.get(key)
@@ -100,6 +137,10 @@ class AnswerRecall:
         with self.lock:
             r = self.records.get(key)
             if (r and r['user'] == user and not r['rejected']
+                    and valid_contract(r['answer'], requested_contract(r['question']))
+                    and valid_sentence_count(r['answer'], requested_sentence_count(r['question']))
+                    and not borrowed_user_experience(r['answer'], r['question'])
+                    and (requested_repetition(r['question']) or repetition_start(r['answer']) is None)
                     and len(r['confirmations']) >= self.confirmations):
                 return dict(r)
         return None

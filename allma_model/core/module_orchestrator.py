@@ -34,6 +34,9 @@ class ModuleConfig:
     success_count: int = 0
     failure_count: int = 0
     avg_exec_time: float = 0.0
+    consecutive_failures: int = 0
+    attempt_count: int = 0
+    last_status: str = "never_run"
 
 
 class ModuleOrchestrator:
@@ -50,8 +53,10 @@ class ModuleOrchestrator:
     def __init__(self, performance_budget_ms: int = 500):
         """
         Args:
-            performance_budget_ms: Tempo massimo per esecuzione moduli (default 500ms)
+            performance_budget_ms: Budget di ammissione dei moduli (non interrompe una chiamata in corso)
         """
+        if performance_budget_ms <= 0:
+            raise ValueError("performance_budget_ms must be positive")
         self.performance_budget = performance_budget_ms
         self.modules: Dict[str, ModuleConfig] = {}
         self.execution_history: List[Dict[str, Any]] = []
@@ -121,92 +126,94 @@ class ModuleOrchestrator:
             Risultati aggregati da tutti i moduli
         """
         start_time = time.perf_counter()
-        
-        # Filtra moduli abilitati e ordinali per priorità
-        active_modules = [
-            m for m in self.modules.values()
-            if m.enabled and self._is_relevant(m, intent, dict(context, user_input=user_input))
-        ]
-        active_modules.sort(key=lambda x: x.priority, reverse=True)
-        
+        outcomes = {}
         results = {}
-        time_used_ms = 0
-        executed_count = 0
-        
-        for module in active_modules:
-            # Budget check
-            if time_used_ms + module.cost_ms > self.performance_budget:
-                logger.debug(
-                    f"Budget exceeded, skipping module '{module.name}' "
-                    f"(used {time_used_ms}ms / {self.performance_budget}ms)"
-                )
-                continue
-            
-            # Esecuzione modulo
-            try:
-                module_start = time.perf_counter()
-                
-                # Chiama metodo 'process' del modulo se esiste
-                if hasattr(module.instance, 'process'):
-                    result = module.instance.process(user_input, context)
-                elif hasattr(module.instance, 'analyze'):
-                    result = module.instance.analyze(user_input, context)
-                else:
-                    logger.warning(f"Module '{module.name}' has no process/analyze method")
-                    continue
-                
-                module_time_ms = (time.perf_counter() - module_start) * 1000
-                
-                # Update stats
-                module.success_count += 1
-                module.avg_exec_time = (
-                    (module.avg_exec_time * (module.success_count - 1) + module_time_ms)
-                    / module.success_count
-                )
-                
-                results[module.name] = result
-                time_used_ms += module_time_ms
-                executed_count += 1
-                
-                logger.debug(
-                    f"Module '{module.name}' executed in {module_time_ms:.1f}ms"
-                )
-                
-            except Exception as e:
-                time_used_ms += (time.perf_counter() - module_start) * 1000
-                module.failure_count += 1
-                logger.error(f"Module '{module.name}' failed: {e}", exc_info=True)
-                
-                # Auto-disable se troppi fallimenti
-                if module.failure_count > 5:
-                    self.disable_module(module.name)
-                    logger.error(f"Module '{module.name}' auto-disabled (too many failures)")
-        
-        total_time_ms = (time.perf_counter() - start_time) * 1000
-        
-        # Log performance
-        self.execution_history.append({
-            'timestamp': time.time(),
-            'executed': executed_count,
-            'total_time_ms': total_time_ms,
-            'budget_used_pct': (time_used_ms / self.performance_budget) * 100
-        })
-        
-        del self.execution_history[:-100]
+        active_modules = []
+        turn_context = dict(context, user_input=user_input)
 
-        logger.info(
-            f"Orchestrator executed {executed_count} modules in {total_time_ms:.1f}ms "
-            f"({time_used_ms:.0f}/{self.performance_budget}ms budget)"
-        )
-        
-        return self.coalescence(results)
-    
+        for module in self.modules.values():
+            if not module.enabled:
+                outcomes[module.name] = {'status': 'disabled'}
+                continue
+            try:
+                if self._is_relevant(module, intent, turn_context):
+                    active_modules.append(module)
+                else:
+                    outcomes[module.name] = {'status': 'not_relevant'}
+            except Exception as error:
+                self._record_failure(module, error)
+                outcomes[module.name] = {'status': 'failed', 'stage': 'selection'}
+        active_modules.sort(key=lambda m: m.priority, reverse=True)
+
+        for module in active_modules:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            # Learn admission cost from every completed attempt, including failures.
+            # Calls are synchronous: this is not a hard timeout or thread cancellation.
+            estimated_ms = max(module.cost_ms, module.avg_exec_time)
+            if elapsed_ms + estimated_ms > self.performance_budget:
+                outcomes[module.name] = {'status': 'budget_skipped', 'estimated_ms': estimated_ms}
+                continue
+            module_start = time.perf_counter()
+            module.attempt_count += 1
+            try:
+                handler = getattr(module.instance, 'process', None)
+                if not callable(handler):
+                    handler = getattr(module.instance, 'analyze', None)
+                if not callable(handler):
+                    raise TypeError('Module has no callable process/analyze method')
+                result = handler(user_input, dict(turn_context))
+                if result is None:
+                    result = {}
+                # A malformed adapter must not crash coalescence or the whole chat.
+                if not isinstance(result, dict) and not (
+                        module.name == 'emotional_adaptation' and isinstance(result, str)):
+                    raise TypeError('Module output must be a dictionary')
+                results[module.name] = result
+                module.success_count += 1
+                module.consecutive_failures = 0
+                outcomes[module.name] = {'status': 'executed' if result else 'no_output'}
+            except Exception as error:
+                self._record_failure(module, error)
+                outcomes[module.name] = {'status': 'failed', 'stage': 'execution'}
+            finally:
+                duration = (time.perf_counter() - module_start) * 1000
+                module.avg_exec_time += (duration - module.avg_exec_time) / module.attempt_count
+                outcomes[module.name]['duration_ms'] = duration
+
+        for name, outcome in outcomes.items():
+            self.modules[name].last_status = outcome['status']
+        merged = self.coalescence(results)
+        for name, result in results.items():
+            contribution = self.coalescence({name: result})
+            outcomes[name]['output_role'] = ('guidance' if contribution['system_instruction'] or contribution['user_prefix']
+                                             else 'observational' if result else 'none')
+        total_time_ms = (time.perf_counter() - start_time) * 1000
+        report = {
+            'timestamp': time.time(), 'executed': len(results),
+            'total_time_ms': total_time_ms,
+            'budget_used_pct': total_time_ms / self.performance_budget * 100,
+            'budget_exceeded': total_time_ms > self.performance_budget,
+            'outcomes': outcomes,
+        }
+        self.execution_history.append(report)
+        del self.execution_history[:-100]
+        # Diagnostic data only: never inject these counters as autobiographical facts.
+        merged['execution_report'] = report
+        logger.info('Orchestrator: %s outputs in %.1fms', len(results), total_time_ms)
+        return merged
+
+    def _record_failure(self, module, error):
+        module.failure_count += 1
+        module.consecutive_failures += 1
+        logger.warning("Module '%s' failed: %s", module.name, error)
+        if module.consecutive_failures >= 6:
+            self.disable_module(module.name)
+
     def _is_relevant(self, module: ModuleConfig, intent: Optional[str], context: Optional[Dict[str, Any]] = None) -> bool:
         """
         Determina se un modulo è rilevante per l'intent corrente.
         
-        Future enhancement: intent-based filtering
-        Per ora ritorna sempre True (esegui tutti i moduli abilitati)
+        Filtra secondo intento e segnali dell'adattatore; conserva il monitoraggio.
         """
         context = context or {}
         intent = {'domanda': 'question', 'richiesta': 'request', 'emozione': 'emotional',
@@ -234,7 +241,6 @@ class ModuleOrchestrator:
             return intent in curiosity_intents or intent == 'request'
             
         if module.name in {'meta_learner', 'meta_learning'}:
-            learning_intents = {'learning', 'study', 'analyze', 'explain', 'practice'}
             return True  # this adapter learns feedback and explicit style requests on every turn
             
         if module.name in {'creativity_enhancer', 'creativity'}:
@@ -243,6 +249,9 @@ class ModuleOrchestrator:
             creative_intents = {'creative', 'story', 'generate', 'write', 'imagine'}
             return intent in creative_intents
             
+        if module.name == 'planning' and hasattr(module.instance, '_is_planning_query'):
+            return module.instance._is_planning_query(context.get('user_input', ''))
+
         # Default for other modules
         return True
     
@@ -255,6 +264,8 @@ class ModuleOrchestrator:
                     'priority': m.priority,
                     'success_count': m.success_count,
                     'failure_count': m.failure_count,
+                    'consecutive_failures': m.consecutive_failures,
+                    'last_status': m.last_status,
                     'avg_exec_time_ms': m.avg_exec_time,
                     'estimated_cost_ms': m.cost_ms
                 }
@@ -297,55 +308,44 @@ class ModuleOrchestrator:
                 if isinstance(value, (list, tuple)):
                     merged[field].extend(v for v in value if isinstance(v, str) and v.strip())
 
-        # 1. Emotional Adaptation
-        if 'emotional_adaptation' in results:
-            emo_res = results['emotional_adaptation']
-            if isinstance(emo_res, str):
-                merged['user_prefix'].append(emo_res)
-            elif isinstance(emo_res, dict) and 'response' in emo_res:
-                merged['user_prefix'].append(emo_res['response'])
-                
-        # 2. Curiosity System
-        if 'curiosity_system' in results or 'curiosity' in results:
-            cur_res = results.get('curiosity_system') or results.get('curiosity')
-            if 'questions' in cur_res:
-                questions = cur_res['questions']
-                if questions:
-                    # Take top 1 question as hook
-                    merged['user_prefix'].append(f"\nMi chiedo: {questions[0]}")
-                    # Add others to output instructions
-                    merged['system_instruction'].append(f"Consider exploring: {', '.join(questions[1:])}")
-            
-        # 3. Meta Learner (Phase 19 Update)
-        # 3. Meta Learner (Phase 19 Update)
-        # Check both keys for safety during migration, prioritize 'meta_learning'
-        meta_res = results.get('meta_learning') or results.get('meta_learner')
-        
-        if isinstance(meta_res, dict) and meta_res.get('confidence', 0.0) > 0.55:
-            
-            # Phase 19: Style & Communication
-            if 'suggested_style' in meta_res:
-                merged['system_instruction'].append(f"STYLE PREFERENCE: {meta_res['suggested_style'].upper()}")
-            if 'suggested_comm' in meta_res:
-                merged['system_instruction'].append(f"COMMUNICATION MODE: {meta_res['suggested_comm'].upper()}")
-                
-            # Legacy/Generic Strategy Support
-            if 'strategy' in meta_res:
-                merged['system_instruction'].append(f"STRATEGY: {meta_res['strategy'].upper()}")
-            if 'hints' in meta_res:
-                merged['system_instruction'].extend(meta_res['hints'])
-                
-        # 4. Creativity System (Muse)
-        muse_res = results.get('creativity') or results.get('creativity_enhancer')
-        if muse_res:
-            if 'instruction' in muse_res:
-                merged['system_instruction'].append(f"[MUSE]: {muse_res['instruction']}")
+        def strings(value):
+            if isinstance(value, str):
+                return [value] if value.strip() else []
+            if isinstance(value, (list, tuple)):
+                return [v for v in value if isinstance(v, str) and v.strip()]
+            return []
 
-        # 5. Cognitive Tracker
-        if 'cognitive_tracker' in results or 'cognitive_tracking' in results:
-            cog_res = results.get('cognitive_tracker') or results.get('cognitive_tracking')
-            merged['memory_updates'].update(cog_res.get('abilities', {}))
-            
+        emo = results.get('emotional_adaptation')
+        merged['user_prefix'].extend(strings(emo if isinstance(emo, str)
+                                             else emo.get('response') if isinstance(emo, dict) else None))
+        curiosity = results.get('curiosity_system') or results.get('curiosity')
+        if isinstance(curiosity, dict):
+            questions = strings(curiosity.get('questions'))
+            if questions:
+                merged['user_prefix'].append(f"Mi chiedo: {questions[0]}")
+
+        meta = results.get('meta_learning') or results.get('meta_learner')
+        if isinstance(meta, dict):
+            confidence = meta.get('confidence', 0)
+            if isinstance(confidence, (int, float)) and confidence > .55:
+                for key, label in [('suggested_style', 'STYLE PREFERENCE'),
+                                   ('suggested_comm', 'COMMUNICATION MODE'), ('strategy', 'STRATEGY')]:
+                    value = meta.get(key)
+                    if isinstance(value, str) and value.strip():
+                        merged['system_instruction'].append(f'{label}: {value.upper()}')
+                merged['system_instruction'].extend(strings(meta.get('hints')))
+
+        muse = results.get('creativity') or results.get('creativity_enhancer')
+        if isinstance(muse, dict):
+            merged['system_instruction'].extend(f'[MUSE]: {v}' for v in strings(muse.get('instruction')))
+        personality = results.get('personality_style')
+        if isinstance(personality, dict):
+            merged['system_instruction'].extend(strings(personality.get('style_hint')))
+
+        tracker = results.get('cognitive_tracker') or results.get('cognitive_tracking')
+        if isinstance(tracker, dict) and isinstance(tracker.get('abilities'), dict):
+            merged['memory_updates'].update(tracker['abilities'])
+
         # Remove identical hints from overlapping adapters without changing order.
         merged['user_prefix'] = list(dict.fromkeys(merged['user_prefix']))
         merged['system_instruction'] = list(dict.fromkeys(merged['system_instruction']))

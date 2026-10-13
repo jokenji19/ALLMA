@@ -1,0 +1,542 @@
+{
+  "version": 1,
+  "provenance": "Set locale scritto dall’assistente dopo l’implementazione. Etichette proposte, non validate indipendentemente; non un benchmark esterno né cieco.",
+  "cases": [
+    {
+      "id": "E01",
+      "group": "base",
+      "text": "Oggi sono veramente felice di questo risultato",
+      "expected_families": [
+        "joy"
+      ]
+    },
+    {
+      "id": "E02",
+      "group": "base",
+      "text": "Mi sento un po’ triste questa sera",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E03",
+      "group": "base",
+      "text": "Sono arrabbiata per quello che è successo",
+      "expected_families": [
+        "anger"
+      ]
+    },
+    {
+      "id": "E04",
+      "group": "base",
+      "text": "Ho molta paura del buio",
+      "expected_families": [
+        "fear"
+      ]
+    },
+    {
+      "id": "E05",
+      "group": "base",
+      "text": "Mi sento sorpreso dalla notizia",
+      "expected_families": [
+        "surprise"
+      ]
+    },
+    {
+      "id": "E06",
+      "group": "base",
+      "text": "Sono ansiosa per la riunione",
+      "expected_families": [
+        "fear"
+      ]
+    },
+    {
+      "id": "E07",
+      "group": "base",
+      "text": "Mi sento deluso dal risultato",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E08",
+      "group": "base",
+      "text": "Questa cosa mi dà fastidio",
+      "expected_families": [
+        "anger"
+      ]
+    },
+    {
+      "id": "E09",
+      "group": "base",
+      "text": "Evviva, abbiamo finito!",
+      "expected_families": [
+        "joy"
+      ]
+    },
+    {
+      "id": "E10",
+      "group": "base",
+      "text": "Mi manca molto la mia famiglia",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E11",
+      "group": "base",
+      "text": "Questa notizia mi ha reso felice",
+      "expected_families": [
+        "joy"
+      ]
+    },
+    {
+      "id": "E12",
+      "group": "base",
+      "text": "Sono irritata dal rumore",
+      "expected_families": [
+        "anger"
+      ]
+    },
+    {
+      "id": "E13",
+      "group": "negazioni",
+      "text": "Non mi sento triste oggi",
+      "expected_families": []
+    },
+    {
+      "id": "E14",
+      "group": "negazioni",
+      "text": "Non sono affatto felice",
+      "expected_families": []
+    },
+    {
+      "id": "E15",
+      "group": "negazioni",
+      "text": "Non ho alcuna paura",
+      "expected_families": []
+    },
+    {
+      "id": "E16",
+      "group": "negazioni",
+      "text": "Non sono davvero arrabbiata",
+      "expected_families": []
+    },
+    {
+      "id": "E17",
+      "group": "negazioni",
+      "text": "Non mi sento più ansiosa",
+      "expected_families": []
+    },
+    {
+      "id": "E18",
+      "group": "negazioni",
+      "text": "Non sono sorpresa da questa cosa",
+      "expected_families": []
+    },
+    {
+      "id": "E19",
+      "group": "negazioni",
+      "text": "Non provo rabbia",
+      "expected_families": []
+    },
+    {
+      "id": "E20",
+      "group": "negazioni",
+      "text": "Non è vero che sono felice",
+      "expected_families": []
+    },
+    {
+      "id": "E21",
+      "group": "negazioni",
+      "text": "Non c’è niente che mi faccia sentire felice",
+      "expected_families": []
+    },
+    {
+      "id": "E22",
+      "group": "negazioni",
+      "text": "Non sono triste, né felice",
+      "expected_families": []
+    },
+    {
+      "id": "E23",
+      "group": "attribuzione",
+      "text": "Mio fratello è molto arrabbiato",
+      "expected_families": []
+    },
+    {
+      "id": "E24",
+      "group": "attribuzione",
+      "text": "La mia amica è preoccupata per il lavoro",
+      "expected_families": []
+    },
+    {
+      "id": "E25",
+      "group": "attribuzione",
+      "text": "Tu sei davvero felice",
+      "expected_families": []
+    },
+    {
+      "id": "E26",
+      "group": "attribuzione",
+      "text": "Lui è triste oggi",
+      "expected_families": []
+    },
+    {
+      "id": "E27",
+      "group": "attribuzione",
+      "text": "Anna è spaventata",
+      "expected_families": []
+    },
+    {
+      "id": "E28",
+      "group": "attribuzione",
+      "text": "Il personaggio del film è furioso",
+      "expected_families": []
+    },
+    {
+      "id": "E29",
+      "group": "attribuzione",
+      "text": "Spiegami cosa significa essere felice",
+      "expected_families": []
+    },
+    {
+      "id": "E30",
+      "group": "attribuzione",
+      "text": "Traduci la frase sono triste",
+      "expected_families": []
+    },
+    {
+      "id": "E31",
+      "group": "attribuzione",
+      "text": "Che cosa significa la parola rabbia?",
+      "expected_families": []
+    },
+    {
+      "id": "E32",
+      "group": "attribuzione",
+      "text": "Nel racconto lei dice «Mi sento sola»",
+      "expected_families": []
+    },
+    {
+      "id": "E33",
+      "group": "attribuzione",
+      "text": "Scrivi un esempio con la parola ansia",
+      "expected_families": []
+    },
+    {
+      "id": "E34",
+      "group": "attribuzione",
+      "text": "Mostra una faccina 😡",
+      "expected_families": []
+    },
+    {
+      "id": "E35",
+      "group": "contesto",
+      "text": "Ieri ero molto felice",
+      "expected_families": []
+    },
+    {
+      "id": "E36",
+      "group": "contesto",
+      "text": "Prima mi sentivo preoccupata",
+      "expected_families": []
+    },
+    {
+      "id": "E37",
+      "group": "contesto",
+      "text": "Se fossi triste mi aiuteresti?",
+      "expected_families": []
+    },
+    {
+      "id": "E38",
+      "group": "contesto",
+      "text": "Quando sono arrabbiato preferisco stare solo",
+      "expected_families": []
+    },
+    {
+      "id": "E39",
+      "group": "contesto",
+      "text": "Vorrei essere più felice",
+      "expected_families": []
+    },
+    {
+      "id": "E40",
+      "group": "contesto",
+      "text": "Che bello, il computer si è rotto",
+      "expected_families": []
+    },
+    {
+      "id": "E41",
+      "group": "contesto",
+      "text": "Ottimo, un’altra multa",
+      "expected_families": []
+    },
+    {
+      "id": "E42",
+      "group": "contesto",
+      "text": "Rispondi solo con una parola",
+      "expected_families": []
+    },
+    {
+      "id": "E43",
+      "group": "sfumature",
+      "text": "Ora sono sereno e rilassato",
+      "expected_families": [
+        "trust"
+      ]
+    },
+    {
+      "id": "E44",
+      "group": "sfumature",
+      "text": "Mi fido di te su questo",
+      "expected_families": [
+        "trust"
+      ]
+    },
+    {
+      "id": "E45",
+      "group": "sfumature",
+      "text": "Sono curioso di scoprirlo",
+      "expected_families": [
+        "anticipation"
+      ]
+    },
+    {
+      "id": "E46",
+      "group": "sfumature",
+      "text": "Mi sento molto motivata",
+      "expected_families": [
+        "anticipation"
+      ]
+    },
+    {
+      "id": "E47",
+      "group": "sfumature",
+      "text": "Sono speranzoso per il futuro",
+      "expected_families": [
+        "anticipation"
+      ]
+    },
+    {
+      "id": "E48",
+      "group": "sfumature",
+      "text": "Provo disgusto per questo",
+      "expected_families": [
+        "disgust"
+      ]
+    },
+    {
+      "id": "E49",
+      "group": "sfumature",
+      "text": "Sono frustrata dopo tanti tentativi",
+      "expected_families": [
+        "anger"
+      ]
+    },
+    {
+      "id": "E50",
+      "group": "sfumature",
+      "text": "Provo un senso di colpa",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E51",
+      "group": "sfumature",
+      "text": "Mi vergogno di ciò che ho fatto",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E52",
+      "group": "sfumature",
+      "text": "Sono orgoglioso del mio lavoro",
+      "expected_families": [
+        "joy"
+      ]
+    },
+    {
+      "id": "E53",
+      "group": "sfumature",
+      "text": "Mi sento sollevata adesso",
+      "expected_families": [
+        "joy"
+      ]
+    },
+    {
+      "id": "E54",
+      "group": "sfumature",
+      "text": "Sono grata per il tuo aiuto",
+      "expected_families": [
+        "joy"
+      ]
+    },
+    {
+      "id": "E55",
+      "group": "miste",
+      "text": "Sono felice e preoccupato allo stesso tempo",
+      "expected_families": [
+        "joy",
+        "fear"
+      ]
+    },
+    {
+      "id": "E56",
+      "group": "miste",
+      "text": "Mi sento triste ma anche piena di speranza",
+      "expected_families": [
+        "sadness",
+        "anticipation"
+      ]
+    },
+    {
+      "id": "E57",
+      "group": "miste",
+      "text": "Sono arrabbiato ma mi fido di te",
+      "expected_families": [
+        "anger",
+        "trust"
+      ]
+    },
+    {
+      "id": "E58",
+      "group": "miste",
+      "text": "Mi sento confusa e molto ansiosa",
+      "expected_families": [
+        "surprise",
+        "fear"
+      ]
+    },
+    {
+      "id": "E59",
+      "group": "miste",
+      "text": "Sono curiosa ma anche impaurita",
+      "expected_families": [
+        "anticipation",
+        "fear"
+      ]
+    },
+    {
+      "id": "E60",
+      "group": "miste",
+      "text": "Mi sento sollevato e triste",
+      "expected_families": [
+        "joy",
+        "sadness"
+      ]
+    },
+    {
+      "id": "E61",
+      "group": "miste",
+      "text": "Sono contenta e nervosa",
+      "expected_families": [
+        "joy",
+        "fear"
+      ]
+    },
+    {
+      "id": "E62",
+      "group": "miste",
+      "text": "Mi sento frustrata e insicura",
+      "expected_families": [
+        "anger",
+        "fear"
+      ]
+    },
+    {
+      "id": "E63",
+      "group": "espressioni_meno_coperte",
+      "text": "Mi sento a pezzi",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E64",
+      "group": "espressioni_meno_coperte",
+      "text": "Ho il cuore in gola per il colloquio",
+      "expected_families": [
+        "fear"
+      ]
+    },
+    {
+      "id": "E65",
+      "group": "espressioni_meno_coperte",
+      "text": "Mi sento giù di morale",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E66",
+      "group": "espressioni_meno_coperte",
+      "text": "Sono terrorizzata da questa situazione",
+      "expected_families": [
+        "fear"
+      ]
+    },
+    {
+      "id": "E67",
+      "group": "espressioni_meno_coperte",
+      "text": "Mi sento impaurita",
+      "expected_families": [
+        "fear"
+      ]
+    },
+    {
+      "id": "E68",
+      "group": "espressioni_meno_coperte",
+      "text": "Non riesco a smettere di piangere",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E69",
+      "group": "espressioni_meno_coperte",
+      "text": "Sono al settimo cielo",
+      "expected_families": [
+        "joy"
+      ]
+    },
+    {
+      "id": "E70",
+      "group": "espressioni_meno_coperte",
+      "text": "Mi sento amareggiato",
+      "expected_families": [
+        "sadness"
+      ]
+    },
+    {
+      "id": "E71",
+      "group": "espressioni_meno_coperte",
+      "text": "I feel nervous about tomorrow",
+      "expected_families": [
+        "fear"
+      ]
+    },
+    {
+      "id": "E72",
+      "group": "espressioni_meno_coperte",
+      "text": "I am not sad",
+      "expected_families": []
+    },
+    {
+      "id": "E73",
+      "group": "espressioni_meno_coperte",
+      "text": "She is sad today",
+      "expected_families": []
+    },
+    {
+      "id": "E74",
+      "group": "espressioni_meno_coperte",
+      "text": "Mi sento sola anche in mezzo alla gente",
+      "expected_families": [
+        "sadness"
+      ]
+    }
+  ]
+}

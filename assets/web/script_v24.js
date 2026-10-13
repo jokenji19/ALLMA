@@ -68,6 +68,7 @@ window.cancelGeneration = function () {
 window.newChatReady = function () {
     backendBusy = false;
     responseBuffer = '';
+    thoughtBuffer = '';
     finishStreamUI();
     activeRequestId = null;
     newChatPending = false;
@@ -111,7 +112,9 @@ function renderSafeMarkdown(target, text) {
         return;
     }
     const template = document.createElement('template');
-    template.innerHTML = marked.parse(String(text));
+    // A standalone numeric answer such as "87." is text, not an empty list.
+    const markdown = String(text).replace(/^(\s*\d{1,9})\.(\s*)$/gm, '$1\\.$2');
+    template.innerHTML = marked.parse(markdown);
     const allowed = new Set(['P', 'BR', 'STRONG', 'EM', 'DEL', 'S', 'CODE', 'PRE',
         'BLOCKQUOTE', 'UL', 'OL', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
         'HR', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'A']);
@@ -123,7 +126,9 @@ function renderSafeMarkdown(target, text) {
                 continue;
             }
             const href = node.tagName === 'A' ? node.getAttribute('href') : null;
+            const start = node.tagName === 'OL' ? node.getAttribute('start') : null;
             for (const attr of Array.from(node.attributes)) node.removeAttribute(attr.name);
+            if (start && /^\d{1,9}$/.test(start)) node.setAttribute('start', start);
             if (href) {
                 try {
                     const url = new URL(href); // Absolute links only; never javascript/data/file.
@@ -141,6 +146,7 @@ function renderSafeMarkdown(target, text) {
 }
 
 function addMessage(text, sender, thoughtText) {
+    if (sender === 'bot') window.updateVoiceAnswer(text);
     const template = document.getElementById(sender === 'user' ? 'tmpl-user' : 'tmpl-bot');
     const clone = template.content.cloneNode(true);
 
@@ -266,49 +272,47 @@ let responseBuffer = "";
 let isDraining = false;
 let isBackendFinished = true;
 
+// Render only on incoming data, at most ten updates per second.
+// No artificial typing delay and no polling while the model is silent.
+let thoughtBuffer = "";
+let lastStreamRender = 0;
+
+function scheduleStreamRender() {
+    if (drainTimer || document.hidden || !currentStreamBubble) return;
+    const delay = Math.max(0, 100 - (performance.now() - lastStreamRender));
+    drainTimer = setTimeout(drainBuffer, delay);
+    isDraining = true;
+}
+
 function drainBuffer() {
-    if (!currentStreamBubble || !currentStreamBubble.content) {
-        isDraining = false;
-        return;
+    drainTimer = null;
+    isDraining = false;
+    if (!currentStreamBubble || !currentStreamBubble.content || document.hidden) return;
+    const changed = !!(responseBuffer || thoughtBuffer);
+    if (thoughtBuffer) {
+        currentStreamBubble.reasoning.textContent += thoughtBuffer;
+        thoughtBuffer = "";
     }
-
-    if (responseBuffer.length > 0) {
-        // Dynamic chunk size: if buffer gets too large (backend is VERY fast), take more chars to catch up smoothly
-        let charsToTake = 1;
-        if (responseBuffer.length > 600) charsToTake = 12;
-        else if (responseBuffer.length > 300) charsToTake = 6;
-        else if (responseBuffer.length > 100) charsToTake = 3;
-
-        const chunk = responseBuffer.substring(0, charsToTake);
-        responseBuffer = responseBuffer.substring(charsToTake);
-
-        currentStreamBubble.rawFullText = (currentStreamBubble.rawFullText || "") + chunk;
-
-        // Throttling Markdown parsing to 150ms (or when backend finishes) to prevent DOM thrashing
-        const now = Date.now();
-        const lastParse = currentStreamBubble.lastParse || 0;
-        const timeSinceLastParse = now - lastParse;
-
-        if (typeof marked !== 'undefined') {
-            if (timeSinceLastParse > 150 || (responseBuffer.length === 0 && isBackendFinished)) {
-                renderSafeMarkdown(currentStreamBubble.content, currentStreamBubble.rawFullText);
-                currentStreamBubble.lastParse = now;
-            }
-        } else {
-            currentStreamBubble.content.textContent = currentStreamBubble.rawFullText;
-        }
-
+    if (responseBuffer) {
+        currentStreamBubble.rawFullText = (currentStreamBubble.rawFullText || "") + responseBuffer;
+        responseBuffer = "";
+        renderSafeMarkdown(currentStreamBubble.content, currentStreamBubble.rawFullText);
+    }
+    if (changed) {
+        lastStreamRender = performance.now();
         scrollToBottom();
     }
-
-    if (responseBuffer.length === 0 && isBackendFinished) {
-        finishStreamUI();
-    } else {
-        // Sinuous delay: ~15ms base + slight human randomizer
-        let delay = Math.random() * 10 + 15;
-        drainTimer = setTimeout(drainBuffer, delay);
-    }
 }
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        if (drainTimer) clearTimeout(drainTimer);
+        drainTimer = null;
+        isDraining = false;
+    } else if (responseBuffer || thoughtBuffer) {
+        scheduleStreamRender();
+    }
+});
 
 function finishStreamUI() {
     if (drainTimer) clearTimeout(drainTimer);
@@ -361,6 +365,7 @@ const VoiceFX = (() => {
     let t = 0;
     let dt = 1;
     let lastTs = 0;
+    let lastRender = 0;
     let quality = 1;
     let qualityTarget = 1;
     let audio = 0;
@@ -456,7 +461,7 @@ const VoiceFX = (() => {
         if (orbCanvas) orbCtx = orbCanvas.getContext('2d');
 
         if (particles.length === 0) {
-            for (let i = 0; i < 50; i++) {
+            for (let i = 0; i < 28; i++) {
                 particles.push({
                     x: Math.random(),
                     y: Math.random(),
@@ -470,7 +475,7 @@ const VoiceFX = (() => {
         }
 
         if (neurons.length === 0) {
-            const count = 170;
+            const count = 120;
             for (let i = 0; i < count; i++) {
                 const angle = Math.random() * Math.PI * 2;
                 const rFactor = Math.sqrt(Math.random());
@@ -495,7 +500,7 @@ const VoiceFX = (() => {
         }
 
         function onResize() {
-            dpr = Math.max(1, window.devicePixelRatio || 1);
+            dpr = Math.min(1.5, Math.max(1, window.devicePixelRatio || 1));
             if (bgCanvas) {
                 const w = window.innerWidth;
                 const h = window.innerHeight;
@@ -524,10 +529,7 @@ const VoiceFX = (() => {
         if (overlay) overlay.setAttribute('data-voice-state', state);
         const label = document.getElementById('voice-status');
         if (label) {
-            const e = normalizeEmotion(internal.emotion);
-            const tpc = internal.topic ? String(internal.topic) : '';
-            const suffix = tpc ? `${e} • ${tpc}` : e;
-            label.textContent = state === 'idle' ? statusLabel(state) : `${statusLabel(state)} • ${suffix}`;
+            label.textContent = statusLabel(state);
         }
     }
 
@@ -793,6 +795,13 @@ const VoiceFX = (() => {
 
     function frame() {
         if (!active) return;
+        const now = performance.now();
+        const interval = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 200 : state === 'thinking' ? 50 : 33;
+        if (document.hidden || now - lastRender < interval) {
+            raf = requestAnimationFrame(frame);
+            return;
+        }
+        lastRender = now;
         dt = 1;
         if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
             const ts = performance.now();
@@ -830,9 +839,10 @@ const VoiceFX = (() => {
         overlay.classList.add('active');
         overlay.setAttribute('data-voice-state', state);
         lastTs = 0;
+        lastRender = 0;
         quality = 1;
         qualityTarget = 1;
-        if (!raf) raf = requestAnimationFrame(frame);
+        if (!overlay.classList.contains('voice-glass') && !raf) raf = requestAnimationFrame(frame);
     }
 
     function deactivate() {
@@ -872,10 +882,11 @@ window.openVoiceMode = function () {
     if (overlay) {
         overlay.classList.add('active');
         VoiceFX.activate();
-        VoiceFX.setState('listening');
-        VoiceFX.setMicRequested(true);
+        VoiceFX.setState('idle');
+        VoiceFX.setMicRequested(false);
         const transcript = document.getElementById('voice-text');
         if (transcript) transcript.textContent = "";
+        window.updateVoiceAnswer('Sono qui. Tocca il microfono e parliamo.');
 
         // Also ensure Mic is active on Python side if not already
         if (window.pyBridge) {
@@ -907,11 +918,17 @@ window.closeVoiceMode = function () {
     }
 };
 
+window.updateVoiceAnswer = function (text) {
+    if (!document.getElementById('voice-overlay')?.classList.contains('active')) return;
+    const target = document.getElementById('voice-answer');
+    if (target) renderSafeMarkdown(target, String(text || ''));
+};
+
 window.updateVoiceText = function (text) {
     const el = document.getElementById('voice-text');
     if (el) el.textContent = text;
+    if (text && VoiceFX.isActive()) window.updateVoiceAnswer('Ti ascolto. La risposta apparirà qui.');
     if (VoiceFX.isActive()) {
-        VoiceFX.setState('listening');
         VoiceFX.bump(0.35);
     }
 };
@@ -933,9 +950,6 @@ window.voiceToggleListening = function () {
             action: 'toggle_mic'
         }));
     }
-    const next = VoiceFX.getMicRequested() ? 'idle' : 'listening';
-    VoiceFX.setMicRequested(!VoiceFX.getMicRequested());
-    VoiceFX.setState(next);
     VoiceFX.bump(0.45);
 };
 
@@ -1255,15 +1269,16 @@ function updateThemeUI(isDark) {
     const text = document.getElementById('theme-text');
     if (icon) icon.textContent = isDark ? '☀️' : '🌙';
     if (text) text.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+    if (window.pyBridge) window.pyBridge.postMessage(JSON.stringify({type:'action', action:'set_theme', dark:isDark}));
 }
 
 // Load Theme on Init
 (function initTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-        document.body.classList.add('dark-mode');
-        updateThemeUI(true);
-    }
+    let savedTheme = null;
+    try { savedTheme = localStorage.getItem('theme'); } catch (_) { /* Native offline document may restrict storage. */ }
+    const isDark = savedTheme !== 'light';
+    document.body.classList.toggle('dark-mode', isDark);
+    updateThemeUI(isDark);
 })();
 
 // 2. User Profile Logic
@@ -1407,10 +1422,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const splash = document.getElementById('boot-splash');
         if (splash) {
             requestAnimationFrame(() => {
-                setTimeout(() => {
-                    document.body.classList.remove('boot-loading');
-                    splash.classList.add('hidden');
-                }, 300);
+                document.body.classList.remove('boot-loading');
+                splash.classList.add('hidden');
             });
         }
         const savedName = localStorage.getItem('allma_username');
@@ -1491,6 +1504,8 @@ window.startStream = function (requestId = null) {
 
     streamStartTime = Date.now();
     responseBuffer = "";
+    thoughtBuffer = "";
+    lastStreamRender = 0;
     isDraining = false;
     isBackendFinished = false;
 
@@ -1502,7 +1517,7 @@ window.startStream = function (requestId = null) {
             const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
             if (textSpan) textSpan.textContent = duration.toFixed(1) + "s";
         }
-    }, 200);
+    }, 500);
 };
 
 window.streamChunk = function (text, isThought, requestId = null) {
@@ -1513,12 +1528,12 @@ window.streamChunk = function (text, isThought, requestId = null) {
             currentStreamBubble.reasoningContainer.classList.remove('hidden');
             // The user chooses whether to expand response details.
         }
-        currentStreamBubble.reasoning.textContent += text;
-        scrollToBottom();
+        thoughtBuffer += text;
+        scheduleStreamRender();
     } else {
         if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
             if (VoiceFX.getState && VoiceFX.getState() !== 'speaking') {
-                VoiceFX.setState('speaking');
+                VoiceFX.setState('thinking');
             }
             VoiceFX.bump(0.08);
         }
@@ -1539,19 +1554,18 @@ window.streamChunk = function (text, isThought, requestId = null) {
             }
         }
 
-        // Add text to the sinuous buffer instead of DOM
         responseBuffer += text;
-
-        // Start draining if not already running
-        if (!isDraining) {
-            isDraining = true;
-            drainBuffer();
-        }
+        scheduleStreamRender();
     }
 };
 
 window.endStream = function (finalContent, requestId = null) {
     if (requestId !== null && requestId !== activeRequestId) return;
+    window.updateVoiceAnswer(finalContent);
+    if (currentStreamBubble && thoughtBuffer) {
+        currentStreamBubble.reasoning.textContent += thoughtBuffer;
+        thoughtBuffer = '';
+    }
     if (typeof finalContent === 'string' && currentStreamBubble) {
         responseBuffer = '';
         currentStreamBubble.rawFullText = finalContent;
@@ -1560,7 +1574,7 @@ window.endStream = function (finalContent, requestId = null) {
     }
     isBackendFinished = true;
     if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
-        VoiceFX.setState(VoiceFX.getMicRequested && VoiceFX.getMicRequested() ? 'listening' : 'idle');
+        // Native recognizer and playback callbacks own the voice state.
         VoiceFX.bump(0.25);
     }
 
@@ -1569,14 +1583,14 @@ window.endStream = function (finalContent, requestId = null) {
     timerInterval = null;
 
     // Update timer text to show Backend finish time
-    if (currentStreamBubble && streamStartTime > 0 && !currentStreamBubble.timerFrozen) {
+    if (currentStreamBubble && streamStartTime > 0) {
         const duration = (Date.now() - streamStartTime) / 1000;
         const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
         if (textSpan) textSpan.textContent = duration.toFixed(2) + " s";
+        currentStreamBubble.timerFrozen = true;
     }
 
-    // If the buffer is already empty and draining finished, clean up UI instantly.
-    // Otherwise, drainBuffer() will take care of finishStreamUI() when it hits 0.
+    // The validated final response replaces the preview immediately.
     if (responseBuffer.length === 0) {
         finishStreamUI();
     }
@@ -1671,7 +1685,7 @@ window.updateStatus = function (key, active) {
                 indicator.classList.remove('hidden');
                 indicator.classList.add('active', 'pulsing');
             }
-            showDreamToast('ALLMA sta sognando e imparando...', '🌙');
+            showDreamToast('ALLMA sta esplorando nuove ipotesi...', '🌙');
         } else {
             if (indicator) {
                 indicator.classList.remove('active', 'pulsing');
@@ -1681,7 +1695,7 @@ window.updateStatus = function (key, active) {
                     }
                 }, 500);
             }
-            showDreamToast('Sogno completato. ALLMA si è evoluta.', '☀️');
+            showDreamToast('Ciclo di riflessione terminato.', '☀️');
         }
     }
 };
@@ -1692,6 +1706,7 @@ const DREAM_PHASE_ICONS = {
     'memory': '💾',
     'tot': '🌳',
     'insight': '💡',
+    'hypothesis': '💭',
     'refine': '✨',
     'curiosity': '❓',
     'done': '☀️',
@@ -1735,18 +1750,176 @@ function appendDreamEntry(text, phase, timestampOverride = null) {
     const time = timeObj.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const entry = document.createElement('div');
-    entry.className = `dream-entry dream-entry--${phase || 'default'}`;
+    const safePhase = Object.prototype.hasOwnProperty.call(DREAM_PHASE_ICONS, phase) ? phase : 'default';
+    entry.className = `dream-entry dream-entry--${safePhase}`;
     entry.innerHTML = `
         <span class="dream-entry-icon">${icon}</span>
         <div class="dream-entry-content">
-            <span class="dream-entry-text">${text}</span>
+            <span class="dream-entry-text"></span>
             <span class="dream-entry-time">${time}</span>
         </div>`;
 
+    entry.querySelector('.dream-entry-text').textContent = String(text);
     container.appendChild(entry);
+    while (container.children.length > 50) container.firstElementChild.remove();
     // Scroll in fondo
     container.scrollTop = container.scrollHeight;
 }
+
+const dreamReviewDrafts = new Map();
+let dreamReviewBusy = false;
+let dreamReviewTimer = null;
+let dreamReviewItems = [];
+let dreamReviewShowRejected = false;
+
+function dreamReviewNotice(text) {
+    const notice = document.getElementById('dream-review-notice');
+    if (notice) notice.textContent = text || '';
+}
+
+function sendDreamReview(item, decision, correction = '', note = '') {
+    if (dreamReviewBusy) return;
+    const message = JSON.stringify({type: 'action', action: 'review_dream_hypothesis',
+        id: item.id, revision: item.revision, decision, correction, note});
+    if (!window.pyBridge && !window.msgQueue) {
+        dreamReviewNotice('Collegamento non disponibile. La revisione non è stata salvata.');
+        return;
+    }
+    dreamReviewBusy = true;
+    document.querySelectorAll('#dream-review-items button').forEach(button => { button.disabled = true; });
+    dreamReviewNotice('Salvataggio della revisione…');
+    dreamReviewTimer = setTimeout(() => {
+        dreamReviewBusy = false;
+        document.querySelectorAll('#dream-review-items button').forEach(button => { button.disabled = false; });
+        dreamReviewNotice('Conferma di salvataggio non ricevuta. Aggiorna il diario o riprova.');
+    }, 15000);
+    if (window.pyBridge) window.pyBridge.postMessage(message);
+    else window.msgQueue.push(message);
+}
+
+window.restoreDreamReviews = function (state) {
+    const container = document.getElementById('dream-review-items');
+    if (!container) return;
+    dreamReviewItems = Array.isArray(state.items) ? state.items : [];
+    container.replaceChildren();
+    const count = document.getElementById('dream-review-count');
+    const pending = dreamReviewItems.filter(item => item.status === 'unverified').length;
+    if (count) count.textContent = pending ? (pending === 1 ? '1 riflessione da valutare' : pending + ' riflessioni da valutare') : 'Nessuna nuova riflessione da valutare';
+    const rejectedCount = dreamReviewItems.filter(item => item.status === 'rejected').length;
+    if (rejectedCount) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button'; toggle.className = 'dream-review-archive-toggle';
+        toggle.disabled = dreamReviewBusy;
+        toggle.setAttribute('aria-expanded', String(dreamReviewShowRejected));
+        toggle.textContent = (dreamReviewShowRejected ? 'Nascondi scartate' : 'Mostra scartate') + ' (' + rejectedCount + ')';
+        toggle.addEventListener('click', () => {
+            dreamReviewShowRejected = !dreamReviewShowRejected;
+            window.restoreDreamReviews({items: dreamReviewItems});
+        });
+        container.append(toggle);
+    } else {
+        dreamReviewShowRejected = false;
+    }
+    const visibleItems = dreamReviewItems.filter(item => dreamReviewShowRejected || item.status !== 'rejected');
+    if (!visibleItems.length) {
+        const empty = document.createElement('p');
+        empty.className = 'dream-review-explanation';
+        empty.textContent = rejectedCount ? 'Nessuna ipotesi attiva. Le scartate sono conservate nella cronologia.' : 'Nessuna ipotesi da valutare.';
+        container.append(empty);
+        return;
+    }
+    const labels = {unverified: 'Da verificare', user_confirmed: 'Confermata da te',
+        user_corrected: 'Corretta da te', rejected: 'Scartata — esclusa dalle risposte'};
+    visibleItems.forEach(item => {
+        const card = document.createElement('article');
+        card.className = 'dream-review-card';
+        const status = document.createElement('p');
+        status.className = 'dream-review-status';
+        status.textContent = labels[item.status] || 'Da verificare';
+        const text = document.createElement('p');
+        text.className = 'dream-review-text';
+        text.textContent = item.text;
+        card.append(status, text);
+        const details = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = 'Origine e revisione';
+        const origin = document.createElement('p');
+        origin.textContent = 'Ipotesi originale: ' + item.original_text;
+        const evidence = document.createElement('p');
+        evidence.textContent = item.evidence && item.evidence.text ? 'Dal tuo messaggio: ' + item.evidence.text : 'Messaggio di origine non disponibile per questa ipotesi precedente.';
+        const revision = document.createElement('p');
+        revision.textContent = 'Revisione ' + item.revision + (item.reviewed_at ? ' · ' + new Date(item.reviewed_at).toLocaleString('it-IT') : '');
+        if (item.review_note) revision.textContent += ' · ' + item.review_note;
+        details.append(summary, origin, evidence, revision);
+        if (Array.isArray(item.review_history) && item.review_history.length) {
+            const history = document.createElement('ul');
+            history.setAttribute('aria-label', 'Ultime cinque revisioni');
+            item.review_history.forEach(event => {
+                const line = document.createElement('li');
+                const decisions = {confirm: 'Confermata', correct: 'Corretta', reject: 'Scartata'};
+                line.textContent = 'Revisione ' + event.revision + ': ' + (decisions[event.decision] || event.decision) +
+                    ' · ' + new Date(event.reviewed_at).toLocaleString('it-IT');
+                if (event.text) line.textContent += ' · ' + event.text;
+                if (event.note) line.textContent += ' · ' + event.note;
+                history.append(line);
+            });
+            details.append(history);
+        }
+        card.append(details);
+        const actions = document.createElement('div');
+        actions.setAttribute('aria-label', 'Scegli cosa fare con questa riflessione');
+        actions.className = 'dream-review-actions';
+        function button(label, action) {
+            const el = document.createElement('button');
+            el.type = 'button'; el.textContent = label; el.disabled = dreamReviewBusy;
+            el.addEventListener('click', action);
+            actions.append(el);
+            return el;
+        }
+        const editor = document.createElement('div');
+        editor.className = 'dream-review-editor';
+        editor.hidden = !dreamReviewDrafts.has(item.id);
+        const correction = document.createElement('textarea');
+        correction.setAttribute('aria-label', 'Correzione dell’ipotesi');
+        correction.maxLength = 2000;
+        correction.value = dreamReviewDrafts.get(item.id)?.correction ?? item.text;
+        const note = document.createElement('textarea');
+        note.setAttribute('aria-label', 'Motivo della correzione, facoltativo');
+        note.placeholder = 'Motivo della correzione (facoltativo)'; note.maxLength = 2000;
+        note.value = dreamReviewDrafts.get(item.id)?.note ?? '';
+        const save = document.createElement('button');
+        save.type = 'button'; save.textContent = 'Salva correzione'; save.disabled = dreamReviewBusy;
+        const draft = () => dreamReviewDrafts.set(item.id, {correction: correction.value, note: note.value});
+        correction.addEventListener('input', draft); note.addEventListener('input', draft);
+        save.addEventListener('click', () => {
+            if (!correction.value.trim()) { dreamReviewNotice('Scrivi una correzione prima di salvarla.'); return; }
+            draft(); sendDreamReview(item, 'correct', correction.value, note.value);
+        });
+        editor.append(correction, note, save);
+        button(item.status === 'user_corrected' ? 'Conferma l’originale' : 'Conferma', () => sendDreamReview(item, 'confirm')).classList.add('dream-confirm-action');
+        const editButton = button('Correggi', () => {
+            editor.hidden = !editor.hidden;
+            editButton.setAttribute('aria-expanded', String(!editor.hidden));
+            if (!editor.hidden) correction.focus();
+        });
+        editButton.setAttribute('aria-expanded', String(!editor.hidden));
+        button('Scarta', () => sendDreamReview(item, 'reject'));
+        card.append(actions, editor);
+        container.append(card);
+    });
+};
+
+window.dreamReviewResult = function (result) {
+    clearTimeout(dreamReviewTimer); dreamReviewTimer = null;
+    dreamReviewBusy = false;
+    if (result.ok && result.reviewed_id) dreamReviewDrafts.delete(result.reviewed_id);
+    if (Array.isArray(result.items)) window.restoreDreamReviews(result);
+    else document.querySelectorAll('#dream-review-items button').forEach(button => { button.disabled = false; });
+    const discarded = result.ok && Array.isArray(result.items) && result.items.some(item =>
+        item.id === result.reviewed_id && item.status === 'rejected');
+    dreamReviewNotice(result.ok ? (discarded ? 'Ipotesi scartata ed esclusa dalle risposte. La cronologia resta disponibile in Mostra scartate.' :
+        'Revisione salvata. Puoi modificarla o revocarla.') : result.error || 'Salvataggio non riuscito. Riprova.');
+};
 
 window.clearDreamJournal = function () {
     const container = document.getElementById('dream-journal-entries');
@@ -1761,124 +1934,30 @@ window.handleDreamLog = function (data) {
     const text = data.text || data.content || String(data);
     const phase = data.phase || 'default';
     appendDreamEntry(text, phase);
+    if (['done', 'paused', 'error'].includes(phase) && !dreamReviewBusy &&
+            !document.getElementById('panel-dream')?.classList.contains('hidden')) {
+        if (window.pyBridge) window.pyBridge.postMessage('__REQUEST_DREAM_HISTORY__');
+        else if (window.msgQueue) window.msgQueue.push('__REQUEST_DREAM_HISTORY__');
+    }
 
     // Aggiorna badge stato
     const badge = document.getElementById('dream-status-badge');
     if (badge) {
-        badge.textContent = '🌙 Sognando...';
-        badge.className = 'dream-badge dream-badge--active';
+        const labels = {done: 'Da verificare', hypothesis: 'Ipotesi da verificare', paused: 'In pausa', error: 'Errore'};
+        badge.textContent = labels[phase] || 'Riflessione in corso';
+        badge.className = 'dream-badge ' + (['done', 'paused', 'error'].includes(phase) ? 'dream-badge--idle' : 'dream-badge--active');
     }
 };
 
 // --- DIAGNOSTICS PANEL LOGIC (v0.56) ---
 
-let diagUpdateInterval = null;
-
-function startDiagnostics() {
-    console.log("Starting Diagnostics Monitoring...");
-    if (diagUpdateInterval) clearInterval(diagUpdateInterval);
-
-    // Immediate Request
-    requestDiagnostics();
-
-    // Poll every 1s
-    diagUpdateInterval = setInterval(requestDiagnostics, 1000);
-}
-
-function stopDiagnostics() {
-    console.log("Stopping Diagnostics.");
-    if (diagUpdateInterval) {
-        clearInterval(diagUpdateInterval);
-        diagUpdateInterval = null;
-    }
-}
-
-function requestDiagnostics() {
-    if (window.msgQueue) {
-        window.msgQueue.push("__REQUEST_DIAGNOSTICS_UPDATE__");
-    } else if (window.pyBridge) {
-        // Direct call if queue unavailable (should rely on bridge usually)
-        // Check if we can post directly? No, usually handled by bridge queue consumer
-        // Mock fallback for testing if no backend
-        // displayDiagnostics(generateMockDiagnostics()); 
-    }
-}
-
-// Called by Python via bridge: window.updateDiagnostics(jsonString)
-window.updateDiagnostics = function (jsonStats) {
-    try {
-        const stats = (typeof jsonStats === 'string') ? JSON.parse(jsonStats) : jsonStats;
-        displayDiagnostics(stats);
-    } catch (e) {
-        console.error("Diag Update Failed:", e);
-    }
-};
-
-function displayDiagnostics(stats) {
-    // 1. Resources
-    if (stats.resources) {
-        const cpu = stats.resources.cpu || 0;
-        const ram = stats.resources.ram || 0; // MB
-        const temp = stats.resources.temp || 0;
-
-        updateBar('diag-cpu', cpu, '%', 100);
-
-        // RAM max estimate? Say 4GB for phone logic or just raw MB
-        const ramPercent = Math.min(100, (ram / 6000) * 100); // Assume 6GB soft cap for visualizations
-        updateBar('diag-ram', ram, ' MB', 6000);
-
-        updateBar('diag-temp', temp, '°C', 100);
-    }
-
-    // 2. Soul
-    if (stats.soul) {
-        setSoulBar('energy', stats.soul.energy);
-        setSoulBar('chaos', stats.soul.chaos);
-        setSoulBar('entropy', stats.soul.entropy);
-
-        const statusEl = document.getElementById('soul-status-text');
-        if (statusEl) statusEl.textContent = `Stato: ${stats.soul.state_label || 'Unknown'}`;
-    }
-
-    // 3. Log Trace
-    if (stats.logs && Array.isArray(stats.logs)) {
-        const logContainer = document.getElementById('diag-logs');
-        if (logContainer) {
-            // Log Buffer Strategy: Append ONLY new logs
-            // The backend flushes its buffer on read, so whatever we get is new.
-
-            stats.logs.forEach(log => {
-                const div = document.createElement('div');
-                div.className = 'log-entry';
-                // Colorize based on level
-                let color = '#D4D4D4'; // Default
-                if (log.msg.includes('ERROR')) color = '#EF4444'; // Red
-                if (log.msg.includes('WARN')) color = '#F59E0B'; // Orange
-                if (log.msg.includes('LLM')) color = '#3B82F6'; // Blue
-                if (log.msg.includes('SYSTEM')) color = '#10B981'; // Green
-                if (log.msg.includes('INPUT')) color = '#A78BFA'; // Purple
-
-                div.innerHTML = `<span class="log-time" style="opacity:0.5; font-size:10px; margin-right:6px;">${log.time || ''}</span><span class="log-msg" style="color:${color}">${log.msg}</span>`;
-                logContainer.appendChild(div);
-            });
-
-            // Auto-scroll if near bottom
-            logContainer.scrollTop = logContainer.scrollHeight;
-
-            // Optional: Limit total DOM elements to avoid lag
-            while (logContainer.children.length > 100) {
-                logContainer.removeChild(logContainer.firstChild);
-            }
-        }
-    }
-}
-
 function updateBar(idPrefix, value, unit, max) {
     const valEl = document.getElementById(idPrefix + '-val');
     const barEl = document.getElementById(idPrefix + '-bar');
-    if (valEl) valEl.textContent = Math.round(value) + unit;
+    const available = typeof value === 'number' && Number.isFinite(value);
+    if (valEl) valEl.textContent = available ? Math.round(value) + unit : 'N/D';
     if (barEl) {
-        const pct = Math.min(100, (value / max) * 100);
+        const pct = available ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
         barEl.style.width = pct + '%';
         // Color logic
         if (pct > 80) barEl.style.backgroundColor = '#EF4444';
@@ -1941,7 +2020,8 @@ function requestDiagnostics() {
     } else {
         console.warn("Diagnostics: No pyBridge found!");
         setDiagStatus("No Bridge!", "red");
-        updateDiagnostics(JSON.stringify(generateMockDiagnostics()));
+        window.updateDiagnostics({resources: {cpu: null, ram: null, temp: null}, logs: []});
+        setDiagStatus('Non collegato', 'gray');
     }
 }
 
@@ -1964,28 +2044,10 @@ window.updateDiagnostics = function (input) {
 
         if (!stats) return;
 
-        // 1. Resources
         if (stats.resources) {
-            const cpuVal = document.getElementById('diag-cpu-val');
-            const cpuBar = document.getElementById('diag-cpu-bar');
-            if (cpuVal) cpuVal.innerText = Math.round(stats.resources.cpu) + "%";
-            if (cpuBar) cpuBar.style.width = Math.min(100, stats.resources.cpu) + "%";
-
-            const ramVal = document.getElementById('diag-ram-val');
-            const ramBar = document.getElementById('diag-ram-bar');
-            if (ramVal) ramVal.innerText = Math.round(stats.resources.ram) + " MB";
-            if (ramBar) {
-                let ramPct = (stats.resources.ram / 4000) * 100; // Assume 4GB for mobile scaling
-                ramBar.style.width = Math.min(100, ramPct) + "%";
-            }
-
-            const tempVal = document.getElementById('diag-temp-val');
-            const tempBar = document.getElementById('diag-temp-bar');
-            if (tempVal) tempVal.innerText = Math.round(stats.resources.temp) + "°C";
-            if (tempBar) {
-                let tempPct = (stats.resources.temp / 80) * 100;
-                tempBar.style.width = Math.min(100, tempPct) + "%";
-            }
+            updateBar('diag-cpu', stats.resources.cpu, '%', 100);
+            updateBar('diag-ram', stats.resources.ram, ' MB', 4000);
+            updateBar('diag-temp', stats.resources.temp, '°C', 80);
         }
 
         // 2. Identity (V5) & Soul
@@ -2002,7 +2064,7 @@ window.updateDiagnostics = function (input) {
 
             setSoulBar('energy', stats.soul.energy);
             setSoulBar('chaos', stats.soul.chaos);
-            setSoulBar('entropy', stats.soul.entropy || 0.1);
+            setSoulBar('entropy', stats.soul.entropy ?? 0);
         }
 
         // 3. Log Trace
@@ -2018,7 +2080,14 @@ window.updateDiagnostics = function (input) {
                     if (log.msg.includes('ERROR')) color = '#EF4444';
                     if (log.msg.includes('USER')) color = '#3B82F6';
                     if (log.msg.includes('BOT')) color = '#10B981';
-                    div.innerHTML = `<span class="log-time" style="opacity:0.5; font-size:10px; margin-right:6px;">${log.time || ''}</span><span class="log-msg" style="color:${color}">${log.msg}</span>`;
+                    const time = document.createElement('span');
+                    time.className = 'log-time';
+                    time.textContent = log.time || '';
+                    const message = document.createElement('span');
+                    message.className = 'log-msg';
+                    message.style.color = color;
+                    message.textContent = String(log.msg || '');
+                    div.append(time, message);
                     logContainer.appendChild(div);
                 });
                 logContainer.scrollTop = logContainer.scrollHeight;
@@ -2070,4 +2139,47 @@ window.switchView = function (viewName) {
 
         stopDiagnostics();
     }
+};
+
+
+window.updateVoiceState = function(payload) {
+    if (!VoiceFX.isActive()) return;
+    const actual = payload?.state || 'idle';
+    const visual = {permission:'idle', starting:'idle', recognizing:'thinking', error:'idle', ready:'idle'}[actual] || actual;
+    VoiceFX.setState(visual);
+    VoiceFX.setMicRequested(actual === 'listening' || actual === 'starting');
+    const label = document.getElementById('voice-status');
+    if (label) label.textContent = payload?.message || {idle:'Tocca il microfono per parlare.', listening:'Ti ascolto…', starting:'Attivo il microfono…', thinking:'Sto elaborando…', speaking:'Sto parlando…', recognizing:'Trascrivo…'}[actual] || 'Attendi…';
+    const footer = document.querySelector('#voice-overlay .voice-footer');
+    if (footer) footer.textContent = actual === 'listening' ? 'Tocca per terminare l’ascolto' :
+        (actual === 'thinking' || actual === 'speaking') ? 'Tocca per interrompere' : 'Tocca il microfono per parlare';
+    const button = document.getElementById('voice-mic-btn');
+    if (button) {
+        button.disabled = actual === 'permission' || actual === 'recognizing';
+        button.classList.toggle('is-stop', actual === 'thinking' || actual === 'speaking');
+        button.setAttribute('aria-label', actual === 'thinking' || actual === 'speaking' ? 'Interrompi' : 'Microfono');
+    }
+};
+window.updateVoiceLevel = function(level) { if (VoiceFX.isActive()) VoiceFX.bump(Math.max(0, Math.min(1, Number(level)))); };
+window.hideVoiceMode = function() {
+    const overlay = document.getElementById('voice-overlay');
+    if (overlay) overlay.classList.remove('active');
+    VoiceFX.deactivate();
+};
+
+function syncAmbientMotion() {
+    document.body.classList.toggle('motion-paused', document.hidden);
+}
+document.addEventListener('visibilitychange', syncAmbientMotion);
+syncAmbientMotion();
+
+// One benchmark configuration shared by settings and diagnostics.
+window.openBenchmarkSettings = function () {
+    switchView('chat');
+    const panel = document.getElementById('panel-settings');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    startTemperatureMonitoring();
+    const section = document.getElementById('benchmark-settings');
+    if (section) section.scrollIntoView({block: 'start'});
 };

@@ -9,6 +9,8 @@ STATE_FILES = (
     'allma.db', 'allma_memory.json', 'allma_settings.json', 'allma_modules.db', 'answer_recall.json',
     'incremental_cache/knowledge_states.json',
     'data/allma_vectors.db', 'data/dream_journal.json',
+    'data/dream_journal.json.pending.json', 'data/dream_journal.json.processed.json', 'message_delivery.json',
+    'cognitive_state.json', 'allma_diary.json',
 )
 
 
@@ -17,8 +19,10 @@ def prepare_runtime_storage(private_dir, legacy_dir=None):
     destination.mkdir(parents=True, exist_ok=True)
     if legacy_dir is not None:
         legacy = Path(legacy_dir).resolve()
-        for relative in STATE_FILES:
-            source, target = legacy / relative, destination / relative
+        migrations = [(relative, relative) for relative in STATE_FILES]
+        migrations.append(('Model/data/allma.db', 'legacy_coalescence.db'))
+        for source_relative, target_relative in migrations:
+            source, target = legacy / source_relative, destination / target_relative
             if not source.is_file() or target.exists() or source == target:
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)

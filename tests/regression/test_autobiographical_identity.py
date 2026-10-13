@@ -29,6 +29,13 @@ def test_birth_and_origin_survive_empty_memory(memory):
         ORIGIN.name = 'Luna'
 
 
+def test_spoken_greeting_uses_origin_without_answering_a_compound_request(memory):
+    assert grounded_reply('Ciao Alma Come ti chiami', memory, 'u')[0] == 'Mi chiamo ALLMA.'
+    assert grounded_reply('Buongiorno, ALLMA, come mi chiamo?', memory, 'u')[1] == 'no_evidence'
+    assert grounded_reply('Ciao ALLMA, come ti chiami e perché?', memory, 'u') is None
+    assert grounded_reply('Nel racconto dico ciao Alma come ti chiami', memory, 'u') is None
+
+
 def test_user_facts_have_ownership_source_and_survive_restart(memory):
     add(memory, 'Mi chiamo Ada.')
     add(memory, 'Mi chiamo Elena.', uid='other')

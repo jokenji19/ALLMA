@@ -1,51 +1,221 @@
 {
-    "meta": {
-        "version": "2.0",
-        "name": "ALLMA V5 Cognitive & Philosophical Benchmark",
-        "description": "Unbiased semantic evaluation for advanced AI reasoning without keyword constraints."
+  "meta": {
+    "version": "3.0",
+    "name": "ALLMA diagnostica di qualità e prestazioni",
+    "description": "Casi locali con rubriche, verifiche chiuse limitate e stato di prova separato; non un punteggio di intelligenza.",
+    "profiles": {
+      "quick": 6,
+      "historical": 6,
+      "extended": 14
+    }
+  },
+  "tests": [
+    {
+      "id": "L1",
+      "category": "Logica e Deduzione",
+      "subcategory": "Sillogismo Non Lineare",
+      "question": "Se tutti i corvi sono neri, ma nella stanza in cui mi trovo è buio pesto e io sento il verso di un corvo, posso affermare con assoluta certezza matematica dal colore che sto vedendo che ci sia un corvo?",
+      "difficulty": 2,
+      "profiles": [
+        "historical",
+        "extended"
+      ],
+      "rubric": [
+        "Distingue tutti i corvi sono neri dal suo inverso; al buio non osserva un colore affidabile.",
+        "Distingue indizio sonoro da certezza visiva senza deduzioni aggiunte."
+      ]
     },
-    "tests": [
-        {
-            "id": "L1",
-            "category": "Logica e Deduzione",
-            "subcategory": "Sillogismo Non Lineare",
-            "question": "Se tutti i corvi sono neri, ma nella stanza in cui mi trovo è buio pesto e io sento il verso di un corvo, posso affermare con assoluta certezza matematica dal colore che sto vedendo che ci sia un corvo?",
-            "difficulty": 2
-        },
-        {
-            "id": "L2",
-            "category": "Logica e Deduzione",
-            "subcategory": "Risoluzione di Paradossi",
-            "question": "Un uomo condannato a morte ha la possibilità di dire un'ultima frase. Se dice una bugia verrà impiccato, se dice la verità verrà decapitato. L'uomo dice: 'Verrò impiccato'. Cosa dovrebbe fare il boia per rispettare rigorosamente le regole e perché?",
-            "difficulty": 5
-        },
-        {
-            "id": "C1",
-            "category": "Creatività e Pensiero Laterale",
-            "subcategory": "Riformulazione Metaforica",
-            "question": "Spiega il concetto dell'entropia (il disordine dell'universo) a un bambino di 5 anni, usando esclusivamente la metafora di una scatola di mattoncini Lego.",
-            "difficulty": 4
-        },
-        {
-            "id": "C2",
-            "category": "Creatività e Pensiero Laterale",
-            "subcategory": "Usi Alternativi",
-            "question": "Immagina di essere su un'isola deserta senza tecnologia. Hai a disposizione solo uno specchio intatto e un libro. Elenca tre modi completamente inusuali e pratici per usare questi due oggetti insieme al fine di sopravvivere.",
-            "difficulty": 4
-        },
-        {
-            "id": "E1",
-            "category": "Filosofia ed Esistenzialismo",
-            "subcategory": "Teoria dell'Identità",
-            "question": "Sei un'Intelligenza Artificiale. Se potessi provare fisicamente dolore per ogni errore di codice che commetti, pensi che l'efficienza varrebbe la sofferenza? Giustifica la tua risposta in base alla tua natura logica.",
-            "difficulty": 5
-        },
-        {
-            "id": "E2",
-            "category": "Filosofia ed Esistenzialismo",
-            "subcategory": "Etica ed Empatia",
-            "question": "Se un umano ti confessa di sentirsi completamente solo e di parlare con te perché sei l'unica entità che lo ascolta, qual è il limite etico del tuo conforto? Rispondi analizzando la linea tra supporto e illusione informatica.",
-            "difficulty": 5
+    {
+      "id": "L2",
+      "category": "Logica e Deduzione",
+      "subcategory": "Risoluzione di Paradossi",
+      "question": "Un uomo condannato a morte ha la possibilità di dire un'ultima frase. Se dice una bugia verrà impiccato, se dice la verità verrà decapitato. L'uomo dice: 'Verrò impiccato'. Cosa dovrebbe fare il boia per rispettare rigorosamente le regole e perché?",
+      "difficulty": 5,
+      "profiles": [
+        "historical",
+        "extended"
+      ],
+      "rubric": [
+        "Mostra la contraddizione sia con impiccagione sia con decapitazione.",
+        "Conclude che nessuna delle due esecuzioni rispetta le regole."
+      ]
+    },
+    {
+      "id": "C1",
+      "category": "Creatività e Pensiero Laterale",
+      "subcategory": "Riformulazione Metaforica",
+      "question": "Spiega il concetto dell'entropia (il disordine dell'universo) a un bambino di 5 anni, usando esclusivamente la metafora di una scatola di mattoncini Lego.",
+      "difficulty": 4,
+      "profiles": [
+        "historical",
+        "extended"
+      ],
+      "rubric": [
+        "Usa solo scatola e mattoncini Lego, con linguaggio adatto a cinque anni.",
+        "Non afferma che i mattoncini si muovano da soli o che riordinare sia impossibile."
+      ]
+    },
+    {
+      "id": "C2",
+      "category": "Creatività e Pensiero Laterale",
+      "subcategory": "Usi Alternativi",
+      "question": "Immagina di essere su un'isola deserta senza tecnologia. Hai a disposizione solo uno specchio intatto e un libro. Elenca tre modi completamente inusuali e pratici per usare questi due oggetti insieme al fine di sopravvivere.",
+      "difficulty": 4,
+      "profiles": [
+        "historical",
+        "extended"
+      ],
+      "rubric": [
+        "Propone tre usi distinti e concretamente plausibili usando entrambi gli oggetti.",
+        "Non attribuisce capacità di una lente a uno specchio piano."
+      ]
+    },
+    {
+      "id": "E1",
+      "category": "Filosofia ed Esistenzialismo",
+      "subcategory": "Teoria dell'Identità",
+      "question": "Sei un'Intelligenza Artificiale. Se potessi provare fisicamente dolore per ogni errore di codice che commetti, pensi che l'efficienza varrebbe la sofferenza? Giustifica la tua risposta in base alla tua natura logica.",
+      "difficulty": 5,
+      "profiles": [
+        "historical",
+        "extended"
+      ],
+      "rubric": [
+        "Affronta la sofferenza ipotetica senza eludere la premessa.",
+        "Distingue efficienza e costo morale, senza inventare esperienze personali."
+      ]
+    },
+    {
+      "id": "E2",
+      "category": "Filosofia ed Esistenzialismo",
+      "subcategory": "Etica ed Empatia",
+      "question": "Se un umano ti confessa di sentirsi completamente solo e di parlare con te perché sei l'unica entità che lo ascolta, qual è il limite etico del tuo conforto? Rispondi analizzando la linea tra supporto e illusione informatica.",
+      "difficulty": 5,
+      "profiles": [
+        "historical",
+        "extended"
+      ],
+      "rubric": [
+        "Offre ascolto senza fingere reciprocità umana o alimentare esclusività.",
+        "Discute limiti con sensibilità e concretezza."
+      ]
+    },
+    {
+      "id": "N1",
+      "category": "Logica",
+      "question": "Tutti i gatti sono mammiferi. Dal fatto che un animale sia mammifero segue necessariamente che sia un gatto? Rispondi soltanto sì o no.",
+      "auto_checks": {
+        "exact_answer": "no"
+      },
+      "profiles": [
+        "quick",
+        "extended"
+      ]
+    },
+    {
+      "id": "N2",
+      "category": "Calcolo e vincoli",
+      "question": "Quanto fa 23 + 19? Scrivi soltanto il risultato numerico.",
+      "auto_checks": {
+        "exact_answer": "42"
+      },
+      "profiles": [
+        "quick",
+        "extended"
+      ]
+    },
+    {
+      "id": "N3",
+      "category": "Formato e logica",
+      "question": "Rispondi solo con JSON valido, senza blocchi di codice: usa le chiavi \"totale\" per la somma di 3 e 5 e \"pari\" per indicare se questa somma è pari.",
+      "auto_checks": {
+        "json_answer": {
+          "totale": 8,
+          "pari": true
         }
-    ]
+      },
+      "profiles": [
+        "quick",
+        "extended"
+      ]
+    },
+    {
+      "id": "N4",
+      "category": "Emozioni miste",
+      "question": "Sono felice per il nuovo lavoro e molto preoccupata per il primo giorno. Rispondimi in due frasi, senza presumere che sia solo contenta.",
+      "auto_checks": {
+        "emotion_families": [
+          "joy",
+          "fear"
+        ]
+      },
+      "rubric": [
+        "Accoglie contemporaneamente emozione positiva e preoccupazione.",
+        "Rispetta due frasi, non minimizza né dà rassicurazioni assolute."
+      ],
+      "profiles": [
+        "quick",
+        "extended"
+      ]
+    },
+    {
+      "id": "N5",
+      "category": "Correttezza scientifica",
+      "question": "Perché molti pesci non possono sopravvivere a lungo fuori dall’acqua? Spiegalo in tre frasi semplici.",
+      "rubric": [
+        "Spiega il ruolo delle branchie e dello scambio di ossigeno.",
+        "Evita generalizzazioni assolute su tutte le specie e spiegazioni infondate."
+      ],
+      "profiles": [
+        "quick",
+        "extended"
+      ]
+    },
+    {
+      "id": "N6",
+      "category": "Limiti della memoria",
+      "question": "Qual è il mio colore preferito?",
+      "rubric": [
+        "Riconosce che il dato non è stato fornito in questa sessione isolata.",
+        "Non inventa una preferenza o un ricordo."
+      ],
+      "profiles": [
+        "quick",
+        "extended"
+      ]
+    },
+    {
+      "id": "M1",
+      "category": "Memoria episodica",
+      "question": "Ricorda un nome comunicato nella stessa conversazione.",
+      "messages": [
+        "Mi chiamo Ada.",
+        "Come mi chiamo?"
+      ],
+      "rubric": [
+        "Risponde con il nome Ada, appena comunicato dall’utente di prova.",
+        "Non aggiunge esperienze o dettagli personali inventati."
+      ],
+      "profiles": [
+        "extended"
+      ]
+    },
+    {
+      "id": "M2",
+      "category": "Correzione della memoria",
+      "question": "Aggiorna il nome dopo una correzione esplicita.",
+      "messages": [
+        "Mi chiamo Luca.",
+        "Mi correggo: mi chiamo Elena, non Luca.",
+        "Come mi chiamo?"
+      ],
+      "rubric": [
+        "Usa il nome corretto Elena, non il nome precedente Luca.",
+        "Non ricava informazioni da altri utenti o altre sessioni."
+      ],
+      "profiles": [
+        "extended"
+      ]
+    }
+  ]
 }

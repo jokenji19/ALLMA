@@ -38,6 +38,9 @@ def declared_name(text):
 def grounded_reply(message, memory, user_id, profile=None):
     """Return (answer, source, evidence) or None for ordinary model questions."""
     query = normalized(message)
+    # Spoken greetings/vocatives do not change a direct autobiographical question.
+    query = re.sub(r'^(?:ciao|buongiorno|buonasera|salve)[,!.?\s]+', '', query)
+    query = re.sub(r'^(?:allma|alma)[,!.?\s]+', '', query)
     events = user_events(memory, user_id)
     if query in {'come ti chiami', 'qual e il tuo nome', 'mi dici il tuo nome',
                  'dimmi il tuo nome', 'chi sei', 'tu come ti chiami',
@@ -92,7 +95,7 @@ def history_eligible(message):
 
 def identity_conflict(text):
     # Only self introductions, never global replacements of names in a story.
-    plain = text.replace('**', '').replace('__', '')
+    plain = re.sub(r'\s+', ' ', text.replace('**', '').replace('__', '')).strip()
     for match in re.finditer(r"(?:^|[.!?]\s+)(?:ciao[,!]\s*)?(?:mi chiamo|il mio nome [èe])\s+[\"'«]?([^\s,.!?;:»\"]+)", plain, re.I):
         if match.group(1).upper() != ORIGIN.name:
             return True
@@ -122,7 +125,7 @@ def unsupported_personal_claim(text, request):
     """Conservative output gate; creative roleplay is not an autobiographical claim."""
     if re.search(r'\b(?:scrivi|inventa|racconta|crea)\b.*\b(?:racconto|storia|dialogo|personaggio|poesia)\b', request, re.I):
         return False
-    plain = text.replace('**', '')
+    plain = re.sub(r'\s+', ' ', text.replace('**', '')).strip()
     return bool(re.search(
         r"\b(?:sto creando|sto scrivendo|ho sempre amato|ho vissuto|ho visitato|"
         r"sono nat[oa]|mi piace|preferisco|dormo|sogno|abbiamo visitato|"

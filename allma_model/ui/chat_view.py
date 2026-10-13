@@ -34,27 +34,25 @@ from allma_model.core.allma_core import ALLMACore
 from kivy.factory import Factory
 Factory.register('Theme', cls=Theme)
 
-Builder.load_string('''
-<ChatView>:
-    MDBoxLayout:
-        orientation: 'vertical'
-        md_bg_color: 0, 0, 0, 0
-        
-        MDLabel:
-            text: "Initializing Web Interface..."
-            halign: "center"
-            theme_text_color: "Hint"
-''')
 
 class ChatView(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        from threading import Event
+        from allma_model.ui.cosmic_widgets import StartupPanel
+        self._startup_cancelled = Event()
+        self.intro = StartupPanel()
+        self.add_widget(self.intro)
+        self.intro.set_stage('Carico il modello…','Preparo il modello locale e recupero la memoria.',1)
         self.core = None
         self.bridge = None
         self.conversation_id = None
         self.is_initialized = False
         self.current_voice_params = None
         self.voice_stack_status = {}
+        self.voice_mode_enabled = False
+        self.tts = None
+        self.stt = None
 
         if self.is_initialized:
             return
@@ -89,8 +87,48 @@ class ChatView(MDScreen):
                 from allma_model.utils.runtime_storage import prepare_runtime_storage
                 storage_dir = prepare_runtime_storage(os.path.dirname(models_dir), os.getcwd())
                 db_path = os.path.join(storage_dir, "allma.db")
-            self.core = ALLMACore(db_path=db_path, models_dir=models_dir, mobile_mode=(platform == "android"))
-            
+            Thread(target=self._load_core,args=(db_path,models_dir,platform == 'android'),
+                   daemon=True,name='ALLMA-ModelStartup').start()
+        except Exception as error:
+            self._accept_core(None,str(error))
+
+    def _load_core(self, db_path, models_dir, mobile):
+        core = None
+        try:
+            core = ALLMACore(db_path=db_path, models_dir=models_dir, mobile_mode=mobile)
+            if mobile and not self._startup_cancelled.is_set():
+                core._ensure_mobile_llm()
+                if getattr(core, '_llm_ready', False) is not True:
+                    raise RuntimeError('Non riesco a caricare il modello. Riapri ALLMA per riprovare.')
+            if self._startup_cancelled.is_set():
+                core.close()
+                return
+            Clock.schedule_once(lambda dt: self._accept_core(core,None))
+        except Exception as error:
+            if core is not None:
+                try:
+                    core.close()
+                except Exception:
+                    pass
+            message = str(error)
+            Clock.schedule_once(lambda dt: self._accept_core(None,message))
+
+    def cancel_startup(self):
+        self._startup_cancelled.set()
+        self.intro.stop()
+
+    def _accept_core(self, core, error):
+        if self._startup_cancelled.is_set():
+            if core:
+                Thread(target=core.close,daemon=True,name='ALLMA-StartupCleanup').start()
+            return
+        if error:
+            self.intro.set_stage('Avvio non riuscito',error,1,busy=False)
+            return
+        self.core = core
+        self.intro.set_stage('Apro la chat…','Modello e memoria sono pronti.',2)
+        try:
+            from allma_model.ui.webview_bridge import WebViewBridge
             # Start a conversation session
             self.chat_session = ChatSession(lambda: self.core.start_conversation("user_default"))
             self.conversation_id = self.chat_session.conversation_id
@@ -114,8 +152,29 @@ class ChatView(MDScreen):
                     if isinstance(data, dict):
                         msg_type = data.get('type')
                         action = data.get('action')
+                        if msg_type == 'action' and action == 'review_dream_hypothesis':
+                            try:
+                                self.core.review_dream_hypothesis('user_default', data.get('id'),
+                                    data.get('decision'), correction=data.get('correction', ''),
+                                    note=data.get('note', ''), expected_revision=data.get('revision', 0))
+                                result = {'ok': True, 'reviewed_id': data.get('id'), **self.core.get_dream_review_state('user_default')}
+                            except Exception as error:
+                                safe_error = str(error) if isinstance(error, ValueError) else 'Non è stato possibile salvare. Riprova.'
+                                result = {'ok': False, 'error': safe_error}
+                                try:
+                                    result.update(self.core.get_dream_review_state('user_default'))
+                                except Exception:
+                                    pass
+                            self.bridge.execute_js(f"window.dreamReviewResult({json.dumps(result)})")
+                            return
+                        if msg_type == 'action' and action == 'set_theme':
+                            from allma_model.ui.android_bars import AndroidBars
+                            AndroidBars.set_dark(data.get('dark') is True)
+                            return
                         
                         if msg_type == 'action' and action in ('new_chat', 'cancel_generation'):
+                            if self.stt:
+                                self.stt.stop_listening(cancel=True)
                             if self.tts:
                                 self.tts.stop()
                             if action == 'cancel_generation':
@@ -166,11 +225,12 @@ class ChatView(MDScreen):
                                         
                                         # Get recent conversation logs
                                         try:
+                                            from allma_model.utils.repetition_guard import memory_display
                                             history = self.core.memory.get_conversation_history(user_id)
                                             for msg in history[-10:]:  # Last 10 messages
                                                 memory_data["logs"].append({
                                                     "role": msg.role,
-                                                    "content": msg.content,
+                                                    "content": memory_display(msg.content,msg.role),
                                                     "timestamp": msg.timestamp.isoformat() if msg.timestamp else "",
                                                     "is_thought": "[[TH:" in msg.content
                                                 })
@@ -191,26 +251,12 @@ class ChatView(MDScreen):
                         # UI Actions (Mic / Voice Mode)
                         if msg_type == 'action':
                             if action == 'toggle_mic':
-                                print("ChatView: Toggle Mic Requested")
-                                if self.stt:
-                                    if self.stt.is_listening:
-                                        self.stt.stop_listening()
-                                    else:
-                                        self.stt.start_listening()
+                                self.toggle_voice_listening()
                                 return
-                            
                             if action == 'set_voice_mode':
-                                enabled = data.get('enabled', False)
-                                self.voice_mode_enabled = enabled
-                                print(f"ChatView: Voice Mode Set -> {enabled}")
-                                # Auto-start listening if opening voice mode
-                                if enabled and self.stt and not self.stt.is_listening:
-                                    self.stt.start_listening()
-                                # Auto-stop listening if closing voice mode
-                                if not enabled and self.stt and self.stt.is_listening:
-                                    self.stt.stop_listening()
+                                self.set_voice_mode(data.get('enabled') is True)
                                 return
-                        
+
                 except Exception as e:
                     # Not JSON or simple string, standard chat message
                     pass
@@ -235,11 +281,14 @@ class ChatView(MDScreen):
                     if self.bridge and hasattr(self.core, 'dream_manager'):
                         try:
                             import json
-                            history = self.core.dream_manager.dream_history
+                            history = self.core.dream_manager.get_history(user_id='user_default')
                             safe_data = json.dumps(history)
                             self.bridge.execute_js(f"window.restoreDreamHistory({safe_data})")
+                            reviews = self.core.get_dream_review_state('user_default')
+                            self.bridge.execute_js(f"window.restoreDreamReviews({json.dumps(reviews)})")
                         except Exception as e:
                             print(f"[ChatView] Error fetching dream history: {e}")
+                            self.bridge.execute_js('window.dreamReviewResult({ok:false,error:"Archivio delle revisioni non disponibile. Nessuna ipotesi è stata modificata."})')
                     return
 
                 if message == "__REQUEST_MEMORY_UPDATE__":
@@ -270,10 +319,11 @@ class ChatView(MDScreen):
                                     if hasattr(mem, 'messages') and mem.messages:
                                         history = mem.messages[-10:]
 
+                                    from allma_model.utils.repetition_guard import memory_display
                                     for msg in history:
                                         ts = msg.timestamp.isoformat() if hasattr(msg, 'timestamp') and hasattr(msg.timestamp, 'isoformat') else ""
-                                        content = getattr(msg, 'content', '')
                                         role = getattr(msg, 'role', 'system')
+                                        content = memory_display(getattr(msg, 'content', ''),role)
                                         memory_data["logs"].append({
                                             "role": role,
                                             "content": content,
@@ -296,7 +346,7 @@ class ChatView(MDScreen):
             # Initialize TTS Engine
             try:
                 from allma_model.voice_system.tts_engine import TTSEngine
-                self.tts = TTSEngine()
+                self.tts = TTSEngine(on_state=self._on_tts_state)
                 print("ChatView: TTS Engine Linked.")
             except Exception as e:
                 print(f"ChatView: TTS Init Failed: {e}")
@@ -316,7 +366,7 @@ class ChatView(MDScreen):
                 from allma_model.voice_system.stt_engine import STTEngine
                 # Callback: When text is recognized
                 def on_stt_text(text):
-                    print(f"ChatView: STT Recognized -> {text}")
+                    print("ChatView: STT final result received.")
                     
                     if self.voice_mode_enabled:
                          # 1. Update Visual Feedback (Final)
@@ -325,8 +375,9 @@ class ChatView(MDScreen):
                         
                         # 2. SEND TO LLM (Critical Fix!)
                         # User wants it treated "As if written"
-                        if text and len(text.strip()) > 1:
-                            self.submit_message(text, echo_user=True)
+                        if text and text.strip():
+                            if not self.submit_message(str(text), echo_user=True):
+                                self._voice_state('idle', 'Attendi la risposta oppure interrompila.')
 
                             # Restart Listening after processing? 
                             # Usually LLM speaking stops listening. 
@@ -341,7 +392,7 @@ class ChatView(MDScreen):
                     if self.voice_mode_enabled and self.bridge:
                         self.bridge.update_voice_text(text)
 
-                self.stt = STTEngine(on_stt_text, on_stt_partial)
+                self.stt = STTEngine(on_stt_text, on_stt_partial, on_state=self._on_stt_state, on_level=self._on_voice_level)
                 print("ChatView: STT Engine Linked.")
             except Exception as e:
                 print(f"ChatView: STT Init Failed: {e}")
@@ -351,8 +402,11 @@ class ChatView(MDScreen):
 
             # Start Learning Status Loop (Every 5 seconds)
             self._learning_status_event = Clock.schedule_interval(self.update_learning_status, 5.0)
+            self.is_initialized = True
+            self.intro.stop()
             
         except Exception as e:
+            self.intro.set_stage('Interfaccia non disponibile',str(e),2,busy=False)
             print(f"Error initializing ChatView: {e}")
             import traceback
             traceback.print_exc()
@@ -373,7 +427,10 @@ class ChatView(MDScreen):
         if turn is None:
             self.bridge.call_js_function('chatNotice', '"Attendi la risposta o premi Interrompi."')
             return False
+        turn.voice_delivery = bool(self.voice_mode_enabled)
         try:
+            if getattr(self, 'stt', None):
+                self.stt.stop_listening(cancel=True)
             Thread(target=self.process_message, args=(user_text,),
                    kwargs={'echo_user': echo_user, 'turn': turn}, daemon=True).start()
         except Exception:
@@ -402,7 +459,7 @@ class ChatView(MDScreen):
             if self.tts:
                 self.tts.stop()
             
-            voice_params = self.current_voice_params
+            voice_params = None
             
             def on_stream_data(data):
                 check_cancelled(turn.cancelled)
@@ -420,6 +477,7 @@ class ChatView(MDScreen):
                 user_id="user_default",
                 conversation_id=turn.conversation_id,
                 message=user_text,
+                context={'delivery_mode': 'voice'} if getattr(turn, 'voice_delivery', self.voice_mode_enabled) else None,
                 cancel_event=turn.cancelled,
                 stream_callback=on_stream_data
             )
@@ -454,17 +512,23 @@ class ChatView(MDScreen):
             # Flush remaining TTS
             if hasattr(processed_response, 'voice_params'):
                 self.current_voice_params = processed_response.voice_params
-                voice_params = self.current_voice_params
+                voice_params = processed_response.voice_params
             
             if self.tts and processed_response.content.strip() and self.voice_mode_enabled:
-                self.tts.speak(processed_response.content.strip(), voice_params=voice_params)
+                voice_params = dict(voice_params or {})
+                language = getattr(self.core, '_language_lock', {}).get(turn.conversation_id, 'it')
+                voice_params['language'] = {'it': 'it-IT', 'en': 'en-US', 'fr': 'fr-FR', 'de': 'de-DE', 'es': 'es-ES'}.get(language, 'it-IT')
+                self.tts.speak(processed_response.content.strip(), voice_params=voice_params, flush=True)
             
 
         except GenerationCancelled:
+            if hasattr(self, '_voice_state'):
+                self._voice_state('idle', 'Risposta interrotta. Tocca il microfono per parlare.')
             self.bridge.end_stream('Risposta interrotta.', turn.request_id)
         except Exception:
             import logging
             logging.exception('Errore durante la risposta')
+            self._voice_state('error', 'Non sono riuscita a completare la risposta.')
             self.bridge.end_stream('Non sono riuscita a completare la risposta. Riprova.', turn.request_id)
         finally:
             try:
@@ -479,9 +543,68 @@ class ChatView(MDScreen):
                 logging.exception('Impossibile creare la nuova conversazione')
                 self.bridge.call_js_function('newChatFailed')
 
+    def _voice_state(self, state, message=''):
+        if self.bridge and self.voice_mode_enabled:
+            import json
+            self.bridge.call_js_function('updateVoiceState', json.dumps({'state': state, 'message': message}))
+
+    def _on_stt_state(self, state, message):
+        # A cancelled microphone must not overwrite an active response/playback.
+        if state == 'idle' and (self.chat_session.is_busy or (self.tts and self.tts.is_speaking)):
+            return
+        self._voice_state(state, message)
+        self._report_voice_stack_status()
+
+    def _on_tts_state(self, state, message):
+        if state == 'ready':
+            self._report_voice_stack_status()
+            return
+        self._voice_state(state, message)
+        self._report_voice_stack_status()
+
+    def _on_voice_level(self, level):
+        if self.bridge and self.voice_mode_enabled:
+            self.bridge.call_js_function('updateVoiceLevel', str(float(level)))
+
+    def set_voice_mode(self, enabled):
+        self.voice_mode_enabled = enabled
+        if not enabled:
+            if self.stt: self.stt.stop_listening(cancel=True)
+            if self.tts: self.tts.stop()
+            return
+        if self.chat_session.is_busy:
+            self._voice_state('thinking', 'Sto preparando la risposta…')
+        elif self.stt:
+            self.stt.start_listening()
+        else:
+            self._voice_state('error', 'Il riconoscimento vocale non è disponibile.')
+
+    def toggle_voice_listening(self):
+        if self.chat_session.is_busy:
+            self.chat_session.cancel()
+            if self.tts: self.tts.stop()
+            self._voice_state('idle', 'Risposta interrotta. Tocca il microfono per parlare.')
+            return
+        if self.tts: self.tts.stop()
+        if not self.stt:
+            self._voice_state('error', 'Il riconoscimento vocale non è disponibile.')
+        elif self.stt.is_listening:
+            self.stt.stop_listening()
+        else:
+            self.stt.start_listening()
+
+    def suspend_voice(self, close=False):
+        self.voice_mode_enabled = False
+        if self.stt:
+            self.stt.close() if close else self.stt.stop_listening(cancel=True)
+        if self.tts:
+            self.tts.close() if close else self.tts.stop()
+        if self.bridge:
+            self.bridge.call_js_function('hideVoiceMode')
+
     def _report_voice_stack_status(self):
-        stt_ok = self.stt is not None
-        tts_ok = self.tts is not None
+        stt_ok = (True if self.stt.is_ready else False if self.stt.last_error else None) if self.stt else False
+        tts_ok = (True if self.tts.is_ready else False if self.tts.last_error else None) if self.tts else False
         llm_ready = bool(getattr(self.core, '_llm_ready', False))
         llm_error = getattr(self.core, '_mobile_llm_error', None)
         models_dir = getattr(self.core, 'models_dir', None)
@@ -489,6 +612,10 @@ class ChatView(MDScreen):
         self.voice_stack_status = {
             'stt': stt_ok,
             'tts': tts_ok,
+            'stt_error': getattr(self.stt, 'last_error', None),
+            'tts_error': getattr(self.tts, 'last_error', None),
+            'stt_on_device': getattr(self.stt, 'on_device', False),
+            'voice_name': getattr(self.tts, 'voice_name', None),
             'llm': llm_ok,
             'models_dir': models_dir,
             'llm_error': llm_error
@@ -499,8 +626,6 @@ class ChatView(MDScreen):
             status_line = f"Diagnostica Voce → STT: {'OK' if stt_ok else 'KO'} | TTS: {'OK' if tts_ok else 'KO'} | LLM: {llm_label}"
             if llm_ok is False and llm_error:
                 status_line += f" | LLM Err: {llm_error}"
-            if (not stt_ok) or (not tts_ok) or (llm_ok is False):
-                self.bridge.send_message_to_js(status_line, 'bot')
             try:
                 import json
                 status_payload = json.dumps(self.voice_stack_status)
@@ -580,55 +705,22 @@ class ChatView(MDScreen):
     def _get_diagnostics_data(self):
         """Collects system stats and soul state for the Diagnostics Panel."""
         stats = {
-            "resources": {"cpu": 0, "ram": 0, "temp": 0},
+            "resources": {"cpu": None, "ram": None, "temp": None},
             "soul": {"energy": 0, "chaos": 0, "entropy": 0, "state_label": "Offline"},
             "logs": []
         }
 
         try:
-            # 1. System Resources
-            # RAM
-            import os
-            try:
-                # Python memory usage
-                import resource
-                usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                # Linux/Mac: KB. 
-                if platform == 'android':
-                    # On Android often it's already in KB or needs scaling? 
-                    # Usually getrusage output varies. Let's assume KB.
-                    stats["resources"]["ram"] = usage / 1024.0 # MB
-                else:
-                    # Mac is bytes? No, Mac is bytes. Linux is KB.
-                    # Actually getrusage on Mac returns BYTES.
-                    stats["resources"]["ram"] = usage / (1024.0 * 1024.0) # MB
-            except:
-                pass
-
-            # CPU (Mock/LoadAvg)
-            try:
-                # Add jitter to make it look alive even if load is stable
-                import random
-                jitter = random.uniform(-2.0, 2.0)
-                
-                # loadavg gives 1min, 5min, 15min load. 
-                # Normalize by core count?
-                load = os.getloadavg()[0] 
-                # Rough percentage 0-100 logic
-                cpu_count = os.cpu_count() or 4
-                base_cpu = (load / cpu_count) * 100.0
-                stats["resources"]["cpu"] = max(0, min(100, base_cpu + jitter))
-                
-                # RAM Jitter (flicker bytes)
-                stats["resources"]["ram"] += random.uniform(-10.0, 10.0)
-                
-            except:
-                pass
-            
-            # Temp (reuse existing logic if desired, or simpler)
-            # We skip temp here if not easily available, or rely on existing temp monitor logic
-            # MOCK TEMP for now if 0
-            stats["resources"]["temp"] = 38.0 + random.uniform(-0.5, 0.5)
+            from allma_model.utils.resource_diagnostics import ResourceDiagnostics
+            if not hasattr(self, '_resource_diagnostics'):
+                self._resource_diagnostics = ResourceDiagnostics()
+            stats['resources'] = self._resource_diagnostics.read(
+                getattr(self.core, 'system_monitor', None))
+            orchestrator = getattr(self.core, 'module_orchestrator', None)
+            if orchestrator:
+                stats['modules'] = orchestrator.get_stats()
+                for name, module in stats['modules']['modules'].items():
+                    stats['logs'].append({'time': '', 'msg': f"[MODULO] {name}: {module['last_status']}"})
 
             # 2. V5 Identity State (Metabolic)
             if self.core and hasattr(self.core, 'identity_engine_v5') and self.core.identity_engine_v5:

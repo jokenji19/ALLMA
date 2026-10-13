@@ -37,6 +37,7 @@ class PersonalityAdapterLite:
         self.user_prefers_brief = False
         self.user_prefers_formal = False
         self.interaction_count = 0
+        self._user_id = None
     
     def process(self, user_input: str, context: Dict) -> Dict:
         """
@@ -49,6 +50,14 @@ class PersonalityAdapterLite:
         Returns:
             Dict with style adaptation suggestions
         """
+        user_id = context.get('user_id')
+        if user_id != self._user_id:
+            # Transient style inference must not carry another user's preferences.
+            self.style = CommunicationStyle()
+            self.user_prefers_brief = False
+            self.user_prefers_formal = False
+            self.interaction_count = 0
+            self._user_id = user_id
         # Update style based on user input
         self._adapt_from_input(user_input)
         
@@ -96,6 +105,9 @@ class PersonalityAdapterLite:
     
     def _adapt_from_emotion(self, emotional_state):
         """Adapts style based on user's emotional state."""
+        confidence = emotional_state.get('confidence', 1.) if isinstance(emotional_state, dict) else getattr(emotional_state, 'confidence', 1.)
+        if confidence < .6:
+            return
         
         # If emotion object has primary_emotion attribute
         if hasattr(emotional_state, 'primary_emotion'):

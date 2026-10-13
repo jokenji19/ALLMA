@@ -11,90 +11,18 @@ from allma_model.ui.theme import Theme
 from kivy.factory import Factory
 Factory.register('Theme', cls=Theme)
 
-Builder.load_string('''
-#:import Theme allma_model.ui.theme.Theme
-#:import Animation kivy.animation.Animation
-
-<SetupView>:
-    # PREMIUM GRADIENT BACKGROUND (Deep Space / Aurora)
-    canvas.before:
-        Color:
-            rgba: 0.05, 0.05, 0.08, 1 # Deep Space Base
-        Rectangle:
-            pos: self.pos
-            size: self.size
-        # Gradient Effect (Mesh or simpler Texture - using Vertical Gradient via Vertex Instruction not easy in KV string, simulating with overlay)
-        Color:
-            rgba: 0.1, 0.0, 0.2, 0.5 # Purple Tint Bottom
-        Rectangle:
-            pos: self.pos
-            size: self.size
-
-    BoxLayout:
-        orientation: 'vertical'
-        padding: dp(40)
-        spacing: dp(30)
-        
-        # Spacer
-        Widget:
-            size_hint_y: 0.3
-
-        # Modern Card-like grouping
-        BoxLayout:
-            orientation: 'vertical'
-            size_hint_y: None
-            height: self.minimum_height
-            spacing: dp(15)
-            
-            Label:
-                text: "🌌 ALLMA SYSTEM"
-                font_name: 'Roboto'
-                font_size: '34sp'
-                bold: True
-                color: 1, 1, 1, 1 # Pure White
-                size_hint_y: None
-                height: dp(60)
-                halign: 'center'
-
-            Label:
-                id: status_label
-                text: "INITIALIZING SEQUENCES..."
-                font_name: 'Roboto'
-                font_size: '22sp'
-                bold: True
-                text_size: self.width, None
-                halign: 'center'
-                color: 0.0, 0.9, 1, 1 # CYAN / ELECTRIC BLUE (Neon)
-                size_hint_y: None
-                height: dp(50)
-
-            # Custom Progress Bar (Sleek)
-            ProgressBar:
-                id: progress_bar
-                max: 100
-                value: 0
-                size_hint_y: None
-                height: dp(10)
-                # Note: KivyMD Theme will style this with Primary/Accent color
-            
-            Label:
-                id: details_label
-                text: "Loading Core Modules..."
-                font_name: 'Roboto'
-                font_size: '14sp'
-                halign: 'center'
-                color: 0.6, 0.6, 0.7, 1 # Soft Grey
-                size_hint_y: None
-                height: dp(40)
-
-        # Spacer to push up
-        Widget:
-
-''')
 
 class SetupView(Screen):
+    from kivy.properties import ObjectProperty
+    background_texture = ObjectProperty(None)
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        from allma_model.ui.cosmic_widgets import StartupPanel
+        self.intro = StartupPanel()
+        self.add_widget(self.intro)
+        self.ids.status_label = self.intro.status_label
+        self.ids.details_label = self.intro.details_label
+        self.ids.progress_bar = self.intro.progress_bar
         self.downloader = ModelDownloader()
         self.missing_models = []
         self.completion_callback = None
@@ -108,11 +36,10 @@ class SetupView(Screen):
     def on_enter(self):
         # Start check on enter
         Clock.schedule_once(self.check_requirements, 0.5)
-        # Start visual heartbeat
-        if self._heartbeat_event is None:
-            self._heartbeat_event = Clock.schedule_interval(self._heartbeat, 0.5)
+        self.intro.set_stage('Verifico il modello…','Controllo che i componenti siano pronti.',0)
 
     def on_leave(self):
+        self.intro.stop()
         if self._heartbeat_event is not None:
             self._heartbeat_event.cancel()
             self._heartbeat_event = None
@@ -129,7 +56,7 @@ class SetupView(Screen):
         if getattr(self, '_checking', False) or self._downloading:
             return
         self._checking = True
-        self.ids.status_label.text = "VERIFICO MODELLO..."
+        self.intro.set_stage("Verifico il modello…","Controllo i file già presenti sul dispositivo.",0)
         # Hashing a large GGUF must not block Kivy's UI thread.
         from threading import Thread
         def check():
@@ -141,7 +68,8 @@ class SetupView(Screen):
             def apply(dt):
                 self._checking = False
                 if error:
-                    self.ids.status_label.text = "VERIFICA NON RIUSCITA"
+                    self.intro.stop()
+                    self.ids.status_label.text = "Verifica non riuscita"
                     self.ids.details_label.text = error
                     return
                 self.missing_models = missing
@@ -156,10 +84,11 @@ class SetupView(Screen):
         if self._downloading:
             return
         self._downloading = True
+        self.intro.stop()
         count = len(self.missing_models)
-        self.ids.status_label.text = f"SCARICO {count} MODULI"
-        self.ids.details_label.text = "Inizio download... NON DIINSTALLARE!"
-        self.show_toast("Download Avviato: Attendi...")
+        self.ids.status_label.text = f"Preparo {count} componenti"
+        self.ids.details_label.text = "Download in corso. Mantieni ALLMA aperta."
+        self.show_toast("Download avviato")
         
         # Start background download
         self.downloader.start_background_download(
@@ -171,7 +100,7 @@ class SetupView(Screen):
 
     def on_single_model_downloaded(self, model_key):
         # Called from background thread
-        Clock.schedule_once(lambda dt: self.show_toast(f"Modulo {model_key} COMPLETATO!"))
+        Clock.schedule_once(lambda dt: self.show_toast(f"Modulo {model_key} Pronta per parlare!"))
 
     def show_toast(self, text):
         from kivy.utils import platform
@@ -200,13 +129,14 @@ class SetupView(Screen):
 
     def _update_bar(self, model_key, current, total):
         percent = (current / total) * 100 if total > 0 else 0
+        self.ids.progress_bar.indeterminate = total <= 0
         self.ids.progress_bar.value = percent
         mb_curr = current / (1024*1024)
         mb_tot = total / (1024*1024)
         self.ids.details_label.text = f"{model_key}\n{mb_curr:.0f}MB / {mb_tot:.0f}MB ({percent:.0f}%)"
         
         # Pulse the status label to show activity
-        self.ids.status_label.text = f"SCARICO: {percent:.0f}%"
+        self.ids.status_label.text = f"Download al {percent:.0f}%"
 
     def on_download_complete(self, success, error_msg):
         Clock.schedule_once(lambda dt: self._handle_complete(success, error_msg))
@@ -216,16 +146,15 @@ class SetupView(Screen):
         if success:
             self.finish_setup()
         else:
-            self.ids.status_label.text = "ERRORE DOWNLOAD"
+            self.intro.stop()
+            self.ids.status_label.text = "Download non riuscito"
             self.ids.status_label.color = (1, 0, 0, 1)
             self.ids.details_label.text = f"{error_msg}"
             self.show_toast("Errore Download!")
 
     def finish_setup(self):
-        self.ids.status_label.text = "COMPLETATO"
-        self.ids.progress_bar.value = 100
-        self.show_toast("Download Finito! Avvio...")
-        Clock.schedule_once(lambda dt: self._notify_complete(), 1.5)
+        self.intro.set_stage("Modello verificato","Ora preparo il modello e la memoria.",1,busy=False)
+        Clock.schedule_once(lambda dt: self._notify_complete(), 0)
 
     def _notify_complete(self):
         if self.completion_callback:

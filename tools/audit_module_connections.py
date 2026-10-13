@@ -8,7 +8,9 @@ from pathlib import Path
 def audit(root):
     package = root / 'allma_model'
     files = {'.'.join(p.relative_to(root).with_suffix('').parts).removesuffix('.__init__'): p
-             for p in package.rglob('*.py') if 'tests' not in p.parts and '__pycache__' not in p.parts}
+             for p in package.rglob('*.py') if 'tests' not in p.parts and '__pycache__' not in p.parts
+             and not p.name.startswith(('test_', 'demo_', 'beta_test_'))
+             and p.name not in {'run_tests.py', 'complete_test.py', 'interactive_allma.py', 'performance_test.py', 'performance_profiler.py'}}
     graph = {name: set() for name in files}
     errors, missing, bodies = [], [], {}
     for name, path in files.items():
@@ -49,9 +51,11 @@ def audit(root):
             continue
         seen.add(name)
         todo.extend(graph.get(name, set()) - seen)
-    return {'scope': 'Production Python files excluding tests. Static imports only; dynamic imports, standalone tools and alternate entry points may be absent from reachability.',
+    return {'scope': 'Python files eligible for the embedded app payload, excluding tests and demos. Static imports only; dynamic imports, standalone tools and alternate entry points may be absent from reachability.',
             'module_count': len(files), 'reachable_from_main_roots': len(seen & files.keys()),
             'syntax_errors': errors, 'missing_local_import_bases': missing,
+            'missing_imports_on_main_paths': [item for item in missing if '.'.join(
+                Path(item['file']).relative_to(root).with_suffix('').parts) in seen],
             'outside_main_static_graph': sorted(set(files) - seen),
             'identical_long_function_bodies': [group for group in bodies.values() if len(group) > 1],
             'imports': {key: sorted(value) for key, value in graph.items()}}

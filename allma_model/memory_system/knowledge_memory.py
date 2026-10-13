@@ -3,6 +3,9 @@
 from typing import Dict, List, Optional
 import sqlite3
 import json
+from dataclasses import asdict, is_dataclass
+from enum import Enum
+from pathlib import Path
 
 class KnowledgeMemory:
     def __init__(self, db_path: str = "Model/data/allma.db"):
@@ -47,9 +50,72 @@ class KnowledgeMemory:
                 CREATE INDEX IF NOT EXISTS idx_knowledge_metadata
                 ON knowledge(metadata)
             """)
+            conn.execute('CREATE TABLE IF NOT EXISTS cognitive_concepts (name TEXT PRIMARY KEY, data TEXT NOT NULL)')
+            conn.execute('CREATE TABLE IF NOT EXISTS knowledge_imports (source TEXT PRIMARY KEY)')
             
             # Commit esplicito per assicurarsi che le tabelle siano create
             conn.commit()
+
+    @staticmethod
+    def _json_default(value):
+        if isinstance(value, Enum):
+            return value.value
+        if is_dataclass(value):
+            return asdict(value)
+        if hasattr(value, 'to_dict'):
+            return value.to_dict()
+        raise TypeError('Unsupported concept metadata')
+
+    def get_concept(self, name):
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute('SELECT data FROM cognitive_concepts WHERE name=?', (name,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def has_concept(self, name):
+        return self.get_concept(name) is not None
+
+    def get_all_concepts(self):
+        with sqlite3.connect(self.db_path) as conn:
+            return [row[0] for row in conn.execute('SELECT name FROM cognitive_concepts ORDER BY name')]
+
+    def add_concept(self, name, data):
+        # Coalescence observations are not independently verified knowledge.
+        record = dict(data, knowledge_verified=False)
+        encoded = json.dumps(record, default=self._json_default, ensure_ascii=False)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('INSERT OR IGNORE INTO cognitive_concepts(name,data) VALUES (?,?)', (name, encoded))
+
+    def update_concept(self, name, changes):
+        with sqlite3.connect(self.db_path) as conn:
+            # Lock before reading, otherwise concurrent read/modify/write updates
+            # can overwrite fields saved by another connection in the meantime.
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT data FROM cognitive_concepts WHERE name=?', (name,)).fetchone()
+            record = json.loads(row[0]) if row else {}
+            record.update(changes)
+            record['knowledge_verified'] = False
+            conn.execute('INSERT OR REPLACE INTO cognitive_concepts(name,data) VALUES (?,?)',
+                         (name, json.dumps(record, default=self._json_default, ensure_ascii=False)))
+
+    def import_legacy(self, source):
+        """Copy legacy knowledge once, transactionally; retain the original database."""
+        source = Path(source).resolve()
+        if not source.is_file() or source == Path(self.db_path).resolve():
+            return
+        with sqlite3.connect(self.db_path) as conn:
+            if conn.execute('SELECT 1 FROM knowledge_imports WHERE source=?', (str(source),)).fetchone():
+                return
+            with sqlite3.connect(source.as_uri() + '?mode=ro', uri=True) as old:
+                tables = {r[0] for r in old.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if 'knowledge' in tables:
+                    for content, metadata, created in old.execute('SELECT content,metadata,created_at FROM knowledge'):
+                        if not conn.execute('SELECT 1 FROM knowledge WHERE content=? AND metadata IS ?', (content, metadata)).fetchone():
+                            conn.execute('INSERT INTO knowledge(content,metadata,created_at) VALUES (?,?,?)',
+                                         (content, metadata, created))
+                if 'cognitive_concepts' in tables:
+                    for name, data in old.execute('SELECT name,data FROM cognitive_concepts'):
+                        conn.execute('INSERT OR IGNORE INTO cognitive_concepts(name,data) VALUES (?,?)', (name, data))
+            conn.execute('INSERT INTO knowledge_imports(source) VALUES (?)', (str(source),))
             
     def store_knowledge(self, content: str, metadata: Optional[Dict] = None):
         """

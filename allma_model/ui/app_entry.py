@@ -20,7 +20,7 @@ class AllmaInternalApp(MDApp):
         
         # Configure Material Theme
         self.theme_cls.theme_style = "Dark" # PREMIUM DARK OVERHAUL
-        self.theme_cls.primary_palette = "DeepPurple"
+        self.theme_cls.primary_palette = "LightBlue"
         self.theme_cls.accent_palette = "Cyan" # Modern Neon Accent
         
         self.sm = ScreenManager(transition=FadeTransition())
@@ -60,7 +60,7 @@ class AllmaInternalApp(MDApp):
 
         # Check if the native library was just downloaded
         if os.environ.get("ALLMA_LIB_DOWNLOADED") == "1":
-            self.show_toast("VERSIONE DEBUG 999 - BIANCO TOTALE")
+            self.show_toast("Componenti aggiornati. ALLMA è pronta.")
 
     def show_toast(self, text):
         from kivy.utils import platform
@@ -94,6 +94,15 @@ class AllmaInternalApp(MDApp):
         try:
             if hasattr(self, 'chat_screen') and hasattr(self.chat_screen, 'core'):
                 core = self.chat_screen.core
+                if core is None:
+                    self.chat_screen.intro.stop()
+                    return True
+                stt = getattr(self.chat_screen, 'stt', None)
+                if not (stt and stt.permission_pending) and hasattr(self.chat_screen, 'suspend_voice'):
+                    try:
+                        self.chat_screen.suspend_voice()
+                    except Exception as error:
+                        print(f"[AllmaInternalApp] Voice cleanup failed: {error}")
                 if hasattr(self.chat_screen, 'chat_session'):
                     self.chat_screen.chat_session.cancel()
                 if not getattr(self, "_paused", False):
@@ -123,6 +132,9 @@ class AllmaInternalApp(MDApp):
         print("[AllmaInternalApp] Resumed.")
         try:
             if hasattr(self, 'chat_screen') and hasattr(self.chat_screen, 'core'):
+                if self.chat_screen.core is None:
+                    self.chat_screen.intro.progress_bar.indeterminate = self.chat_screen.intro.busy
+                    return
                 self.chat_screen.core.set_dream_mode(getattr(self, "_dream_before_pause", False), persist=False)
                 self._paused = False
         except Exception as e:
@@ -130,7 +142,13 @@ class AllmaInternalApp(MDApp):
     def on_stop(self):
         self.on_pause()
         chat = getattr(self, 'chat_screen', None)
+        if chat and hasattr(chat, 'cancel_startup'):
+            chat.cancel_startup()
         if chat and chat.core:
+            try:
+                chat.suspend_voice(close=True)
+            except Exception as error:
+                print(f"[AllmaInternalApp] Voice shutdown failed: {error}")
             event = getattr(chat, "_learning_status_event", None)
             if event:
                 event.cancel()

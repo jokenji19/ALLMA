@@ -8,6 +8,12 @@ from datetime import datetime
 import numpy as np
 from collections import defaultdict
 import re
+import logging
+import sqlite3
+import threading
+from pathlib import Path
+from allma_model.utils.persistence import atomic_write_json
+from allma_model.utils.cognitive_state import CognitiveStateStore, unit_number
 from allma_model.memory_system.knowledge_memory import KnowledgeMemory
 
 EmotionalIntensity = NewType('EmotionalIntensity', float)
@@ -250,7 +256,9 @@ class CoalescenceProcessor:
         
         self.suspension_time = 2.0
         self.integration_threshold = 0.5
-        self.diary_file = "allma_diary.json"
+        self.diary_file = str(Path(db_path).resolve().parent / 'allma_diary.json')
+        self._state_store = CognitiveStateStore(db_path)
+        self._diary_lock = threading.RLock()
         self.emotional_memory = []  # lista vuota
         self.value_threshold = 0.7  # Soglia per l'emergenza di meta-valori
         self.value_keywords = {
@@ -263,7 +271,49 @@ class CoalescenceProcessor:
             "creatività": ["creatività", "innovazione", "arte", "espressione"]
         }
         self.learned_concepts = {}  # Dizionario per memorizzare i concetti appresi
-        self.knowledge = KnowledgeMemory()  # Memoria della conoscenza condivisa - DEBUG NO ARGS
+        self.knowledge = KnowledgeMemory(db_path)
+        for source in (Path(db_path).resolve().parent / 'legacy_coalescence.db', Path('Model/data/allma.db')):
+            try:
+                self.knowledge.import_legacy(source)
+            except (OSError, ValueError, sqlite3.Error) as error:
+                logging.warning('Legacy coalescence import deferred: %s', error)
+        self._restore_state()
+
+    def _restore_state(self):
+        saved = self._state_store.get('personality')
+        for field, target in (('traits', self.core.personality_traits),):
+            values = saved.get(field, {})
+            if isinstance(values, dict):
+                for name in target:
+                    target[name] = unit_number(values.get(name), target[name])
+        values = saved.get('values', {})
+        if isinstance(values, dict):
+            for name, value in self.core.values.items():
+                value.strength = unit_number(values.get(name), value.strength)
+        concepts = saved.get('learned_concepts', {})
+        if isinstance(concepts, dict):
+            self.learned_concepts = concepts
+        self.core.resilience_bonus = unit_number(saved.get('resilience_bonus'), 0)
+        # Restore actual diary entries, never synthesize past experience from traits.
+        try:
+            data = json.loads(Path(self.diary_file).read_text(encoding='utf-8'))
+            if not isinstance(data, dict) or not isinstance(data.get('entries'), list):
+                raise ValueError('Invalid diary schema')
+            self.core.diary = [e for e in data['entries'] if isinstance(e, dict)]
+            self.core.personality_evolution = data.get('personality_evolution', []) if isinstance(data.get('personality_evolution'), list) else []
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError):
+            # Do not overwrite an unreadable diary on the next interaction.
+            import shutil
+            path = Path(self.diary_file)
+            backup = path.with_name(path.name + '.invalid.bak')
+            try:
+                if path.exists() and not backup.exists():
+                    shutil.copy2(path, backup)
+            except OSError:
+                pass
+            logging.warning('Coalescence diary unreadable; original preserved when possible')
 
     def _identify_relevant_values(self, content: str) -> List[str]:
         """Identifica i valori rilevanti per l'esperienza"""
@@ -362,8 +412,9 @@ class CoalescenceProcessor:
         final_emotional_state = emotional_state
         if not isinstance(emotional_state, EmotionalResponse):
             # Try to extract details
-            primary_str = getattr(emotional_state, 'primary_emotion', 'neutral').lower()
-            intensity = getattr(emotional_state, 'intensity', 0.5)
+            primary = getattr(emotional_state, 'primary_emotion', 'neutral')
+            primary_str = str(getattr(primary, 'value', primary)).strip().casefold()
+            intensity = unit_number(getattr(emotional_state, 'intensity', 0.5), 0.5)
             
             # Map string to Enum
             try:
@@ -422,7 +473,7 @@ class CoalescenceProcessor:
                     "related_concepts": list(new_related),
                     "last_updated": time.time(),
                     "source_type": source_type,
-                    "emotional_state": emotional_state
+                    "emotional_state": final_emotional_state
                 })
                 
             else:
@@ -434,7 +485,7 @@ class CoalescenceProcessor:
                     "related_concepts": [c for c, _ in concepts_and_explanations.items() if c != concept],
                     "last_updated": time.time(),
                     "source_type": source_type,
-                    "emotional_state": emotional_state
+                    "emotional_state": final_emotional_state
                 })
         
         # Aggiorna la confidenza della memoria
@@ -740,9 +791,6 @@ class CoalescenceProcessor:
         entry = self._create_diary_entry(droplet, personality_changes)
         entry["thoughts"] = thoughts
         
-        # Aggiungi l'entry al diario
-        self.core.diary.append(entry)
-        
         # Salva il diario
         self._save_diary()
 
@@ -753,8 +801,14 @@ class CoalescenceProcessor:
             "personality_evolution": self.core.personality_evolution
         }
         
-        with open(self.diary_file, 'w', encoding='utf-8') as f:
-            json.dump(diary_data, f, ensure_ascii=False, indent=2)
+        with self._diary_lock:
+            atomic_write_json(self.diary_file, diary_data, default=KnowledgeMemory._json_default)
+            self._state_store.put('personality', {
+                'traits': dict(self.core.personality_traits),
+                'values': {name: value.strength for name, value in self.core.values.items()},
+                'resilience_bonus': self.core.resilience_bonus,
+                'learned_concepts': self.learned_concepts,
+            })
 
     def _update_personality_values(self, droplet: Memory) -> Dict[str, float]:
         """Aggiorna i valori della personalità in base alla memoria"""
@@ -908,7 +962,7 @@ class CoalescenceProcessor:
             
         return changes
 
-class KnowledgeMemory:
+class LegacyInMemoryConcepts:
     def __init__(self):
         self.concepts = {}
 

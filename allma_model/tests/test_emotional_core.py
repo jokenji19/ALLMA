@@ -82,7 +82,7 @@ class TestEmotionalCore(unittest.TestCase):
         
         # 2. Verify Soul Interaction
         self.mock_soul_instance.pulse.assert_called_once()
-        self.mock_soul_instance.mirror.assert_called_with("joy")
+        self.mock_soul_instance.mirror.assert_called_with("joy", intensity=.85, valence=.8, arousal=.6)
         
         # 3. Verify Integrated State
         self.assertIsNotNone(state.soul_state)

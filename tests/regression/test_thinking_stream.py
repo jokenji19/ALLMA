@@ -31,6 +31,7 @@ def test_explicit_blocks_and_legitimate_english_answer():
 def test_wrapper_returns_same_clean_answer_as_stream(streaming):
     wrapper = MobileGemmaWrapper.__new__(MobileGemmaWrapper)
     wrapper.inference_lock = Lock()
+    wrapper.n_ctx = 2048
     raw = 'Okay, the user said Ciao. Since the context is neutral.</think>Ciao!'
     output = iter({'choices': [{'text': char}]} for char in raw) if streaming else {
         'choices': [{'text': raw, 'finish_reason': 'stop'}]}

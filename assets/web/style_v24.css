@@ -31,6 +31,18 @@
     --focus-ring: 0 0 0 3px rgba(76, 141, 255, 0.25);
 }
 
+#benchmark-profile {
+    max-width: 60%;
+    min-width: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 8px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-primary);
+    background: var(--input-bg);
+}
+
 body.dark-mode {
     --bg-gradient-start: #0B1220;
     --bg-gradient-end: #121B2E;
@@ -1057,7 +1069,7 @@ body.dark-mode .diag-bar-bg {
     left: 0;
     width: 100%;
     height: 100%;
-    background: radial-gradient(circle at center, #0B1220 0%, #05070E 100%);
+    background: radial-gradient(ellipse at 50% 38%, #173a58 0%, #0b1c30 48%, #070e1c 100%);
     z-index: 2000;
     display: flex;
     flex-direction: column;
@@ -1071,6 +1083,7 @@ body.dark-mode .diag-bar-bg {
 #voice-overlay.active {
     opacity: 1;
     pointer-events: auto;
+    visibility: visible;
 }
 
 /* Background particles */
@@ -1085,28 +1098,29 @@ body.dark-mode .diag-bar-bg {
 
 #voice-overlay {
     isolation: isolate;
+    visibility: hidden;
 }
 
 .voice-header {
-    position: absolute;
-    top: 60px;
+    position: relative;
+    top: auto;
     width: 100%;
     text-align: center;
 }
 
 .voice-title {
-    font-size: 14px;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.7);
-    text-transform: uppercase;
-    letter-spacing: 2.2px;
+    font-size: clamp(25px, 7vw, 34px);
+    font-weight: 550;
+    color: #edf7ff;
+    letter-spacing: -1px;
+    margin: 16px 0 8px;
 }
 
 /* --- VISUALIZER CONTAINER --- */
 .voice-visualizer {
     position: relative;
-    width: 340px;
-    height: 340px;
+    width: min(76vw, 310px, 37vh);
+    height: min(76vw, 310px, 37vh);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1116,12 +1130,12 @@ body.dark-mode .diag-bar-bg {
 /* --- NEURAL SPHERE (Inner Content) --- */
 .neural-sphere {
     position: relative;
-    width: 300px;
-    height: 300px;
+    width: 86%;
+    height: 86%;
     border-radius: 50%;
     overflow: hidden;
     /* Sphere Background - Deep Blue Void */
-    background: radial-gradient(circle at 30% 30%, #172554, #000000);
+    background: radial-gradient(circle at 30% 25%, #265582, #081425 70%);
     box-shadow:
         inset 0 0 40px rgba(0, 100, 255, 0.4),
         0 0 50px rgba(59, 130, 246, 0.2);
@@ -1210,41 +1224,53 @@ body.dark-mode .diag-bar-bg {
 }
 
 .voice-text-container {
-    position: absolute;
-    bottom: 130px;
-    width: 100%;
+    box-sizing: border-box;
+    position: relative;
+    bottom: auto;
+    width: min(100%, 420px);
     text-align: center;
     z-index: 20;
-    padding: 0 24px;
+    padding: 15px 20px;
+    border: 1px solid rgba(176, 219, 255, .13);
+    border-radius: 22px;
+    background: rgba(162, 210, 255, .045);
+    min-height: 85px;
+    max-height: 18vh;
+    overflow-y: auto;
 }
 
 .voice-text {
-    font-size: 18px;
+    font-size: 17px;
     color: rgba(255, 255, 255, 0.88);
     font-weight: 500;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    text-shadow: none;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
 }
 
 .voice-status {
-    position: absolute;
-    bottom: 175px;
+    flex-shrink: 0;
+    position: relative;
+    bottom: auto;
     width: 100%;
     text-align: center;
     z-index: 20;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 2.2px;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.55);
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0;
+    color: #b7dbf8;
+    min-height: 24px;
 }
 
 .voice-controls {
-    position: absolute;
-    bottom: 50px;
+    flex-shrink: 0;
+    position: relative;
+    bottom: auto;
     width: 100%;
     display: flex;
     justify-content: center;
-    gap: 30px;
+    gap: 22px;
+    align-items: center;
     z-index: 20;
 }
 
@@ -1263,10 +1289,12 @@ body.dark-mode .diag-bar-bg {
 }
 
 .voice-btn.mic {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(10px);
-    color: white;
+    width: 76px;
+    height: 76px;
+    background: linear-gradient(145deg, #bce5ff, #69bdf1);
+    border: 1px solid rgba(215, 241, 255, .65);
+    color: #143653;
+    box-shadow: 0 8px 28px rgba(50, 165, 237, .24);
 }
 
 .voice-btn.mic:active {
@@ -2256,3 +2284,46 @@ body.dark-mode .message-bubble .content code {
 #cancel-generation-btn { border: 1px solid #64748b; border-radius: 16px; padding: 10px; background: #1e293b; color: #fff; }
 #cancel-generation-btn[hidden] { display: none; }
 #cancel-generation-btn:disabled { opacity: 0.6; }
+
+/* Voce · sfera, luce azzurra e spazio per le parole. */
+#voice-overlay {
+    box-sizing: border-box;
+    padding: max(22px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom));
+    gap: clamp(10px, 2.4vh, 24px);
+    overflow-y: auto;
+    justify-content: center;
+}
+.voice-header, .voice-footer { z-index: 20; flex-shrink: 0; }
+.voice-brand { font-size: 12px; font-weight: 650; letter-spacing: 3px; color: #b9e2ff; }
+.voice-subtitle { color: #91adc4; font-size: 13px; }
+.voice-visualizer { flex-shrink: 0; }
+.voice-transcript-label { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #7ca6c6; margin-bottom: 8px; }
+.voice-text:empty::after { content: 'Le tue parole appariranno qui'; color: #7f9db6; font-size: 14px; }
+.voice-footer { color: #7894ad; font-size: 11px; text-align: center; }
+.voice-btn svg { width: 25px; height: 25px; }
+.voice-btn.mic svg { width: 29px; height: 29px; }
+.voice-stop-icon { display: none; }
+.voice-btn.is-stop .voice-stop-icon { display: block; }
+.voice-btn.is-stop .voice-mic-icon { display: none; }
+.voice-btn:disabled { opacity: .45; cursor: wait; }
+.voice-btn:focus-visible { outline: 2px solid #a8ddff; outline-offset: 5px; }
+#voice-overlay[data-voice-state="listening"] .voice-btn.mic { background: #a8ddff; border-color: #d0edff; color: #123754; box-shadow: 0 0 0 8px rgba(110, 196, 249, .08), 0 0 30px rgba(110, 196, 249, .25); }
+#voice-overlay[data-voice-state="thinking"] .voice-btn.mic { background: #b6cfe5; border-color: #d0e7f9; color: #233f59; opacity: 1; box-shadow: 0 5px 25px rgba(104, 175, 230, .16); }
+#voice-overlay[data-voice-state="speaking"] .voice-btn.mic { background: #a4e3e7; border-color: #cbf4f6; color: #19444e; box-shadow: 0 5px 25px rgba(111, 214, 225, .2); }
+.voice-btn.close { backdrop-filter: none; width: 52px; height: 52px; background: rgba(182, 218, 247, .06); border-color: rgba(182, 218, 247, .18); color: #b7d0e5; }
+@media (max-height: 620px) {
+    #voice-overlay { gap: 9px; padding-top: 16px; padding-bottom: 16px; }
+    .voice-title { margin: 8px 0 4px; font-size: 24px; }
+    .voice-visualizer { width: 29vh; height: 29vh; }
+    .voice-text-container { min-height: 66px; padding: 10px 16px; }
+    .voice-btn.mic { width: 62px; height: 62px; }
+}
+
+.benchmark-button {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    width: 100%; min-height: 48px; margin-top: 12px; padding: 14px 18px;
+    border: 1px solid var(--bubble-border); border-radius: 16px;
+    background: var(--user-gradient); color: var(--text-primary);
+    font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.benchmark-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }

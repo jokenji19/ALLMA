@@ -8,10 +8,10 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ALLMA AI</title>
     <!-- Use v24 assets -->
-    <link rel="stylesheet" href="style_v24.css?v=59">
+    <link rel="stylesheet" href="style_v24.css?v=62">
     <link rel="stylesheet" href="settings_ui.css">
 
-    <link rel="stylesheet" href="sky.css">
+    <link rel="stylesheet" href="sky.css?v=62">
 
     <style>
         /* CRITICAL VIEW SYSTEM STYLES (Inlined for reliability) */
@@ -331,12 +331,16 @@
     </style>
 </head>
 
-<body class="boot-loading">
+<body class="boot-loading dark-mode">
 
     <div id="boot-splash">
-        <div class="boot-title">ALLMA</div>
-        <div class="boot-spinner"></div>
-        <div class="boot-sub">Avvio interfaccia…</div>
+        <div class="boot-card">
+            <div class="boot-title">ALLMA</div>
+            <h1>Uno spazio per<br>pensare insieme.</h1>
+            <p>Le tue parole, la nostra storia.</p>
+            <div class="boot-spinner" aria-hidden="true"></div>
+            <div class="boot-sub" role="status">Apro la chat…</div>
+        </div>
     </div>
 
     <!-- Sidebar Backdrop -->
@@ -350,7 +354,7 @@
         <div class="sidebar-header">
             <div class="brand">
                 <span class="logo-text">ALLMA</span>
-                <svg class="planet-logo" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="29" cy="33" r="17"/><path d="M17 21l7 3 1 6-5 4 4 4 2 10m12-30-4 7 6 4 5-1m-11 8 7 4-4 8"/><ellipse cx="29" cy="33" rx="28" ry="9" transform="rotate(-30 29 33)"/><path d="m50 4 1.5 5.5L57 11l-5.5 1.5L50 18l-1.5-5.5L43 11l5.5-1.5ZM10 7v8m-4-4h8"/></svg>
+
             </div>
         </div>
 
@@ -360,7 +364,7 @@
                 <div class="nav-label">CONVERSAZIONI</div>
                 <button class="nav-item primary-action" onclick="startNewChat()">
                     <span class="icon">✨</span>
-                    <span class="nav-text">Nuova Chat</span>
+                    <span class="nav-text">Nuova chat</span>
                 </button>
                 <div class="history-list" id="history-list">
                     <!-- History items populated dynamically -->
@@ -369,7 +373,7 @@
 
             <!-- 2. INTELLIGENCE SECTION -->
             <div class="nav-section">
-                <div class="nav-label">IL MONDO DI ALLMA</div>
+                <div class="nav-label">ESPLORA</div>
 
                 <button class="nav-item" onclick="openPanel('memory')">
                     <span class="icon icon-purple">🧠</span>
@@ -396,10 +400,14 @@
                     <span class="nav-text">Impostazioni</span>
                 </button>
 
+                <details class="advanced-section sidebar-advanced">
+                    <summary>Strumenti avanzati</summary>
                 <button class="nav-item" onclick="toggleSidebar(); switchView('diagnostics')">
                     <span class="icon icon-rose">🧪</span>
                     <span class="nav-text">Diagnostica</span>
                 </button>
+
+                </details>
 
                 <button class="nav-item" onclick="toggleTheme()">
                     <span class="icon icon-blue" id="theme-icon">🌙</span>
@@ -424,19 +432,36 @@
     <div id="panel-dream" class="sidebar-panel hidden">
         <div class="panel-header">
             <h3>🌙 Diario dei Sogni</h3>
-            <button class="close-panel-btn" onclick="closePanel('dream')">×</button>
+            <button class="close-panel-btn" aria-label="Chiudi Diario Sogni" onclick="closePanel('dream')">×</button>
         </div>
         <div class="panel-body dream-journal-body">
             <div class="dream-journal-meta" id="dream-journal-meta">
                 <span id="dream-status-badge" class="dream-badge dream-badge--idle">In attesa...</span>
-                <button class="dream-clear-btn" onclick="clearDreamJournal()">🗑 Pulisci</button>
+
             </div>
+            <section class="dream-review-section" aria-labelledby="dream-review-title">
+                <h4 id="dream-review-title">Le riflessioni di ALLMA</h4>
+                <p id="dream-review-count" class="dream-review-count" aria-live="polite"></p>
+                <p class="dream-review-explanation">Leggi una riflessione: confermala se ti ritrovi, correggila oppure scartala.</p>
+                <details class="advanced-section dream-help">
+                    <summary>Come funziona?</summary>
+                    <p>ALLMA riflette sui tuoi messaggi quando è in carica e non stai conversando. Le sue idee possono essere sbagliate: una conferma registra il tuo giudizio, non una verità verificata.</p>
+                    <p>Scarta nasconde la scheda e la esclude dalle risposte. Puoi ritrovarla in Mostra scartate. Origine e revisione conserva i dettagli di ogni scelta.</p>
+                </details>
+                <p id="dream-review-notice" role="status" aria-live="polite"></p>
+                <div id="dream-review-items"></div>
+            </section>
+            <details class="advanced-section dream-activity">
+                <summary>Attività dei sogni</summary>
+                <p class="section-desc">Il registro del ciclo, separato dalle riflessioni da valutare.</p>
+                <button class="dream-clear-btn" onclick="clearDreamJournal()">Svuota il registro visibile</button>
             <div id="dream-journal-entries" class="dream-journal-entries">
                 <div class="dream-empty-state">
                     <span>🌙</span>
-                    <p>Nessun sogno registrato.<br>Attiva i Sogni & Iniziativa nelle impostazioni.</p>
+                    <p>Il registro è vuoto. Puoi attivare i sogni nelle Impostazioni.</p>
                 </div>
             </div>
+            </details>
         </div>
     </div>
 
@@ -444,7 +469,7 @@
 
     <div id="panel-memory" class="sidebar-panel hidden">
         <div class="panel-header">
-            <h3>Memoria Cognitiva</h3>
+            <h3>Memoria</h3>
             <button class="close-panel-btn" onclick="closePanel('memory')">×</button>
         </div>
         <div class="panel-body memory-layout">
@@ -453,7 +478,7 @@
                 <!-- User Profile Facts -->
                 <div class="memory-section facts-section">
                     <h4>👤 Profilo Utente</h4>
-                    <p class="section-desc">Fatti e preferenze apprese permanentemente</p>
+                    <p class="section-desc">Informazioni e preferenze che hai condiviso</p>
                     <div id="memory-user-facts" class="memory-grid">
                         <div class="memory-empty-state">Analisi in corso...</div>
                     </div>
@@ -461,7 +486,7 @@
 
                 <!-- Conversation Flow -->
                 <div class="memory-section logs-section">
-                    <h4>💭 Flusso Conversazione</h4>
+                    <h4>💭 Conversazioni recenti</h4>
                     <p class="section-desc">Ultimi scambi e pensieri registrati</p>
                     <div id="memory-logs" class="log-list">
                         <div class="memory-empty-state">Nessun log recente</div>
@@ -479,6 +504,55 @@
             <button class="close-panel-btn" onclick="closePanel('settings')">×</button>
         </div>
         <div class="panel-body">
+            <!-- Benchmark stays visible outside advanced settings. -->
+            <div class="settings-section" id="benchmark-settings">
+                <h4>Benchmark cognitivo</h4>
+                <p class="section-desc">Prove in memoria separata. La qualità delle risposte va valutata nel report.</p>
+                <div class="setting-item">
+                    <label for="benchmark-profile">Tipo di prova</label>
+                    <select id="benchmark-profile" aria-label="Tipo di benchmark">
+                        <option value="quick">Rapida · 6 casi nuovi</option>
+                        <option value="historical">Confronto storico · 6 casi</option>
+                        <option value="extended">Estesa · 14 casi, anche memoria</option>
+                    </select>
+                </div>
+                <button type="button" id="benchmark-start" class="benchmark-button" onclick="startBenchmark()">
+                    <div class="action-label">
+                        <span class="icon">🧠</span>
+                        <span>Avvia benchmark</span>
+                    </div>
+                    <span class="arrow-icon" aria-hidden="true">▶</span>
+                </button>
+            </div>
+            <!-- Dream Mode Setting -->
+            <div class="settings-section">
+                <h4>🌙 Sogni & Iniziativa</h4>
+                <p class="section-desc">ALLMA riflette sui messaggi quando è in carica, con almeno il 72% di batteria e temperatura entro 40 °C.</p>
+                <div class="setting-item">
+                    <span>Consenti i sogni</span>
+                    <label class="apple-switch">
+                        <input type="checkbox" id="dream-mode-toggle" aria-label="Consenti i sogni" onchange="toggleDreamMode(this)">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h4>💬 Preferenze Chat</h4>
+                <p class="section-desc">Personalizza l'esperienza conversazione</p>
+                <div class="setting-item">
+                    <span>Streaming risposte</span>
+                    <span class="setting-value">✅ Attivo</span>
+                </div>
+                <div class="setting-item">
+                    <span>Dettagli delle risposte</span>
+                    <span class="setting-value">Apri in chat</span>
+                </div>
+            </div>
+
+            <details class="advanced-section settings-advanced">
+                <summary>Impostazioni avanzate</summary>
+                <p class="section-desc">Temperature e stato dei motori. Tutti i controlli restano disponibili.</p>
             <!-- Device Temperature Monitor -->
             <div class="settings-section">
                 <h4>🌡️ Temperatura Dispositivo</h4>
@@ -516,30 +590,8 @@
                 </div>
             </div>
 
-            <!-- Dream Mode Setting -->
             <div class="settings-section">
-                <h4>🌙 Sogni & Iniziativa</h4>
-                <p class="section-desc">Consenti ad ALLMA di riflettere offline (richiede Carica + >70%)</p>
-                <div class="setting-item">
-                    <span>Modalità Sogno</span>
-                    <label class="apple-switch">
-                        <input type="checkbox" id="dream-mode-toggle" onchange="toggleDreamMode(this)">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-            </div>
-
-            <div class="settings-section">
-                <h4>💬 Preferenze Chat</h4>
-                <p class="section-desc">Personalizza l'esperienza conversazione</p>
-                <div class="setting-item">
-                    <span>Streaming risposte</span>
-                    <span class="setting-value">✅ Attivo</span>
-                </div>
-                <div class="setting-item">
-                    <span>Dettagli delle risposte</span>
-                    <span class="setting-value">Apri in chat</span>
-                </div>
+                <h4>Stato dei motori</h4>
                 <!-- Status Chips moved here -->
                 <div class="setting-item">
                     <span>Stato Sottosistemi</span>
@@ -550,19 +602,7 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Diagnostics Section -->
-            <div class="settings-section">
-                <h4>🧪 Diagnostica & Test</h4>
-                <p class="section-desc">Strumenti per sviluppatori e analisi cognitiva</p>
-                <div class="setting-item action-item" onclick="startBenchmark()">
-                    <div class="action-label">
-                        <span class="icon">🧠</span>
-                        <span>Esegui Benchmark Cognitivo</span>
-                    </div>
-                    <span class="arrow-icon">▶</span>
-                </div>
-            </div>
+            </details>
         </div>
     </div>
 
@@ -598,7 +638,7 @@
         <button id="menu-btn" class="icon-button" aria-label="Apri menu" onclick="toggleSidebar()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" d="M4 7h16M4 12h12M4 17h8"/></svg>
         </button>
-        <div class="header-brand"><svg class="planet-logo" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="29" cy="33" r="17"/><path d="M17 21l7 3 1 6-5 4 4 4 2 10m12-30-4 7 6 4 5-1m-11 8 7 4-4 8"/><ellipse cx="29" cy="33" rx="28" ry="9" transform="rotate(-30 29 33)"/><path d="m50 4 1.5 5.5L57 11l-5.5 1.5L50 18l-1.5-5.5L43 11l5.5-1.5ZM10 7v8m-4-4h8"/></svg><div><div class="wordmark">ALLMA</div><div id="chat-status" role="status">Parliamone insieme</div></div></div>
+        <div class="header-brand"><div><div class="wordmark">ALLMA</div><div id="chat-status" role="status">Parliamone insieme</div></div></div>
         <button id="new-chat-btn" class="icon-button" aria-label="Nuova chat" onclick="startNewChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7M15 4l5 5M10 14l1-5 7-7 4 4-7 7-5 1Z"/></svg></button>
     </header>
 
@@ -606,7 +646,7 @@
     <div id="view-chat" class="app-view active">
         <!-- Main Chat Container -->
         <div id="chat-container">
-            <div class="empty-chat"><svg class="planet-logo" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="29" cy="33" r="17"/><path d="M17 21l7 3 1 6-5 4 4 4 2 10m12-30-4 7 6 4 5-1m-11 8 7 4-4 8"/><ellipse cx="29" cy="33" rx="28" ry="9" transform="rotate(-30 29 33)"/><path d="m50 4 1.5 5.5L57 11l-5.5 1.5L50 18l-1.5-5.5L43 11l5.5-1.5ZM10 7v8m-4-4h8"/></svg><h1>Da dove iniziamo?</h1><p>Una domanda, un’idea, qualcosa da raccontare.</p></div>
+            <div class="empty-chat"><h1>Da dove iniziamo?</h1><p>Una domanda, un’idea, qualcosa da raccontare.</p></div>
         </div>
 
         <!-- Input Area -->
@@ -641,13 +681,18 @@
         </div>
 
         <div class="diagnostics-content">
+            <div class="diag-section">
+                <h4>Benchmark cognitivo</h4>
+                <p class="section-desc">Scegli una prova e valuta risposte e tempi nel report.</p>
+                <button type="button" class="benchmark-button" onclick="openBenchmarkSettings()">Apri benchmark <span aria-hidden="true">→</span></button>
+            </div>
             <!-- Resource Monitor -->
             <div class="diag-section">
                 <h4>📊 Monitor Risorse</h4>
                 <div class="diag-grid">
                     <!-- CPU -->
                     <div class="diag-card">
-                        <div class="diag-label">CPU (System)</div>
+                        <div class="diag-label">CPU App (1 core)</div>
                         <div class="diag-value" id="diag-cpu-val">0%</div>
                         <div class="diag-bar-bg">
                             <div class="diag-bar-fill" id="diag-cpu-bar" style="width:0%"></div>
@@ -655,7 +700,7 @@
                     </div>
                     <!-- RAM -->
                     <div class="diag-card">
-                        <div class="diag-label">RAM (App)</div>
+                        <div class="diag-label">RAM App (picco)</div>
                         <div class="diag-value" id="diag-ram-val">0 MB</div>
                         <div class="diag-bar-bg">
                             <div class="diag-bar-fill" id="diag-ram-bar" style="width:0%"></div>
@@ -663,7 +708,7 @@
                     </div>
                     <!-- TEMP -->
                     <div class="diag-card">
-                        <div class="diag-label">Temperature</div>
+                        <div class="diag-label">Temperatura batteria</div>
                         <div class="diag-value" id="diag-temp-val">--°C</div>
                         <div class="diag-bar-bg">
                             <div class="diag-bar-fill" id="diag-temp-bar" style="width:0%"></div>
@@ -720,7 +765,7 @@
 
     <template id="tmpl-bot">
         <div class="message-wrapper bot">
-            <div class="assistant-label"><span aria-hidden="true">✧</span> ALLMA</div>
+            <div class="assistant-label">ALLMA</div>
             <div class="message-bubble bot"><div class="content"></div></div>
             <div class="reasoning-container hidden">
                 <button class="reasoning-header" aria-expanded="false" onclick="toggleReasoning(this)"><span>Dettagli</span><span class="details-chevron" aria-hidden="true">⌄</span></button>
@@ -730,13 +775,15 @@
     </template>
 
     <!-- Voice Overlay -->
-    <div id="voice-overlay">
+    <div id="voice-overlay" class="voice-glass" role="dialog" aria-modal="true" aria-labelledby="voice-heading">
         <canvas id="voice-bg-canvas"></canvas>
         <div class="voice-header">
-            <div class="voice-title">Modalità Vocale</div>
+            <div class="voice-brand">ALLMA</div>
+            <div class="voice-title" id="voice-heading">Parliamo a voce</div>
+            <div class="voice-subtitle">Un turno alla volta, senza fretta</div>
         </div>
 
-        <div class="voice-visualizer">
+        <div class="voice-visualizer" aria-hidden="true">
             <div class="neural-sphere">
                 <canvas id="neural-canvas" width="400" height="400"></canvas>
                 <div class="wave-blob w-1"></div>
@@ -745,17 +792,24 @@
             </div>
         </div>
 
-        <div class="voice-status" id="voice-status">Tocca per parlare</div>
+        <div class="voice-status" id="voice-status" role="status" aria-live="polite">Tocca per parlare</div>
 
+        <section class="voice-answer-card" aria-label="Risposta di ALLMA">
+            <div class="voice-transcript-label">ALLMA</div>
+            <div id="voice-answer" class="voice-answer">Sono qui. Tocca il microfono e parliamo.</div>
+        </section>
         <div class="voice-text-container">
+            <div class="voice-transcript-label">Tu</div>
             <div class="voice-text" id="voice-text"></div>
         </div>
 
         <div class="voice-controls">
-            <button class="voice-btn mic" id="voice-mic-btn" onclick="window.voiceToggleListening && window.voiceToggleListening()">🎙️</button>
-            <button class="voice-btn close" onclick="closeVoiceMode()">❌</button>
-            <!-- Maybe a toggle mic button here too later -->
+            <div class="voice-mic-ring">
+            <button class="voice-btn mic" id="voice-mic-btn" aria-label="Microfono" onclick="window.voiceToggleListening && window.voiceToggleListening()"><svg class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path stroke-linecap="round" d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6"/></svg><svg class="voice-stop-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="3"/></svg></button>
+            </div>
+            <button class="voice-btn close" aria-label="Chiudi modalità vocale" onclick="closeVoiceMode()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
+        <div class="voice-footer">Tocca il microfono per un nuovo turno</div>
     </div>
 
     <script src="marked.min.js"></script>

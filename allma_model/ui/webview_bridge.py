@@ -84,7 +84,18 @@ class WebViewBridge:
                                 return
                             if isinstance(effective_val, dict) and effective_val.get('type') == 'action':
                                 action = effective_val.get('action')
+                                if action == 'cancel_benchmark':
+                                    bench = getattr(self.bridge, 'active_benchmark', None)
+                                    if bench is not None:
+                                        bench.cancel_event.set()
+                                    return
                                 if action == 'run_benchmark':
+                                    if getattr(self.bridge, 'benchmark_running', False):
+                                        return
+                                    self.bridge.benchmark_running = True
+                                    profile = effective_val.get('profile', 'quick')
+                                    if profile not in ('quick', 'historical', 'extended'):
+                                        profile = 'quick'
                                     print("🧪 UI Trigger: Starting Benchmark...")
                                     
                                     # TOAST FEEDBACK
@@ -94,6 +105,7 @@ class WebViewBridge:
                                         app.show_toast("Benchmark Richiesto... 🚀")
                                     
                                     def run_bench():
+                                        bench = None
                                         try:
                                             # Toast inside thread might need UI thread dispatch, 
                                             # but app.show_toast usually handles standard android toast which is thread-safe on some versions,
@@ -129,7 +141,8 @@ class WebViewBridge:
                                                 Clock.schedule_once(lambda dt: app.show_toast(err_msg))
                                                 return
 
-                                            bench = CognitiveBenchmark()
+                                            bench = CognitiveBenchmark(profile=profile)
+                                            self.bridge.active_benchmark = bench
                                             
                                             def on_progress(curr, tot, txt):
                                                 self.bridge.update_benchmark_ui(curr, tot, txt)
@@ -139,7 +152,8 @@ class WebViewBridge:
                                             
                                             print("✅ Benchmark Completed via UI Trigger")
                                             # Completion Toast
-                                            Clock.schedule_once(lambda dt: app.show_toast("Benchmark Completato! ✅"))
+                                            completion = "Benchmark interrotto; report parziale salvato" if bench.manifest.get('cancelled') else "Benchmark completato; valuta le risposte nel report"
+                                            Clock.schedule_once(lambda dt, msg=completion: app.show_toast(msg))
                                             
                                             # SHARE REPORT (Instead of Chat)
                                             try:
@@ -156,16 +170,23 @@ class WebViewBridge:
                                             
                                             # Close UI (fade out)
                                             self.bridge.update_benchmark_ui(100, 100, "Completato!")
-                                            Clock.schedule_once(lambda dt: self.bridge.webview.evaluateJavascript("if(window.benchmarkUI) window.benchmarkUI.close()", None), 2.0)
+                                            Clock.schedule_once(lambda dt: self.bridge.execute_js("if(window.benchmarkUI) window.benchmarkUI.close()"), 2.0)
                                             
                                         except Exception as e:
                                             err_msg = f"ERR: {str(e)[:60]}"
                                             print(f"❌ {err_msg}")
                                             import traceback
                                             traceback.print_exc()
-                                            Clock.schedule_once(lambda dt: app.show_toast(err_msg))
+                                            Clock.schedule_once(lambda dt, msg=err_msg: app.show_toast(msg))
                                             # Close UI on Error
-                                            Clock.schedule_once(lambda dt: self.bridge.webview.evaluateJavascript("if(window.benchmarkUI) window.benchmarkUI.close()", None), 3.0)
+                                            Clock.schedule_once(lambda dt: self.bridge.execute_js("if(window.benchmarkUI) window.benchmarkUI.close()"), 3.0)
+                                        finally:
+                                            try:
+                                                if bench is not None:
+                                                    bench.close()
+                                            finally:
+                                                self.bridge.active_benchmark = None
+                                                self.bridge.benchmark_running = False
                                             
                                     threading.Thread(target=run_bench, daemon=True).start()
                                     return
@@ -233,12 +254,18 @@ class WebViewBridge:
                             if Version.SDK_INT >= 30:
                                 activity_window.setDecorFitsSystemWindows(True)
                             activity_window.addFlags(-2147483648)  # DRAWS_SYSTEM_BAR_BACKGROUNDS
-                            activity_window.setStatusBarColor(Color.parseColor("#E7F4FE"))
-                            activity_window.setNavigationBarColor(Color.parseColor("#E7F4FE"))
+                            from allma_model.ui.android_bars import AndroidBars
+                            bar_color = "#091729" if AndroidBars.dark else "#E7F4FE"
+                            activity_window.setStatusBarColor(Color.parseColor(bar_color))
+                            activity_window.setNavigationBarColor(Color.parseColor(bar_color))
                             decorView = activity_window.getDecorView()
                             sys_flags = decorView.getSystemUiVisibility()
                             sys_flags &= ~(512 | 1024 | 4 | 2 | 2048 | 4096)
-                            sys_flags |= 8192 | 16 | 256
+                            sys_flags |= 256
+                            if AndroidBars.dark:
+                                sys_flags &= ~(8192 | 16)
+                            else:
+                                sys_flags |= 8192 | 16
                             decorView.setSystemUiVisibility(sys_flags)
 
                             # 6. FORCE LAYOUT
@@ -330,7 +357,8 @@ class WebViewBridge:
                     if (window.pyBridge) {
                         window.pyBridge.postMessage(JSON.stringify({
                             type: 'action',
-                            action: 'run_benchmark'
+                            action: 'run_benchmark',
+                            profile: (document.getElementById('benchmark-profile') || {}).value || 'quick'
                         }));
                     } else {
                         console.error("PyBridge not found!");
@@ -350,13 +378,13 @@ class WebViewBridge:
                         
                         // Main Overlay
                         this.overlay = document.createElement('div');
-                        this.overlay.style.cssText = "position:fixed; bottom:20px; left:5%; width:90%; background:rgba(20,20,30,0.95); border:1px solid #444; border-radius:12px; padding:15px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:sans-serif; transition: opacity 0.5s ease;";
+                        this.overlay.style.cssText = "position:fixed; bottom:20px; left:5%; width:90%; background:var(--modal-bg); border:1px solid var(--border-color); border-radius:24px; color:var(--text-primary); padding:15px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,0.5); font-family:sans-serif; transition: opacity 0.5s ease;";
                         this.overlay.id = "benchmark-overlay";
                         
                         // Title
                         var title = document.createElement('div');
                         title.innerText = "🧠 Benchmark Cognitivo in Corso...";
-                        title.style.cssText = "color:#fff; font-size:14px; font-weight:bold; margin-bottom:10px;";
+                        title.style.cssText = "color:var(--text-primary); font-size:14px; font-weight:bold; margin-bottom:10px;";
                         this.overlay.appendChild(title);
                         
                         // Progress Container
@@ -372,8 +400,17 @@ class WebViewBridge:
                         // Status Text
                         this.text = document.createElement('div');
                         this.text.innerText = "Avvio...";
-                        this.text.style.cssText = "color:#aaa; font-size:12px; margin-top:8px; text-align:right;";
+                        this.text.style.cssText = "color:var(--text-secondary); font-size:12px; margin-top:8px; text-align:right;";
                         this.overlay.appendChild(this.text);
+                        var cancel = document.createElement('button');
+                        cancel.innerText = 'Interrompi e salva';
+                        cancel.style.cssText = 'margin-top:10px;padding:8px 12px;border:0;border-radius:12px;background:#d8edff;color:#233846;';
+                        cancel.onclick = function() {
+                            if (window.pyBridge) window.pyBridge.postMessage(JSON.stringify({type:'action',action:'cancel_benchmark'}));
+                            cancel.disabled = true;
+                            cancel.innerText = 'Interruzione in corso…';
+                        };
+                        this.overlay.appendChild(cancel);
                         
                         document.body.appendChild(this.overlay);
                     },

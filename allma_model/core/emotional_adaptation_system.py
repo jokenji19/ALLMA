@@ -14,16 +14,29 @@ logger = logging.getLogger(__name__)
 
 # Mapping stato emotivo → direttiva di stile
 _EMOTION_STYLE_MAP: Dict[str, str] = {
-    "joy":         "Rispecchia l'entusiasmo dell'utente con energia positiva.",
+    "joy":         "Accompagna il tono positivo senza entusiasmo eccessivo.",
     "sadness":     "Sii empatico, gentile, ascolta prima di rispondere.",
     "anger":       "Mantieni calma e neutralità. Non alimentare tensione.",
-    "fear":        "Rassicura l'utente con chiarezza e solidità.",
+    "fear":        "Rispondi con calma e chiarezza, senza rassicurazioni infondate.",
     "surprise":    "Accompagna la sorpresa con curiosità condivisa.",
     "disgust":     "Sii diretto e concreto, evita elaborazioni ridondanti.",
     "trust":       "Onora la fiducia con trasparenza e precisione.",
-    "anticipation":"Alimenta l'aspettativa con contesto e dettagli.",
+    "anticipation":"Accompagna l'interesse con possibilità concrete, senza fare promesse.",
     "melancholic": "Sii presente, non saltare alla soluzione. Ascolta.",
     "neutral":     "",  # nessuna direttiva aggiuntiva
+}
+
+_NUANCE_STYLE = {
+    'grief': 'Accogli la perdita con delicatezza; evita frasi fatte e soluzioni affrettate.',
+    'loneliness': 'Ascolta senza alimentare un legame esclusivo o sostituirti alle relazioni umane.',
+    'shame': 'Usa un tono non giudicante; non confermare giudizi negativi sulla persona.',
+    'guilt': 'Distingui il senso di colpa dalle responsabilità effettivamente documentate.',
+    'overwhelm': 'Proponi, se richiesto, un passo gestibile alla volta.',
+    'frustration': 'Riconosci la difficoltà e offri aiuto concreto, senza minimizzare.',
+    'fatigue': 'Mantieni chiarezza e brevità; non attribuire cause alla stanchezza.',
+    'numbness': 'Non presumere una diagnosi; lascia spazio a chiarire come si sente.',
+    'confusion': 'Chiarisci i punti difficili con ordine, senza trattare la confusione come incapacità.',
+    'relief': 'Accompagna il sollievo con un tono tranquillo.',
 }
 
 
@@ -63,12 +76,32 @@ class EmotionalAdaptationSystem:
         emotion = self._extract_emotion(context)
         result["metadata"]["emotion"] = emotion
 
+        state = context.get('emotional_state')
+        read = (lambda key, default: state.get(key, default)) if isinstance(state, dict) else (lambda key, default: getattr(state, key, default))
+        confidence = read('confidence', 1.)
+        nuances = read('nuances', {}) or {}
+        details = (read('context', {}) or {}).get('emotion_analysis', {})
+        result['metadata'].update(nuances=list(nuances)[:4], uncertain=details.get('uncertain', False))
+        if confidence < .6 or details.get('uncertain'):
+            if nuances:
+                result['system_instruction'].append('Gli indizi emotivi sono incerti: non attribuire sentimenti con certezza; chiarisci con tatto se serve.')
+                result['metadata']['adapted'] = True
+            return result
+
         directive = _EMOTION_STYLE_MAP.get(emotion.lower(), "")
         if directive:
             result["system_instruction"].append(directive)
             result["metadata"]["adapted"] = True
             self._adaptations[emotion] = self._adaptations.get(emotion, 0) + 1
             logger.debug(f"[EmotionalAdaptation] Adapting for '{emotion}': {directive}")
+
+        for label in list(nuances)[:4]:
+            if label in _NUANCE_STYLE:
+                result['system_instruction'].append(_NUANCE_STYLE[label])
+                result['metadata']['adapted'] = True
+                break
+        if details.get('mixed'):
+            result['system_instruction'].append('Rispetta le emozioni miste, senza ridurle a un unico sentimento.')
 
         return result
 
@@ -80,9 +113,11 @@ class EmotionalAdaptationSystem:
 
         # Supporta sia oggetti con attributo che dict
         if hasattr(emotional_state, "primary_emotion"):
-            return getattr(emotional_state, "primary_emotion", "neutral") or "neutral"
+            value = getattr(emotional_state, "primary_emotion", "neutral") or "neutral"
+            return str(getattr(value, 'value', value)).lower()
         if isinstance(emotional_state, dict):
-            return emotional_state.get("primary_emotion", "neutral") or "neutral"
+            value = emotional_state.get("primary_emotion", "neutral") or "neutral"
+            return str(getattr(value, 'value', value)).lower()
         return "neutral"
 
     def get_stats(self) -> Dict[str, Any]:

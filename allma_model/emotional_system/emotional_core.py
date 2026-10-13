@@ -2,8 +2,11 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 import json
 import re
+import threading
+import time
+import math
+from .emotion_analysis import analyze, FAMILIES, unit
 from allma_model.soul.soul_core import SoulCore
-from allma_model.soul.soul_types import SoulState as InternalSoulState
 
 @dataclass
 class EmotionalState:
@@ -18,6 +21,10 @@ class EmotionalState:
     stress: float = 0.0
     # BRAIN V3: Integrated Soul State
     soul_state: Optional[Dict] = None
+    nuances: Dict[str, float] = field(default_factory=dict)
+    valence: float = 0.0
+    arousal: float = 0.0
+    dominance: float = 0.0
     
     def to_dict(self) -> Dict:
         return {
@@ -28,7 +35,11 @@ class EmotionalState:
             "context": self.context,
             "entropy": self.entropy,
             "stress": self.stress,
-            "soul_state": self.soul_state
+            "soul_state": self.soul_state,
+            "nuances": self.nuances,
+            "valence": self.valence,
+            "arousal": self.arousal,
+            "dominance": self.dominance
         }
 
 class EmotionalCore:
@@ -36,21 +47,10 @@ class EmotionalCore:
     
     def __init__(self, soul_instance: Optional[SoulCore] = None):
         """Inizializza il sistema emotivo."""
-        try:
-            from kivy.utils import platform
-        except Exception:
-            platform = None
-
-        if platform == "android":
-            self.ml_system = None
-        else:
-            try:
-                from allma_model.agency_system.ml_emotional_system import MLEmotionalSystem
-                self.ml_system = MLEmotionalSystem()
-            except ImportError:
-                print("Warning: MLEmotionalSystem not found.")
-                self.ml_system = None
-
+        # One offline detector on desktop and Android. No automatic model download
+        # or extra LLM inference solely for emotional classification.
+        self.ml_system = None
+        self._history_lock = threading.RLock()
         # CHAOS ENGINE INTEGRATION
         self.soul = soul_instance if soul_instance else SoulCore()
         
@@ -61,174 +61,10 @@ class EmotionalCore:
         self.current_emotion = None
         self.emotion_intensity = 0.0
         
-        # Dizionario di traduzione semplice italiano-inglese per parole emotive comuni
-        self.translation_dict = {
-            'felice': 'happy',
-            'triste': 'sad',
-            'arrabbiato': 'angry',
-            'contento': 'happy',
-            'gioioso': 'joyful',
-            'preoccupato': 'worried',
-            'spaventato': 'scared',
-            'sorpreso': 'surprised',
-            'annoiato': 'bored',
-            'entusiasta': 'excited',
-            'soddisfatto': 'satisfied',
-            'deluso': 'disappointed',
-            'frustrato': 'frustrated',
-            'nervoso': 'nervous',
-            'calmo': 'calm',
-            'rilassato': 'relaxed',
-            'ansioso': 'anxious',
-            'stanco': 'tired',
-            'energico': 'energetic',
-            'molto': 'very',
-            'poco': 'little',
-            'non': 'not',
-            'sono': 'am',
-            'mi sento': 'i feel',
-            'mi': 'me',
-            'sento': 'feel',
-            'che': 'that',
-            'quando': 'when',
-            'perché': 'because',
-            'e': 'and',
-            'o': 'or',
-            'ma': 'but',
-            'se': 'if',
-            'imparare': 'learning',
-            'studiare': 'studying',
-            'lavorare': 'working',
-            'giocare': 'playing',
-            'dormire': 'sleeping',
-            'mangiare': 'eating',
-            'bere': 'drinking',
-            'parlare': 'talking',
-            'scrivere': 'writing',
-            'leggere': 'reading',
-            'guardare': 'watching',
-            'ascoltare': 'listening',
-            'pensare': 'thinking',
-            'credere': 'believing',
-            'sapere': 'knowing',
-            'capire': 'understanding',
-            'volere': 'wanting',
-            'potere': 'can',
-            'dovere': 'must',
-            'python': 'python'
-        }
-        
-    def _heuristic_detect_emotion(self, text: str) -> Optional[EmotionalState]:
-        if not text:
-            return None
-        t = text.lower()
-        t = re.sub(r'\s+', ' ', t).strip()
-        if not t:
-            return None
-
-        patterns = {
-            "joy": [
-                "felice", "contento", "gioioso", "entusiasta", "eccitato", "soddisfatto",
-                "che bello", "evviva", "ottimo", "fantastico", "meraviglioso",
-            ],
-            "sadness": [
-                "triste", "infelice", "malincon", "depress", "deluso", "sconfort",
-                "mi manca", "solitudine", "solo", "piango",
-            ],
-            "anger": [
-                "arrabbiat", "rabbia", "furioso", "irritat", "odio", "incazz",
-                "mi dà fastidio", "che schifo", "mi fai arrabbiare",
-            ],
-            "fear": [
-                "paura", "ansia", "ansioso", "preoccup", "spavent", "terrorizz",
-                "panico", "mi spaventa", "ho paura",
-            ],
-            "surprise": [
-                "sorpres", "incredibile", "wow", "davvero", "non ci credo",
-                "impossibile", "inaspettat",
-            ],
-        }
-
-        intensifiers_hi = ["molto", "tantissimo", "estremamente", "davvero", "super", "troppo"]
-        intensifiers_lo = ["un po", "poco", "leggermente", "appena"]
-
-        best = None
-        best_score = 0.0
-
-        for emotion, keys in patterns.items():
-            score = 0.0
-            for k in keys:
-                if k in t:
-                    score += 1.0
-            if score > best_score:
-                best_score = score
-                best = emotion
-
-        if not best:
-            return EmotionalState(
-                primary_emotion="neutral",
-                confidence=0.7,
-                secondary_emotions={},
-                intensity=0.2,
-                context={"source": "heuristic"}
-            )
-
-        confidence = min(0.9, 0.6 + (best_score * 0.15))
-        intensity = min(0.95, 0.45 + (best_score * 0.15))
-
-        for w in intensifiers_hi:
-            if w in t:
-                confidence = min(0.95, confidence + 0.1)
-                intensity = min(1.0, intensity + 0.2)
-                break
-
-        for w in intensifiers_lo:
-            if w in t:
-                intensity = max(0.2, intensity - 0.2)
-                confidence = max(0.55, confidence - 0.05)
-                break
-
-        if re.search(r'\bnon\s+(sono|mi\s+sento|mi\s+sent[oe])\b', t):
-            neg_targets = {
-                "joy": "sadness",
-                "sadness": "joy",
-                "anger": "neutral",
-                "fear": "neutral",
-                "surprise": "neutral",
-            }
-            best = neg_targets.get(best, best)
-            confidence = max(0.55, confidence - 0.15)
-            intensity = max(0.2, intensity - 0.1)
-
-        return EmotionalState(
-            primary_emotion=best,
-            confidence=float(max(0.0, min(1.0, confidence))),
-            secondary_emotions={},
-            intensity=float(max(0.0, min(1.0, intensity))),
-            context={"source": "heuristic"}
-        )
-
-    def _translate_to_english(self, text: str) -> str:
-        """
-        Traduce il testo dall'italiano all'inglese usando un dizionario semplice.
-        
-        Args:
-            text: Testo da tradurre
-            
-        Returns:
-            Testo tradotto
-        """
-        # Converte il testo in minuscolo
-        text = text.lower()
-        
-        # Divide il testo in parole
-        words = text.split()
-        
-        # Traduce ogni parola se presente nel dizionario
-        translated_words = [self.translation_dict.get(word, word) for word in words]
-        
-        # Unisce le parole tradotte
-        return ' '.join(translated_words)
+    def _heuristic_detect_emotion(self, text: str) -> EmotionalState:
+        result = analyze(text)
+        analysis = result.pop('analysis')
+        return EmotionalState(**result, context={'emotion_analysis': analysis})
 
     def process_interaction(self, text: str, context: Optional[Dict] = None, llm_client = None) -> EmotionalState:
         """
@@ -240,6 +76,25 @@ class EmotionalCore:
         """
         # 1. Perception
         detected_state = self.detect_emotion(text, context, llm_client)
+        user_id = detected_state.context.get('user_id')
+        conversation = detected_state.context.get('conversation_id')
+        if user_id and conversation and not detected_state.nuances:
+            previous = self.get_user_emotional_state(user_id)
+            recent = (previous.context.get('conversation_id') == conversation
+                      and 0 <= time.time()-previous.context.get('observed_at', 0) <= 600)
+            if recent and previous.nuances and re.fullmatch(
+                    r"\s*(?:mi sento |sto )?(?:ancora cos[iì]|come prima|meglio|peggio)[.!]?\s*", text or '', re.I):
+                detected_state.primary_emotion = previous.primary_emotion
+                detected_state.secondary_emotions = dict(previous.secondary_emotions)
+                detected_state.nuances = dict(previous.nuances)
+                detected_state.confidence = .5
+                delta = -.2 if 'meglio' in text.casefold() else .15 if 'peggio' in text.casefold() else 0
+                detected_state.intensity = unit(previous.intensity + delta)
+                detected_state.valence = previous.valence
+                detected_state.arousal = previous.arousal
+                detected_state.dominance = previous.dominance
+                detected_state.context['emotion_analysis'].update(source='recent_reference', uncertain=True)
+        detected_state.context['observed_at'] = time.time()
         
         # 2. Time Evolution (The Pulse)
         self.soul.pulse()
@@ -247,7 +102,8 @@ class EmotionalCore:
         # 3. Resonance (Mirroring)
         # Se l'emozione è forte, perturba l'anima
         if detected_state.confidence > 0.6 and detected_state.primary_emotion != "neutral":
-            self.soul.mirror(detected_state.primary_emotion)
+            self.soul.mirror(detected_state.primary_emotion, intensity=detected_state.intensity,
+                             valence=detected_state.valence, arousal=detected_state.arousal)
             
         # 4. Integrate Soul State into Emotional State
         # Sync legacy fields for compatibility
@@ -267,206 +123,65 @@ class EmotionalCore:
         
         # Register history
         self.current_emotion = detected_state
+        self.emotion_intensity = detected_state.intensity
+        if user_id:
+            self.track_emotional_state(user_id, detected_state)
         # Note: track_emotional_state is usually called by caller, but we can do it here if we pass user_id
         # For now, allow caller to track to keep API clean
         
         return detected_state
         
-    def detect_emotion_via_llm(self, text: str, llm_generate_function, context: Optional[Dict] = None) -> EmotionalState:
+    def detect_emotion_via_llm(self, text, llm_generate_function, context=None):
+        """Explicit optional analysis API: one call, validated JSON, local fallback.
+
+        The normal response pipeline does not call this method.
         """
-        Rileva le emozioni usando il modello LLM principale (Gemma/Qwen).
-        
-        Args:
-            text: Testo da analizzare
-            llm_generate_function: Funzione .generate() o simile del LLM
-            context: Contesto opzionale
-        """
-        if context is None: context = {}
-        
+        state = self.detect_emotion(text, context)
+        prompt = ('<|im_start|>system\nAnalizza solo gli indizi emotivi attuali dell’utente. '
+                  'Distingui negazioni, citazioni, altre persone e ipotesi. Non diagnosticare. '
+                  'Solo JSON: {"e":"neutral|joy|sadness|anger|fear|surprise|disgust|trust|anticipation",'
+                  '"c":0.0,"i":0.0}.\n<|im_end|>\n<|im_start|>user\n'
+                  + json.dumps((text or '')[:12000], ensure_ascii=False)
+                  + '\n<|im_end|>\n<|im_start|>assistant\n')
         try:
-            # Prompt ultra-compatto: save ~85 token vs versione precedente
-            compact_prompt = (
-                f'<|im_start|>system\nRispondi SOLO con JSON valido. Non usare <think> e non aggiungere testo extra. '
-                f'Formato esatto: {{"e":"emotion","c":0.9,"i":0.5}} '
-                f'dove e=joy|sadness|anger|fear|surprise|neutral, c=confidence 0-1, i=intensity 0-1.\n<|im_end|>\n'
-                f'<|im_start|>user\n"{text}"\n<|im_end|>\n<|im_start|>assistant\n'
-            )
-            strict_prompt = (
-                f'<|im_start|>system\nJSON ONLY. Output deve iniziare con "{{" e finire con "}}". '
-                f'Nessun <think>, nessuna spiegazione. Schema: {{"e":"joy|sadness|anger|fear|surprise|neutral","c":0.0,"i":0.0}}\n<|im_end|>\n'
-                f'<|im_start|>user\n{text}\n<|im_end|>\n<|im_start|>assistant\n'
-            )
-
-            def call_llm(prompt_value: str) -> str:
-                try:
-                    output = llm_generate_function(
-                        prompt_value,
-                        max_tokens=64,
-                        stop=["<|im_end|>", "</think>", "<think>"],
-                        temperature=0.1,
-                        echo=False
-                    )
-                except TypeError:
-                    output = llm_generate_function(
-                        prompt_value,
-                        max_tokens=64,
-                        stop=["<|im_end|>", "</think>", "<think>"],
-                        temperature=0.1
-                    )
-                if isinstance(output, dict) and 'choices' in output:
-                    return output['choices'][0]['text'].strip()
-                return str(output).strip()
-
-            def parse_json(json_str: str) -> Dict:
-                import json
-                import re
-                
-                cleaned = re.sub(r'<think>.*?</think>', '', json_str, flags=re.DOTALL).strip()
-                cleaned = cleaned.strip().strip("`").strip()
-
-                # Primo tentativo diretto
-                try:
-                    return json.loads(cleaned)
-                except Exception:
-                    pass
-                
-                # Secondo tentativo: Cerca il primo blocco simil-JSON
-                try:
-                    match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-                    if match:
-                        return json.loads(match.group(0))
-                except Exception:
-                    pass
-
-                lowered = cleaned.lower()
-                for label in ("joy", "sadness", "anger", "fear", "surprise", "neutral"):
-                    if re.search(rf'\b{label}\b', lowered):
-                        return {"e": label, "c": 0.6, "i": 0.4}
-                
-                # Se fallisce tutto, usa un fallback neutro forzato
-                raise ValueError(f"Could not extract JSON from: {cleaned[:50]}...")
-
-
-            last_error = None
-            try:
-                json_str = call_llm(compact_prompt)
-                data = parse_json(json_str)
-                # Supporta sia chiavi compatte (e/c/i) che chiavi estese
-                emotion = data.get("e") or data.get("primary_emotion", "neutral")
-                confidence = float(data.get("c") or data.get("confidence", 0.5))
-                intensity = float(data.get("i") or data.get("intensity", 0.5))
-                print(f"✅ Emotion LLM OK: {emotion} conf={confidence}", flush=True)
-                return EmotionalState(
-                    primary_emotion=emotion.lower(),
-                    confidence=confidence,
-                    secondary_emotions=data.get("secondary_emotions", {}),
-                    intensity=intensity,
-                    context=context
-                )
-            except Exception as e:
-                last_error = e
-                try:
-                    json_str = call_llm(strict_prompt)
-                    data = parse_json(json_str)
-                    emotion = data.get("e") or data.get("primary_emotion", "neutral")
-                    confidence = float(data.get("c") or data.get("confidence", 0.5))
-                    intensity = float(data.get("i") or data.get("intensity", 0.5))
-                    print(f"✅ Emotion LLM OK (strict): {emotion} conf={confidence}", flush=True)
-                    return EmotionalState(
-                        primary_emotion=str(emotion).lower(),
-                        confidence=float(max(0.0, min(1.0, confidence))),
-                        secondary_emotions=data.get("secondary_emotions", {}),
-                        intensity=float(max(0.0, min(1.0, intensity))),
-                        context=context
-                    )
-                except Exception as e2:
-                    last_error = e2
-
-            print(f"Errore detect_emotion_via_llm: {last_error} - Input era: {text}")
-            return EmotionalState(
-                primary_emotion="neutral",
-                confidence=0.5,
-                secondary_emotions={},
-                intensity=0.1,
-                context=context
-            )
-
-        except Exception as e:
-            print(f"Errore detect_emotion_via_llm: {e} - Input era: {text}")
-            return EmotionalState(
-                primary_emotion="neutral",
-                confidence=0.5,
-                secondary_emotions={},
-                intensity=0.1,
-                context=context
-            )
-
-    def detect_emotion(
-        self,
-        text: str,
-        context: Optional[Dict] = None,
-        llm_client = None # New optional Argument
-    ) -> EmotionalState:
-        """
-        Rileva le emozioni dal testo. Uses TinyBERT (Fast) -> LLM (Deep) -> Fallback.
-        """
-        if context is None:
-            context = {}
-            
-        # 1. TENTATIVO CON TINYBERT (FAST & SPECIALIZED)
-        # Phase 17 Upgrade
-        if self.ml_system:
-            try:
-                # Use synchronous analyze for blocking detection
-                emotion_label = self.ml_system.analyze(text)
-                if emotion_label and emotion_label != "neutral":
-                    return EmotionalState(
-                        primary_emotion=emotion_label,
-                        confidence=0.9, # High confidence in ML
-                        secondary_emotions={},
-                        intensity=0.7,
-                        context=context
-                    )
-            except Exception as e:
-                print(f"TinyBERT failed: {e}")
-
-        heuristic_state = None
-        try:
-            heuristic_state = self._heuristic_detect_emotion(text)
-            if heuristic_state and heuristic_state.primary_emotion != "neutral" and heuristic_state.confidence >= 0.75:
-                return heuristic_state
+            output = llm_generate_function(prompt, max_tokens=96, temperature=.1,
+                                           stop=['<|im_end|>'])
+            if isinstance(output, dict):
+                output = output['choices'][0]['text']
+            cleaned = re.sub(r'<think>.*?</think>', '', str(output), flags=re.S).strip()
+            if cleaned.startswith('```'):
+                cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', cleaned)
+            data = json.loads(cleaned)
+            if not isinstance(data, dict):
+                return state
+            label = data.get('e', data.get('primary_emotion'))
+            confidence = data.get('c', data.get('confidence'))
+            intensity = data.get('i', data.get('intensity'))
+            if label not in FAMILIES or any(type(v) not in (float, int) or not math.isfinite(v)
+                                          or not 0 <= v <= 1 for v in (confidence, intensity)):
+                return state
+            state.primary_emotion = label
+            state.confidence = float(confidence)
+            state.intensity = float(intensity)
+            # Do not keep dimensions or nuances from a conflicting local label.
+            if label != analyze(text)['primary_emotion']:
+                state.nuances = {}; state.secondary_emotions = {}
+                state.valence = state.arousal = state.dominance = 0.
+            state.context['emotion_analysis']['source'] = 'llm_explicit'
+            state.context['emotion_analysis']['uncertain'] = confidence < .6
         except Exception:
-            heuristic_state = None
+            # Never log private input or guess a label from incidental prose.
+            pass
+        return state
 
-        # 2. TENTATIVO CON LLM (FALLBACK / DEEP)
-        if llm_client:
-            try:
-                if heuristic_state and heuristic_state.primary_emotion == "neutral":
-                    t = (text or "").lower()
-                    if not any(p in t for p in ("mi sento", "sono ", "ho paura", "ansia", "triste", "felice", "arrabbi", "rabbia", "sorpres")):
-                        return heuristic_state
-            except Exception:
-                pass
-            # Se llm_client è l'istanza Llama
-            if hasattr(llm_client, '__call__'):
-                return self.detect_emotion_via_llm(text, llm_client, context)
-            elif hasattr(llm_client, 'create_completion'):
-                return self.detect_emotion_via_llm(text, llm_client.create_completion, context)
-            elif hasattr(llm_client, 'generate'):
-                return self.detect_emotion_via_llm(text, llm_client.generate, context)
-                
-        # 3. FALLBACK FINALE
-        if heuristic_state:
-            return heuristic_state
-        print("DEBUG - No Emotion System available, using fallback.")
-        return EmotionalState(
-            primary_emotion="neutral",
-            confidence=0.5,
-            secondary_emotions={},
-            intensity=0.1,
-            context=context
-        )
-            
+    def detect_emotion(self, text: str, context=None, llm_client=None) -> EmotionalState:
+        """Lightweight evidence; llm_client retained for API compatibility only."""
+        state = self._heuristic_detect_emotion(text)
+        supplied = dict(context) if isinstance(context, dict) else {}
+        supplied.pop('emotion_analysis', None)
+        state.context.update(supplied)
+        return state
+
     def generate_emotional_response(
         self,
         detected_emotion: EmotionalState,
@@ -521,13 +236,12 @@ class EmotionalCore:
             user_id: ID dell'utente
             emotional_state: Stato emotivo da tracciare
         """
-        if user_id not in self.emotion_history:
-            self.emotion_history[user_id] = []
-            
-        self.emotion_history[user_id].append(emotional_state)
-        
-        # Mantieni solo gli ultimi 100 stati
-        if len(self.emotion_history[user_id]) > 100:
+        with self._history_lock:
+            if user_id not in self.emotion_history:
+                while len(self.emotion_history) >= 128:
+                    self.emotion_history.pop(next(iter(self.emotion_history)))
+                self.emotion_history[user_id] = []
+            self.emotion_history[user_id].append(emotional_state)
             self.emotion_history[user_id] = self.emotion_history[user_id][-100:]
             
     def analyze_emotional_trends(
@@ -631,7 +345,7 @@ class EmotionalCore:
             return self.current_emotion.to_dict()
         return {
             "primary_emotion": "neutral",
-            "confidence": 1.0,
+            "confidence": 0.0,
             "secondary_emotions": {},
             "intensity": 0.0,
             "context": {}
@@ -651,9 +365,9 @@ class EmotionalCore:
             # Se non c'è storia emotiva, restituisci uno stato neutrale
             return EmotionalState(
                 primary_emotion="neutral",
-                confidence=1.0,
+                confidence=0.0,
                 secondary_emotions={},
-                intensity=0.5
+                intensity=0.0
             )
             
         # Restituisci l'ultimo stato emotivo registrato
@@ -693,7 +407,7 @@ class EmotionalCore:
             'joy': lambda r: f"Sono felice di questo! {r}",
             'sadness': lambda r: f"Mi dispiace per questo. {r}",
             'anger': lambda r: f"Capisco la tua frustrazione. {r}",
-            'fear': lambda r: f"Non preoccuparti. {r}",
+            'fear': lambda r: f"Possiamo affrontarlo con calma. {r}",
             'surprise': lambda r: f"Davvero interessante! {r}",
             'neutral': lambda r: r
         }
@@ -710,10 +424,7 @@ class EmotionalCore:
         intensity: float
     ) -> str:
         """Regola l'intensità della risposta."""
-        if intensity > 0.8:
-            response = response.upper()
-        elif intensity > 0.6:
-            response += "!"
+        # Emotional intensity is not a reason to shout or alter requested format.
         return response
         
     def _add_emotional_support(
@@ -724,8 +435,6 @@ class EmotionalCore:
         """Aggiunge elementi di supporto emotivo."""
         if emotion.intensity > 0.7:
             response += "\nSono qui per aiutarti."
-        if emotion.confidence > 0.8:
-            response += f"\nPercepisco chiaramente il tuo stato d'animo {emotion.primary_emotion}."
         return response
         
     def apply_decision_cost(self, state: EmotionalState, action_type: str) -> EmotionalState:
@@ -772,28 +481,9 @@ class EmotionalCore:
         Calcola la valenza emotiva (positiva/negativa).
         Axiom 2 Modified: Entropy reduces Valence.
         """
-        # Definisci la valenza per ogni emozione
-        valence_map = {
-            "joy": 1.0, "love": 0.8, "admiration": 0.6, "approval": 0.4,
-            "caring": 0.3, "excitement": 0.5, "gratitude": 0.7, "pride": 0.6,
-            "relief": 0.3, "neutral": 0.0,
-            "confusion": -0.2, "disapproval": -0.4, "disappointment": -0.5,
-            "anger": -0.8, "annoyance": -0.3, "disgust": -0.7,
-            "embarrassment": -0.4, "fear": -0.6, "grief": -0.9,
-            "nervousness": -0.3, "remorse": -0.5, "sadness": -0.7
-        }
-        
-        # Calcola la valenza pesata
-        valence = valence_map.get(emotion_state.primary_emotion, 0.0) * emotion_state.confidence
-        
-        # Considera anche le emozioni secondarie
-        for emotion, score in emotion_state.secondary_emotions.items():
-            valence += valence_map.get(emotion, 0.0) * score * 0.5  # Peso dimezzato
-        
-        # AXIOM 2: ENTROPY DRAG
-        # High entropy pulls valence down (Depression/Numbness)
-        entropy_drag = emotion_state.entropy * 0.5
-        valence -= entropy_drag
-        
-        # Normalizza tra -1 e 1
-        return max(min(valence, 1.0), -1.0)
+        # User emotion dimensions stay separate from ALLMA's internal chaos.
+        if emotion_state.nuances:
+            return emotion_state.valence
+        values = {'joy': .8, 'sadness': -.7, 'anger': -.7, 'fear': -.7,
+                  'surprise': 0., 'trust': .5, 'anticipation': .4, 'disgust': -.7}
+        return values.get(emotion_state.primary_emotion, 0.) * emotion_state.confidence

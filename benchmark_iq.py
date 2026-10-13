@@ -1,245 +1,237 @@
-
-import os
-import sys
+"""ALLMA diagnostic runs: isolated state, explicit checks, no hidden retries."""
+import hashlib
+import math
 import json
-import time
+import os
+from pathlib import Path
+import platform
 import re
-import unittest
+import statistics
+import tempfile
+import threading
+import time
+import uuid
 from datetime import datetime
-from unittest.mock import MagicMock
 
-# --- MOCKING ANDROID CONTEXT ---
-# Since we are running on macOS (desktop), we need to mock Android modules
-try:
-    import jnius
-except ImportError:
-    sys.modules['jnius'] = MagicMock()
-    sys.modules['jnius'].autoclass = MagicMock()
+from allma_model.utils.generation_control import GenerationCancelled
 
-try:
-    import plyer
-except ImportError:
-    sys.modules['plyer'] = MagicMock()
-    sys.modules['plyer'].vibrator = MagicMock()
 
-# --- PATH SETUP ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
-sys.path.append(project_root)
+def evaluate_response(question, content, metadata, valid=True):
+    checks = {}
+    rules = question.get('auto_checks', {})
+    if 'exact_answer' in rules:
+        answer = content.strip().casefold().rstrip('.!?')
+        checks['exact_answer'] = answer == rules['exact_answer'].casefold()
+    if 'json_answer' in rules:
+        try:
+            answer = json.loads(content)
+            expected = rules['json_answer']
+            # Python considers True == 1; JSON checks must distinguish types.
+            checks['json_answer'] = (isinstance(answer, dict) and answer.keys() == expected.keys()
+                and all(type(answer[k]) is type(v) and answer[k] == v for k, v in expected.items()))
+        except (TypeError, ValueError):
+            checks['json_answer'] = False
+    if 'emotion_families' in rules:
+        state = metadata.get('emotion_analysis', {})
+        labels = {state.get('primary_emotion'), *state.get('secondary_emotions', {})} - {'neutral', None}
+        checks['emotion_families'] = labels == set(rules['emotion_families']) if state else None
+    return {'automatic_checks': checks, 'pipeline_valid': bool(valid),
+            'automatic_status': 'failed' if not valid or False in checks.values() else
+                                'passed' if checks and all(v is True for v in checks.values()) else 'not_measured',
+            'human_review_required': bool(question.get('rubric')) or not rules,
+            'rubric': question.get('rubric', []), 'human_score': None}
 
-# --- IMPORT ALLMA CORE ---
-# Adjust path if script is simple at root or sub
-sys.path.append(os.getcwd()) # Ensure root is in path
-from allma_model.core.allma_core import ALLMACore
 
 class CognitiveBenchmark:
-    def __init__(self, db_path=None):
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        if db_path is None:
-            self.db_path = os.path.join(base_dir, "benchmarks", "questions_db.json")
-        else:
-            self.db_path = db_path
-            
-        self.results = []
-        self.brain = None
-        
-        reports_dir = os.path.join(base_dir, "benchmarks", "reports")
-        os.makedirs(reports_dir, exist_ok=True)
-        self.report_path = os.path.join(reports_dir, f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
+    _run_lock = threading.Lock()
+
+    def __init__(self, db_path=None, profile='quick', seed=20261012):
+        if profile not in ('quick', 'historical', 'extended'):
+            raise ValueError('Unknown benchmark profile')
+        self.db_path = str(db_path or Path(__file__).parent/'benchmarks/questions_db.json')
+        self.profile, self.seed = profile, seed
+        self.results, self.brain = [], None
+        self.cancel_event = threading.Event()
+        self._temporary = None
+        self._owned = False
+        self._source_brain = None
+        self.session_id = uuid.uuid4().hex
+        self.manifest = {}
+        reports = Path(__file__).parent/'benchmarks/reports'
+        reports.mkdir(parents=True, exist_ok=True)
+        self.report_path = str(reports/f'report_{self.session_id}.md')
 
     def setup_brain(self, existing_brain=None):
-        print("🧠 Initializing ALLMA Benchmark Context...")
-        if existing_brain:
-             self.brain = existing_brain
-             state_db = getattr(existing_brain, 'db_path', None)
-             if isinstance(state_db, (str, os.PathLike)):
-                 reports_dir = os.path.join(os.path.dirname(os.path.abspath(state_db)), 'benchmarks', 'reports')
-                 os.makedirs(reports_dir, exist_ok=True)
-                 self.report_path = os.path.join(reports_dir, os.path.basename(self.report_path))
-             print("✅ Using existing Brain instance.")
-        else:
-             # Initialize Core with expert settings
-             # FORCE MOBILE MODE TO USE LOCAL GGUF PATHS
-             self.brain = ALLMACore(mobile_mode=True) 
-             # Mock specific Android-only components
-             self.brain.tts_engine = MagicMock()
-             self.brain.vibrator = MagicMock()
-             self.brain.audio_recorder = MagicMock()
-             print("✅ Fresh Brain Initialized (Mobile Mode).")
+        from allma_model.core.allma_core import ALLMACore
+        if existing_brain is not None:
+            if existing_brain._user_active.is_set():
+                raise RuntimeError('Attendi che la risposta corrente sia terminata')
+            reports = Path(existing_brain.db_path).resolve().parent/'benchmarks/reports'
+            reports.mkdir(parents=True, exist_ok=True)
+            self.report_path = str(reports/Path(self.report_path).name)
+            existing_brain._ensure_mobile_llm()
+        self._temporary = tempfile.TemporaryDirectory(prefix='allma-benchmark-')
+        self._owned = True
+        self._source_brain = existing_brain
+        self.brain = ALLMACore(mobile_mode=True, db_path=str(Path(self._temporary.name)/'benchmark.db'),
+                               models_dir=getattr(existing_brain, 'models_dir', None))
+        if existing_brain is not None:
+            # Share only the native model, not personality/history/learning stores.
+            self.brain._llm = getattr(existing_brain, '_llm', None)
+            self.brain._llm_ready = self.brain._llm is not None
+            self.brain.reasoning_engine.llm = self.brain._llm
+            self.brain.dream_manager.llm_wrapper = self.brain._llm
+            self.brain.dream_manager.tot.llm = self.brain._llm
+        self.brain.set_dream_mode(False, persist=False)
+
+    def close(self):
+        if self._owned and self.brain is not None:
+            self.brain.close()
+            self.brain = None
+        if self._temporary is not None:
+            self._temporary.cleanup()
+            self._temporary = None
 
     def load_questions(self):
-        with open(self.db_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("tests", [])
+        data = json.loads(Path(self.db_path).read_text(encoding='utf-8'))
+        return [q for q in data.get('tests', []) if self.profile in q.get('profiles', ['quick'])]
+
+    def _conditions(self):
+        try:
+            state = self.brain.system_monitor.get_metabolic_state()
+            result = {}
+            for key in ('battery_temp_celsius', 'battery_level', 'is_charging'):
+                value = getattr(state, key, None)
+                if key == 'battery_level':
+                    energy = getattr(state, 'energy_level', None)
+                    value = energy*100 if type(energy) in (int,float) and 0 <= energy <= 1 else None
+                result[key] = value if type(value) in (bool, int, float) and math.isfinite(value) else None
+            return result
+        except Exception:
+            return {'battery_temp_celsius': None, 'battery_level': None, 'is_charging': None}
 
     def run_tests(self, progress_callback=None):
         self.results = []
+        self.session_id = uuid.uuid4().hex
         questions = self.load_questions()
-        total = len(questions)
-        print(f"🚀 Starting Benchmark: {total} questions loaded.\n")
-        session_id = f"BENCHMARK_SESSION_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-        def _loop_signature(text: str):
-            t = (text or "").strip().lower()
-            if not t:
-                return False, None
-            t = re.sub(r"\s+", " ", t)
-            if len(t) < 240:
-                return False, None
-            tail = t[-220:]
-            head = t[:-220]
-            if tail and tail in head:
-                return True, "tail_repeated"
-            parts = re.split(r"(?<=[\.\!\?])\s+|\n+", t)
-            seen = {}
-            repeats = 0
-            for p in parts:
-                p = p.strip()
-                if len(p) < 22:
-                    continue
-                seen[p] = seen.get(p, 0) + 1
-                if seen[p] == 3:
-                    repeats += 1
-            if repeats > 0:
-                return True, "sentence_repeat"
-            return False, None
-
-        for idx, q in enumerate(questions):
-            print(f"[{idx+1}/{total}] Testing: {q['id']} ({q['category']})...")
-            
-            if progress_callback:
-                progress_callback(idx + 1, total, f"Analisi: {q['category']} ({q['id']})...")
-
-            start_time = time.perf_counter()
-            
-            response_obj = None
-            # Send message to Brain
+        source = Path(self.db_path)
+        self.manifest = {'version': 3, 'session': self.session_id, 'profile': self.profile,
+            'started_at': datetime.now().astimezone().isoformat(), 'seed_base': self.seed,
+            'state_isolated': self._owned, 'model_already_loaded': self._source_brain is not None,
+            'recall_disabled_for_cognitive_cases': True, 'platform': platform.platform(),
+            'dataset_sha256': hashlib.sha256(source.read_bytes()).hexdigest() if source.exists() else None,
+            'case_order': [q['id'] for q in questions], 'conditions_start': self._conditions(),
+            'cancelled': False, 'semantic_accuracy': None}
+        model_path = getattr(getattr(self.brain, '_llm', None), 'model_path', None)
+        if isinstance(model_path, (str, os.PathLike)):
+            model = Path(model_path)
+            self.manifest['model'] = {'name': model.name, 'size_bytes': model.stat().st_size if model.exists() else None}
+        main = Path(__file__).parent/'main.py'
+        self.manifest['embedded_source_sha256'] = hashlib.sha256(main.read_bytes()).hexdigest() if main.exists() else None
+        self.manifest['source_sha256'] = {
+            name: hashlib.sha256((Path(__file__).parent/name).read_bytes()).hexdigest()
+            for name in ('benchmark_iq.py', 'allma_model/core/allma_core.py',
+                         'allma_model/emotional_system/emotion_analysis.py')
+            if (Path(__file__).parent/name).exists()}
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError('Un benchmark è già in esecuzione')
+        if self._source_brain is not None:
+            self._source_brain._user_active.set()  # Yield background work during measurement.
+            self._source_brain._benchmark_active = True
+        try:
+            for idx, question in enumerate(questions):
+                if self.cancel_event.is_set():
+                    self.manifest['cancelled'] = True
+                    break
+                if progress_callback:
+                    progress_callback(idx+1, len(questions), f"{question['category']} ({question['id']})")
+                started = time.perf_counter()
+                steps = []
+                before = self._conditions()
+                # Unique user per case, shared conversation only within a workflow.
+                user = f'BENCHMARK_{self.session_id}_{question["id"]}'
+                for step_idx, message in enumerate(question.get('messages') or [question['question']]):
+                    if self.cancel_event.is_set():
+                        self.manifest['cancelled'] = True
+                        break
+                    tick = time.perf_counter()
+                    try:
+                        response = self.brain.process_message(user_id=user, conversation_id=user, message=message,
+                            context={'disable_answer_recall': True, 'benchmark_seed': self.seed+idx*100+step_idx},
+                            cancel_event=self.cancel_event)
+                        steps.append({'input': message, 'response': response.content,
+                                      'duration': time.perf_counter()-tick,
+                                      'metadata': getattr(response, 'metadata', None) or {},
+                                      'valid': getattr(response, 'is_valid', True)})
+                    except GenerationCancelled:
+                        self.manifest['cancelled'] = True
+                        break
+                    except Exception as error:
+                        steps.append({'input': message, 'response': f'ERROR: {error}',
+                                      'duration': time.perf_counter()-tick, 'metadata': {}, 'valid': False})
+                        break
+                duration = time.perf_counter()-started
+                final = steps[-1] if steps else {'response':'Test interrotto', 'metadata':{}, 'valid':False}
+                generation = final['metadata'].get('generation', {})
+                counts = [s['metadata'].get('generation', {}).get('completion_tokens') for s in steps]
+                tokens = sum(counts) if counts and all(type(n) is int for n in counts) else None
+                content = final['response']
+                from allma_model.utils.repetition_guard import repetition_start
+                looped = repetition_start(content) is not None
+                valid = all(s['valid'] for s in steps) and final['valid'] and len(steps) == len(question.get('messages') or [question['question']]) and not self.manifest['cancelled']
+                self.results.append({'id': question['id'], 'category': question['category'], 'question': question['question'],
+                    'response': content, 'thought': 'Non raccolto; non indica assenza di ragionamento.',
+                    'duration': duration, 'completion_tokens': tokens, 'tok_s': tokens/duration if tokens is not None and duration else None,
+                    'max_new_tokens': generation.get('max_tokens'), 'stop_reason': generation.get('finish_reason','not_measured'),
+                    'generation': generation, 'status': generation.get('status','not_measured'),
+                    'anti_loop_triggered': looped, 'anti_loop_reason': 'lexical_loop' if looped else None,
+                    'anti_loop_retry': False, 'steps': steps, 'conditions_before': before, 'conditions_after': self._conditions(),
+                    'evaluation': evaluate_response(question, content, final['metadata'], valid)})
+                if self.manifest['cancelled']:
+                    break
+                # Cooperative short pause; this is not a controlled cooldown.
+                self.cancel_event.wait(1.)
+        finally:
+            self.manifest['finished_at'] = datetime.now().astimezone().isoformat()
+            self.manifest['conditions_end'] = self._conditions()
             try:
-                msg = q['question']
-                # We use process_message directly
-                # Dedicated user scope; persisted benchmark history is not a fresh controlled state.
-                response_obj = self.brain.process_message(
-                    user_id="BENCHMARK_USER",
-                    conversation_id=f"{session_id}_{q['id']}",
-                    message=msg, context={'disable_answer_recall': True}
-                )
-                response_content = response_obj.content
-                if response_obj.thought_trace:
-                     if isinstance(response_obj.thought_trace, dict):
-                         thought_trace = response_obj.thought_trace.get("thought", "No thought content")
-                     else:
-                         thought_trace = str(response_obj.thought_trace)
-                else:
-                     thought_trace = "Non raccolto dal report; non indica assenza di ragionamento."
-            except Exception as e:
-                print(f"❌ Error: {e}")
-                response_content = f"ERROR: {str(e)}"
-                thought_trace = "ERROR"
-
-            end_time = time.perf_counter()
-            duration = end_time - start_time
-
-            metadata = getattr(response_obj, 'metadata', None) or {}
-            last_gen = metadata.get('generation', {})
-            completion_tokens = last_gen.get('completion_tokens')
-            tok_s = (completion_tokens / duration) if duration and completion_tokens is not None else None
-            stop_reason = last_gen.get('finish_reason', 'not_measured')
-            looped, loop_reason = _loop_signature(response_content)
-            did_retry = False
-            retry_stop_reason = retry_tokens = retry_tok_s = None
-
-            result_frame = {
-                "id": q['id'],
-                "category": q['category'],
-                "question": q['question'],
-                "response": response_content,
-                "thought": thought_trace,
-                "duration": duration,
-                "completion_tokens": completion_tokens,
-                "tok_s": tok_s,
-                "max_new_tokens": last_gen.get("max_tokens"),
-                "stop_reason": stop_reason,
-                "generation": last_gen,
-                "status": last_gen.get('status', 'error' if response_content.startswith('ERROR:') else 'not_measured'),
-                "anti_loop_triggered": bool(looped),
-                "anti_loop_reason": loop_reason,
-                "anti_loop_retry": bool(did_retry),
-                "anti_loop_retry_stop_reason": retry_stop_reason,
-                "anti_loop_retry_tokens": retry_tokens,
-                "anti_loop_retry_tok_s": retry_tok_s,
-            }
-            self.results.append(result_frame)
-            print(f"   -> Result: Elaborato ({duration:.2f}s)\n")
-            
-            # Sleep briefly to let thermal cool (simulated)
-            time.sleep(1)
-
-        self._generate_report()
+                self._generate_report()
+            finally:
+                if self._source_brain is not None:
+                    self._source_brain._benchmark_active = False
+                    self._source_brain._user_active.clear()
+                self._run_lock.release()
 
     def _generate_report(self):
-        lines = [
-            "# 🧠 ALLMA V5 Semantic Cognitive Benchmark Report",
-            f"**Data Esecuzione**: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            f"**Domande Totali**: {len(self.results)}",
-            "",
-            "> Una richiesta per domanda attraverso la pipeline ALLMA, senza retry o riscritture del benchmark. Le risposte includono i controlli della pipeline; la qualità richiede valutazione umana. Tok/s end-to-end include l’intera elaborazione. Metriche mancanti non vengono stimate.",
-            "",
-            "## Riassunto Latenze",
-            "| ID | Categoria | Tempo (s) | Tok | Tok/s end-to-end | Stop |",
-            "|----|-----------|-----------|-----|-------|------|"
-        ]
-        
-        avg_time = 0
-        
+        durations = [r['duration'] for r in self.results]
+        lines = ['# ALLMA — Diagnostica di qualità e prestazioni', '',
+            f"Profilo: {self.profile}; casi completati: {len(self.results)}; interrotto: {self.manifest.get('cancelled', False)}.",
+            f"Una richiesta per passo, senza retry. Stato isolato: {self.manifest.get('state_isolated', False)}; il modello può essere già caldo. Le verifiche automatiche coprono solo i criteri dichiarati. Qualità semantica da valutare con la rubrica; nessun punteggio di intelligenza.", '',
+            '| ID | Tempo (s) | Token | Tok/s end-to-end | Stop | Verifiche automatiche |',
+            '|---|---:|---:|---:|---|---|']
         for r in self.results:
-            tok = r.get("completion_tokens")
-            tok_s = r.get("tok_s")
-            stop = r.get("stop_reason")
-            tok_cell = f"{tok}" if tok is not None else "-"
-            tok_s_cell = f"{tok_s:.2f}" if isinstance(tok_s, (int, float)) else "-"
-            stop_cell = stop if stop else "-"
-            lines.append(f"| {r['id']} | {r['category']} | {r['duration']:.2f} | {tok_cell} | {tok_s_cell} | {stop_cell} |")
-            avg_time += r['duration']
-            
-        avg_time /= len(self.results) if self.results else 1
-        
-        lines.append("")
-        lines.append(f"**Latenza Media per Risposta**: {avg_time:.2f}s")
-        lines.append("")
-        lines.append("## Risposte Dettagliate per Valutazione Umana")
-        
+            lines.append(f"| {r['id']} | {r['duration']:.2f} | {r['completion_tokens']} | {r['tok_s']} | {r['stop_reason']} | {r['evaluation']['automatic_status']} |")
+        if durations:
+            lines += ['', f'Media: {statistics.mean(durations):.2f} s; mediana: {statistics.median(durations):.2f} s.']
+        lines += ['', '## Condizioni e provenienza', '```json', json.dumps(self.manifest,ensure_ascii=False,indent=2), '```',
+                  '', 'Rubrica: assegnare 0 = non soddisfatto, 1 = parziale, 2 = soddisfatto per ciascun criterio. Lasciare non valutato senza un giudizio sul testo. I casi con più passi sono confrontabili con lo stesso protocollo, non con singole richieste.', '']
         for r in self.results:
-            lines.append(f"### [{r['id']}] Domanda: {r['question']}")
-            formatted_thought = r['thought'].replace('\n', '\n> ')
-            lines.append(f"**Flusso di Coscienza (Thought Trace)**:\n>{formatted_thought}")
-            lines.append("")
-            lines.append("**Metriche**:")
-            lines.append(f"- completion_tokens: {r.get('completion_tokens')}")
-            lines.append(f"- tok/s: {r.get('tok_s')}")
-            lines.append(f"- max_new_tokens: {r.get('max_new_tokens')}")
-            lines.append(f"- stop_reason: {r.get('stop_reason')}")
-            lines.append(f"- status: {r.get('status')}")
-            for key, value in r.get('generation', {}).items():
-                lines.append(f"- {key}: {value}")
-            if r.get("anti_loop_triggered"):
-                lines.append(f"- anti_loop_triggered: True ({r.get('anti_loop_reason')})")
-                lines.append(f"- anti_loop_retry: {r.get('anti_loop_retry')}")
-                if r.get("anti_loop_retry"):
-                    lines.append(f"- anti_loop_retry_tokens: {r.get('anti_loop_retry_tokens')}")
-                    lines.append(f"- anti_loop_retry_tok/s: {r.get('anti_loop_retry_tok_s')}")
-                    lines.append(f"- anti_loop_retry_stop_reason: {r.get('anti_loop_retry_stop_reason')}")
-            lines.append(f"\n**Risposta Finale Elaborata**:\n{r['response']}")
-            lines.append("\n---")
+            lines += [f"## {r['id']} — {r['question']}", r['response'], '',
+                      'Criteri: '+ '; '.join(r['evaluation']['rubric']),
+                      'Verifiche: '+json.dumps(r['evaluation'],ensure_ascii=False),
+                      'Metadati: '+json.dumps(r['generation'],ensure_ascii=False)]
+            for step in r['steps']:
+                lines += [f"Passo ({step['duration']:.2f}s): {step['input']}", step['response']]
+        Path(self.report_path).write_text('\n'.join(lines),encoding='utf-8')
+        # Preserve the old results-list JSON contract; provenance is separate.
+        Path(self.report_path).with_suffix('.json').write_text(json.dumps(self.results,ensure_ascii=False,indent=2))
+        Path(self.report_path).with_suffix('.manifest.json').write_text(json.dumps(self.manifest,ensure_ascii=False,indent=2))
 
-        with open(self.report_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines))
-        
-        with open(os.path.splitext(self.report_path)[0] + '.json', 'w', encoding='utf-8') as f:
-            json.dump(self.results, f, ensure_ascii=False, indent=2)
-        print(f"\n📄 Report generated: {self.report_path}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     benchmark = CognitiveBenchmark()
-    benchmark.setup_brain()
-    benchmark.run_tests()
+    try:
+        benchmark.setup_brain()
+        benchmark.run_tests()
+    finally:
+        benchmark.close()

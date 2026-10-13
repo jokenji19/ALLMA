@@ -23,6 +23,7 @@ class TreeOfThoughts:
     Implements the Tree of Thoughts algorithm for deep reasoning.
     """
     def __init__(self, llm_engine, max_depth: int = 3, max_branches: int = 3):
+        self.cancel_event = None
         self.llm = llm_engine
         self.max_depth = max_depth
         self.max_branches = max_branches
@@ -55,6 +56,8 @@ class TreeOfThoughts:
         all_nodes = {root.id: root}
         
         for depth in range(self.max_depth):
+            if self.cancel_event is not None and self.cancel_event.is_set():
+                return []
             self.logger.info(f"🌳 Processing Depth {depth + 1}/{self.max_depth}")
             next_layer = []
             
@@ -75,13 +78,14 @@ class TreeOfThoughts:
                     next_layer.append(thought)
             
             if not next_layer:
-                break
+                return []
                 
             current_layer = next_layer
             
         # Compile results (returning leaves of the best paths)
         # Or return the single best leaf
-        if not current_layer:
+        if (not current_layer or (self.cancel_event is not None and self.cancel_event.is_set())
+                or current_layer[0].depth == 0):
              return []
              
         best_leaf = max(current_layer, key=lambda x: x.score)
@@ -112,29 +116,35 @@ class TreeOfThoughts:
             f"<|im_start|>user\n"
             f"Input: {user_prompt}\n"
             f"<|im_end|>\n"
-            f"<|im_start|>assistant\n"
+            f"<|im_start|>assistant\n<think>"
         )
         
         generated_nodes = []
         try:
             # 🔴 Controlla se l'utente sta chattando → cedi il LLM
-            if getattr(self, 'user_active_event', None) and self.user_active_event.is_set():
+            if ((self.cancel_event is not None and self.cancel_event.is_set())
+                    or (getattr(self, 'user_active_event', None) is not None and self.user_active_event.is_set())):
                 self.logger.info("🌙 Dream in pausa: utente attivo, cedo il LLM.")
                 return []
 
             # MobileGemmaWrapper.generate() restituisce una stringa diretta
             raw = self.llm.generate(
                 full_prompt,
-                max_tokens=64,
-                stop=["<|im_end|>", "\n"],
-                temperature=0.9
+                max_tokens=128,
+                stop=["<|im_end|>"],
+                temperature=0.7,
+                thought_budget=32,
+                cancel_event=self.cancel_event
             )
             
+            if self.cancel_event is not None and self.cancel_event.is_set():
+                return []
+
             # Supporto doppio: stringa (MobileGemmaWrapper) o dict (llama.cpp raw)
             if isinstance(raw, dict):
                 insight_text = raw.get('choices', [{}])[0].get('text', '').strip()
             else:
-                insight_text = str(raw).strip()
+                insight_text = str(raw or '').strip()
             
             if insight_text and len(insight_text) > 5:
                 new_node = ThoughtNode(

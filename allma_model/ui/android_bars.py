@@ -4,6 +4,14 @@ from kivy.clock import Clock
 print(f"!!!! [AndroidBars] MODULE IMPORTED. Platform: {platform} !!!!")
 
 class AndroidBars:
+    dark = True
+
+    @staticmethod
+    def set_dark(enabled):
+        AndroidBars.dark = bool(enabled)
+        if platform == 'android':
+            AndroidBars._attempt_set_bars(0)
+
     @staticmethod
     def configure_bars():
         """Called once, initiates the retry loop"""
@@ -50,9 +58,12 @@ class AndroidBars:
 
                     # 2. VISIBILITY FLAGS
                     new_flags = decor_view.getSystemUiVisibility()
-                    new_flags |= 0x00002000 # Light Status
-                    if Version.SDK_INT >= 26:
-                        new_flags |= 0x00000010 # Light Nav
+                    if AndroidBars.dark:
+                        new_flags &= ~(0x00002000 | 0x00000010)
+                    else:
+                        new_flags |= 0x00002000
+                        if Version.SDK_INT >= 26:
+                            new_flags |= 0x00000010
                     
                     decor_view.setSystemUiVisibility(new_flags)
 
@@ -62,7 +73,7 @@ class AndroidBars:
                     window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                     
                     # 4. SET COLORS (WHITE)
-                    white = Color.parseColor("#E7F4FE")
+                    white = Color.parseColor("#091729" if AndroidBars.dark else "#E7F4FE")
                     window.setStatusBarColor(white)
                     window.setNavigationBarColor(white)
                     

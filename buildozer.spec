@@ -79,6 +79,9 @@ android.softinput_mode = adjustPan
 android.presplash_color = #FFFFFF
 
 # (list) Permissions
+android.add_src = libs/android_src
+android.extra_manifest_xml = libs/voice_manifest.xml
+
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE,ACCESS_NETWORK_STATE,MODIFY_AUDIO_SETTINGS,BLUETOOTH,BLUETOOTH_CONNECT,FOREGROUND_SERVICE,POST_NOTIFICATIONS,FOREGROUND_SERVICE_DATA_SYNC
 
 # (int) Target Android API, should be as high as possible.

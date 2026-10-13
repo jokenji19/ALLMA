@@ -1,6 +1,9 @@
 
 import logging
 import time
+import hashlib
+import re
+import math
 from typing import Dict, Any, List, Optional
 from collections import deque
 from dataclasses import dataclass, asdict
@@ -25,6 +28,7 @@ class MetaLearningSystem:
         self.logger = logging.getLogger(__name__)
         self.state_manager = ModuleStateManager(db_path)
         self.module_name = "meta_learning_system"
+        self._user_id = None
         
         # Core Metrics (Persistent)
         self.style_scores = {
@@ -52,8 +56,17 @@ class MetaLearningSystem:
         Analyzes user input for *implicit feedback* on previous turns.
         Returns *adjustments* for the current response.
         """
-        # 1. Analyze Feedback from this message
-        self._analyze_feedback(message)
+        context = context or {}
+        self._select_user(context.get('user_id'))
+        before = (dict(self.style_scores), dict(self.communication_scores), list(self.feedback_history))
+        self._analyze_feedback(message, context)
+        if before != (self.style_scores, self.communication_scores, list(self.feedback_history)):
+            try:
+                self._save_state()
+            except Exception:
+                self.style_scores, self.communication_scores = before[:2]
+                self.feedback_history = deque(before[2], maxlen=20)
+                raise
         
         # 2. Determine Optimal Settings for acting/responding now
         best_style = self._get_best_style()
@@ -61,54 +74,59 @@ class MetaLearningSystem:
         
         result = {
             'intent': 'meta_learning',
-            'suggested_style': best_style,
-            'suggested_comm': best_comm,
-            'confidence': max(self.style_scores.values())
+            'suggested_style': best_style if max(self.style_scores.values()) > .55 else None,
+            'suggested_comm': best_comm if max(self.communication_scores.values()) > .55 else None,
+            'confidence': max(*self.style_scores.values(), *self.communication_scores.values())
         }
         self.logger.info(f"🧠 Meta-Learning Result: {result}")
         return result
 
-    def _analyze_feedback(self, message: str):
-        """Detects positive/negative signals in user message."""
-        msg_lower = message.lower()
-        
-        # Negative Signals (Prioritize these to handle negations like "Non ho capito")
-        if any(phrase in msg_lower for phrase in ['non ho capito', 'non è chiaro', 'spiega meglio', 'confuso', 'eh?', 'cosa?', 'non capisco']):
-            self._update_scores(success=False)
-            self.logger.info("📉 Negative Feedback Detected: Adjusting strategies.")
-            return # Stop here to avoid triggering positive on "capito" inside "non ho capito"
-            
-        # Positive Signals
-        if any(w in msg_lower for w in ['grazie', 'capito', 'chiaro', 'ottimo', 'brava', 'esatto']):
-            # Verify it's not a negation (double check, though return above handles most)
-            if 'non ' not in msg_lower: 
-                self._update_scores(success=True)
-                self.logger.info("📈 Positive Feedback Detected: Reinforcing current strategies.")
-            
-        # Explicit Requests (Strong Signal)
-        if 'esempio' in msg_lower:
-            self.style_scores['kinesthetic'] += 0.1
-        if 'immagine' in msg_lower or 'vedere' in msg_lower:
-            self.style_scores['visual'] += 0.2
+    def _select_user(self, user_id):
+        user_id = str(user_id) if user_id else None
+        if user_id == self._user_id:
+            return
+        self._user_id = user_id
+        self.module_name = ('meta_learning_system:' + hashlib.sha256(user_id.encode()).hexdigest()
+                            if user_id else 'meta_learning_system')
+        self.style_scores = {key: .5 for key in self.style_scores}
+        self.communication_scores = {key: .5 for key in self.communication_scores}
+        self.feedback_history.clear()
+        self._load_state()
 
-        # Normalize
-        self._normalize_scores()
-        self._save_state()
+    def _analyze_feedback(self, message, context):
+        text = message.lower()
+        # Mentioning an image or an example is not a communication preference.
+        explicit = {
+            'kinesthetic': r'\b(?:fammi|mostrami|usa|vorrei|voglio) (?:un |degli |anche )?esempi?\b',
+            'visual': r'\b(?:mostrami|usa|vorrei|voglio) (?:un |una |delle )?(?:immagin[ei]|diagramm[ai])\b',
+        }
+        for style, pattern in explicit.items():
+            if re.search(pattern, text) and not re.search(r'\bnon\b', text):
+                self.style_scores[style] = min(1., self.style_scores[style] + .1)
+        for comm, pattern in {
+            'direct': r'\b(?:rispondi|sii) (?:in breve|brevemente|conciso|concisa)\b',
+            'detailed': r'\b(?:spiega|rispondi) (?:in dettaglio|dettagliatamente)\b',
+            'metaphorical': r'\b(?:usa|spiega con) (?:una |delle )?metafor[ae]\b',
+        }.items():
+            if re.search(pattern, text) and not re.search(r'\bnon\b', text):
+                self.communication_scores[comm] = min(1., self.communication_scores[comm] + .1)
 
-    def _update_scores(self, success: bool):
-        """Updates efficiency scores based on recent performance."""
-        # Simple reinforcement learning
-        # We assume the "current" dominant style was used recently.
-        # In a real system, we'd need to know exactly WHAT was used last turn.
-        # For now, we reinforce the *currently highest* traits.
-        
-        learning_rate = 0.1 if success else -0.15 # Penalize heavily
-        
-        best_style = self._get_best_style()
-        best_comm = self._get_best_communication()
-        
-        self.style_scores[best_style] = max(0.0, min(1.0, self.style_scores[best_style] + learning_rate))
-        self.communication_scores[best_comm] = max(0.0, min(1.0, self.communication_scores[best_comm] + learning_rate))
+        # Reward only strategies actually included in the preceding valid answer.
+        applied = context.get('applied_style')
+        event = context.get('feedback_event')
+        if not isinstance(applied, dict) or not event or event in self.feedback_history:
+            return
+        from allma_model.learning_system.answer_recall import feedback_kind
+        kind = feedback_kind(message)
+        if not kind:
+            return
+        rate = .1 if kind == 'positive' else -.15
+        for scores, key in [(self.style_scores, 'suggested_style'),
+                            (self.communication_scores, 'suggested_comm')]:
+            value = applied.get(key)
+            if value in scores:
+                scores[value] = max(0., min(1., scores[value] + rate))
+        self.feedback_history.append(event)
 
     def _get_best_style(self) -> str:
         return max(self.style_scores, key=self.style_scores.get)
@@ -123,14 +141,26 @@ class MetaLearningSystem:
 
     def _load_state(self):
         state = self.state_manager.load_state(self.module_name)
-        if state:
-            self.style_scores = state.get('style_scores', self.style_scores)
-            self.communication_scores = state.get('communication_scores', self.communication_scores)
+        if not isinstance(state, dict):
+            return
+        for field in ('style_scores', 'communication_scores'):
+            saved = state.get(field)
+            if isinstance(saved, dict):
+                scores = getattr(self, field)
+                for key in scores:
+                    value = saved.get(key)
+                    if isinstance(value, (int, float)) and math.isfinite(value):
+                        scores[key] = max(0., min(1., value))
+        events = state.get('feedback_history', [])
+        if isinstance(events, list):
+            self.feedback_history.extend(v for v in events[-20:] if isinstance(v, str))
 
     def _save_state(self):
         state = {
             'style_scores': self.style_scores,
             'communication_scores': self.communication_scores,
+            'feedback_history': list(self.feedback_history),
             'last_updated': time.time()
         }
-        self.state_manager.save_state(self.module_name, state)
+        if not self.state_manager.save_state(self.module_name, state):
+            raise OSError('Unable to persist communication preferences')

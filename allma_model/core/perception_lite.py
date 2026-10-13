@@ -32,6 +32,7 @@ class PerceptionSystemLite:
     def __init__(self, history_size: int = 20):
         # Recent inputs for pattern detection
         self.recent_inputs = []
+        self._context_key = None
         self.max_history = history_size
         
         # Repetition tracking (hash → count)
@@ -55,6 +56,14 @@ class PerceptionSystemLite:
         Returns:
             Dict with detected patterns
         """
+        key = (context.get('user_id'), context.get('conversation_id'))
+        if key != self._context_key:
+            self.recent_inputs.clear()
+            self.repetition_detector.clear()
+            self.consecutive_questions = 0
+            self.current_topic = None
+            self.topic_keywords = []
+            self._context_key = key
         insights = {}
         
         # 1. Repetition Detection

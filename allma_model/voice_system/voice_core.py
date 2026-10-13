@@ -31,6 +31,11 @@ class VoiceSystem:
         Returns:
             Dizionario con 'pitch' e 'rate'
         """
+        emotion = str(getattr(emotion, 'value', emotion)).lower()
+        try:
+            intensity = max(0.0, min(1.0, float(intensity)))
+        except (ValueError, TypeError):
+            intensity = 0.0
         pitch = self.base_pitch
         rate = self.base_rate
         
@@ -46,22 +51,25 @@ class VoiceSystem:
             rate -= (0.2 * intensity)
             
         elif emotion == 'anger':
-            # Rabbia: Voce leggermente più grave ma veloce
-            pitch -= (0.1 * intensity)
-            rate += (0.15 * intensity)
+            # A calm reply should not mirror the user's agitation.
+            pitch -= (0.05 * intensity)
+            rate -= (0.05 * intensity)
             
         elif emotion == 'fear':
-            # Paura: Voce acuta e veloce (tremolante se possibile, ma qui solo parametri base)
-            pitch += (0.3 * intensity)
-            rate += (0.2 * intensity)
+            pitch -= (0.03 * intensity)
+            rate -= (0.08 * intensity)
             
         elif emotion == 'surprise':
             # Sorpresa: Voce molto acuta
             pitch += (0.4 * intensity)
+        elif emotion == 'trust':
+            rate -= (0.03 * intensity)
+        elif emotion == 'anticipation':
+            pitch += (0.05 * intensity)
             
         # Limiti di sicurezza per evitare voci distorte
-        pitch = max(0.5, min(2.0, pitch))
-        rate = max(0.5, min(2.0, rate))
+        pitch = max(0.9, min(1.1, pitch))
+        rate = max(0.85, min(1.15, rate))
         
         return {
             'pitch': pitch,

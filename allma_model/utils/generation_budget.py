@@ -1,9 +1,10 @@
 """Bounded reasoning followed by a reserved answer budget on the same prompt."""
 import time
 from .generation_control import check_cancelled
+from .repetition_guard import repetition_start, completion_with_compat
 
 
-def bounded_completion(llm, prompt, kwargs, thought_budget, callback=None, cancel_event=None):
+def bounded_completion(llm, prompt, kwargs, thought_budget, callback=None, cancel_event=None, allow_repetition=False, answer_grammar=None):
     total_budget = int(kwargs['max_tokens'])
     if total_budget < 2 or int(thought_budget) < 1:
         raise ValueError("A positive reasoning budget and at least two total tokens are required")
@@ -12,29 +13,32 @@ def bounded_completion(llm, prompt, kwargs, thought_budget, callback=None, cance
     first_token_ms = None
     stages = []
 
-    def stage(stage_prompt, budget, stops):
+    def stage(stage_prompt, budget, stops, grammar=None):
         nonlocal first_token_ms
         check_cancelled(cancel_event)
         options = dict(kwargs, max_tokens=budget, stop=stops, stream=True)
-        try:
-            output = llm(stage_prompt, **options)
-        except TypeError as error:
-            if not any(key in str(error) for key in ('repeat_last_n', 'repeat_penalty')):
-                raise
-            options.pop('repeat_last_n', None)
-            options.pop('repeat_penalty', None)
-            output = llm(stage_prompt, **options)
+        if grammar is not None:
+            options['grammar'] = grammar
+        output = completion_with_compat(llm, stage_prompt, options)
         text = ''
+        generated = ''
         finish = None
         try:
             for chunk in output:
                 check_cancelled(cancel_event)
                 choice = chunk['choices'][0]
                 token = choice.get('text', '')
+                generated += token
                 finish = choice.get('finish_reason') or finish
                 if token and first_token_ms is None:
                     first_token_ms = (time.perf_counter() - started) * 1000
-                text += token
+                candidate = text + token
+                loop = None if allow_repetition else repetition_start(candidate)
+                if loop is not None:
+                    text = candidate[:loop]
+                    finish = 'repetition'
+                    break
+                text = candidate
                 if callback and token:
                     callback(token)
         finally:
@@ -42,7 +46,7 @@ def bounded_completion(llm, prompt, kwargs, thought_budget, callback=None, cance
                 output.close()
         check_cancelled(cancel_event)
         # Stream API does not guarantee usage; identify these as retokenized counts.
-        count = len(llm.tokenize(text.encode('utf-8')))
+        count = len(llm.tokenize(generated.encode('utf-8')))
         stages.append({'tokens': count, 'budget': budget, 'finish_reason': finish})
         return text, finish
 
@@ -52,7 +56,7 @@ def bounded_completion(llm, prompt, kwargs, thought_budget, callback=None, cance
     if callback:
         callback(boundary)
     # Reserve answer tokens even when the model never closes its reasoning tag.
-    answer, finish = stage(prompt + thought + boundary, total_budget - thought_budget, kwargs.get('stop'))
+    answer, finish = stage(prompt + thought + boundary, total_budget - thought_budget, kwargs.get('stop'), answer_grammar)
     elapsed = time.perf_counter() - started
     count = sum(item['tokens'] for item in stages)
     prompt_count = len(llm.tokenize(prompt.encode('utf-8')))
@@ -61,7 +65,7 @@ def bounded_completion(llm, prompt, kwargs, thought_budget, callback=None, cance
         'usage': {'completion_tokens': count, 'prompt_tokens': prompt_count, 'total_tokens': prompt_count + count},
         'budget_meta': {'reasoning_tokens': stages[0]['tokens'], 'answer_tokens': stages[1]['tokens'],
                         'reasoning_finish_reason': thought_stop,
-                        'reasoning_truncated': thought_stop in ('length', 'max_tokens'),
+                        'reasoning_truncated': thought_stop in ('length', 'max_tokens', 'repetition'),
                         'reasoning_budget': thought_budget,
                         'answer_budget': total_budget - thought_budget, 'token_count_source': 'retokenized',
                         'generation_ms': elapsed * 1000, 'ttft_ms': first_token_ms,

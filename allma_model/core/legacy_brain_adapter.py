@@ -168,7 +168,7 @@ class LegacyBrainAdapter:
 
         logging.info(f"🧠 Deep Mind Status: {self.systems_status}")
 
-    def pulse(self, user_input: str, context: Dict[str, Any] = None) -> LegacyOutput:
+    def pulse(self, user_input: str, context: Dict[str, Any] = None, enabled_systems=None) -> LegacyOutput:
         """
         Esegue un ciclo rapido ("pulse") di tutti i sistemi legacy attivi.
         """
@@ -179,7 +179,7 @@ class LegacyBrainAdapter:
             context = {}
 
         # --- CURIOSITY DRIVE ---
-        if self.curiosity:
+        if self.curiosity and (enabled_systems is None or 'curiosity' in enabled_systems):
             try:
                 # Assuming process_input returns a dict with 'questions' and 'exploration_focus'
                 # Based on file inspection (Step 3079)
@@ -192,7 +192,7 @@ class LegacyBrainAdapter:
                 logging.warning(f"⚠️ Curiosity pulse error: {e}")
 
         # --- SUBCONSCIOUS ETHICS ---
-        if self.ethics:
+        if self.ethics and (enabled_systems is None or 'ethics' in enabled_systems):
             try:
                 # Cannot see 'evaluate' method in snippet, but assuming standard interface or checking specific words
                 # Using init param 'harmful_words' check manually as lightweight proxy if method unknown
@@ -213,7 +213,7 @@ class LegacyBrainAdapter:
                 logging.warning(f"⚠️ Ethics pulse error: {e}")
 
         # --- METACOGNITION ---
-        if self.metacognition:
+        if self.metacognition and (enabled_systems is None or 'metacognition' in enabled_systems):
             try:
                 # Monitor cognitive process
                 insight = self.metacognition.monitor_cognitive_process({
@@ -226,7 +226,7 @@ class LegacyBrainAdapter:
                 logging.warning(f"⚠️ Metacognition pulse error: {e}")
 
         # --- SOCIAL LEARNING ---
-        if self.social:
+        if self.social and (enabled_systems is None or 'social' in enabled_systems):
             try:
                 social_ctx = self.social.analyze_social_context(user_input)
                 # social_ctx is a SocialContext object
@@ -237,7 +237,7 @@ class LegacyBrainAdapter:
                 logging.warning(f"⚠️ Social pulse error: {e}")
 
         # --- CREATIVITY ---
-        if self.creativity:
+        if self.creativity and (enabled_systems is None or 'creativity' in enabled_systems):
             try:
                 # Occasional creative spark (10% chance or if keywords present)
                 if len(user_input) > 20 and ("idea" in user_input or "nuovo" in user_input):
@@ -248,7 +248,7 @@ class LegacyBrainAdapter:
                 logging.warning(f"⚠️ Creativity pulse error: {e}")
 
         # --- META LEARNING ---
-        if self.meta_learning:
+        if self.meta_learning and (enabled_systems is None or 'meta_learning' in enabled_systems):
             try:
                 # Update learning strategy based on interaction
                 # Mocking interaction data for pulse

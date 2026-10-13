@@ -84,7 +84,7 @@ class SoulCore:
             self._sync_state_with_chaos()
             self.logger.info(f"💭 Soul resonating with memory '{emotion_text}': Echo={echo_power:.3f}")
 
-    def mirror(self, emotional_tone: str):
+    def mirror(self, emotional_tone: str, intensity: float = 1., valence=None, arousal=None):
         """
         Sintonizza l'Anima sull'emozione dell'utente (Empathetic Mirroring).
         Chiama perceive() con parametri calibrati per il tono rilevato.
@@ -93,6 +93,11 @@ class SoulCore:
             emotional_tone: Tono rilevato (es. 'joy', 'sadness', 'POSITIVE')
         """
         tone = emotional_tone.lower() # Normalize to lowercase
+        # The detector may provide mixed-emotion dimensions. They remain input
+        # stimuli, distinct from the internal state simulated by this module.
+        if valence is not None and arousal is not None:
+            self.perceive(max(-1., min(1., valence)), max(0., min(1., arousal*intensity)))
+            return
         valence = 0.0
         arousal = 0.0
         
@@ -109,10 +114,16 @@ class SoulCore:
             # Conforto Calmo: Valenza negativa (risonanza), bassa attivazione (calma)
             valence = -0.6
             arousal = 0.3
+        elif tone == 'trust':
+            valence, arousal = .5, .2
+        elif tone == 'anticipation':
+            valence, arousal = .4, .5
+        elif tone == 'disgust':
+            valence, arousal = -.7, .6
         
         if valence != 0 or arousal != 0:
             self.logger.info(f"🪞 Mirroring user emotion '{tone}' -> Valence={valence}, Arousal={arousal}")
-            self.perceive(valence, arousal)
+            self.perceive(valence, arousal*max(0., min(1., intensity)))
 
     def get_volition(self) -> Volition:
         """

@@ -30,6 +30,7 @@ class CognitiveTrackerLite:
         # Track improvement trends
         self.interaction_count = 0
         self.successful_interactions = 0
+        self.feedback_events = {}
         
         # Persistence
         self.state_manager = ModuleStateManager(db_path)
@@ -38,19 +39,33 @@ class CognitiveTrackerLite:
     def _load_state(self):
         """Restore state from DB."""
         state = self.state_manager.load_state('cognitive_tracker_lite')
-        if state:
-            self.abilities = state.get('abilities', self.abilities)
-            self.interaction_count = state.get('interaction_count', 0)
-            self.successful_interactions = state.get('successful_interactions', 0)
+        if isinstance(state, dict):
+            import math
+            saved = state.get('abilities')
+            if isinstance(saved, dict):
+                for key in self.abilities:
+                    value = saved.get(key)
+                    if isinstance(value, (int, float)) and math.isfinite(value):
+                        self.abilities[key] = max(0., min(1., value))
+            for key in ('interaction_count', 'successful_interactions'):
+                value = state.get(key)
+                if isinstance(value, int) and value >= 0:
+                    setattr(self, key, value)
+            events = state.get('feedback_events')
+            if isinstance(events, dict):
+                self.feedback_events = {key: value for key, value in list(events.items())[-1000:]
+                                        if isinstance(key, str) and isinstance(value, bool)}
 
     def _save_state(self):
         """Save current state to DB."""
         state = {
             'abilities': self.abilities,
             'interaction_count': self.interaction_count,
-            'successful_interactions': self.successful_interactions
+            'successful_interactions': self.successful_interactions,
+            'feedback_events': self.feedback_events
         }
-        self.state_manager.save_state('cognitive_tracker_lite', state)
+        if not self.state_manager.save_state('cognitive_tracker_lite', state):
+            raise OSError('Unable to persist cognitive tracking')
     
     def process(self, user_input: str, context: Dict) -> Dict:
         """
@@ -73,7 +88,11 @@ class CognitiveTrackerLite:
         weakest = self._find_weakest_ability()
         
         self.interaction_count += 1
-        self._save_state()
+        try:
+            self._save_state()
+        except Exception:
+            self.interaction_count -= 1
+            raise
         
         return {
             'abilities': self.abilities.copy(),
@@ -122,13 +141,32 @@ class CognitiveTrackerLite:
         avg_ability = sum(self.abilities.values()) / len(self.abilities)
         
         # Factor in success rate
-        success_rate = self.successful_interactions / self.interaction_count
+        success_rate = min(1., self.successful_interactions / self.interaction_count)
         
         # Weighted average
         progress = 0.7 * avg_ability + 0.3 * success_rate
         
         return min(1.0, progress)
     
+    def record_feedback(self, user_id, event, ability, success):
+        """One observation per answer, including corrections; idempotent after restart."""
+        import hashlib
+        key = hashlib.sha256(f'{user_id}:{event}:{ability}'.encode()).hexdigest()
+        previous = self.feedback_events.get(key)
+        if previous is success:
+            return False
+        before = (dict(self.abilities), self.successful_interactions, dict(self.feedback_events))
+        if previous is True:
+            self.successful_interactions = max(0, self.successful_interactions - 1)
+        self.feedback_events[key] = success
+        self.feedback_events = dict(list(self.feedback_events.items())[-1000:])
+        try:
+            self.update_ability(ability, success)
+        except Exception:
+            self.abilities, self.successful_interactions, self.feedback_events = before
+            raise
+        return True
+
     def update_ability(self, ability_name: str, success: bool, difficulty: float = 0.5):
         """
         Updates ability based on interaction outcome.

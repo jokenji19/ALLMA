@@ -9,6 +9,7 @@ from allma_model.utils.generation_control import GenerationCancelled
 def test_cancel_closes_stream_and_releases_inference_lock():
     wrapper = MobileGemmaWrapper.__new__(MobileGemmaWrapper)
     wrapper.inference_lock = Lock()
+    wrapper.n_ctx = 2048
     cancelled = Event()
     closed = []
     def output():

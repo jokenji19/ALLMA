@@ -4,12 +4,33 @@ import logging
 import uuid
 import json
 import os
+import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 DREAM_JOURNAL_PATH = "data/dream_journal.json"
 MAX_DREAM_ENTRIES = 50
+
+
+class DreamCancellation:
+    """Cooperative cancellation shared with the native model iterator."""
+    def __init__(self, manager):
+        self.manager = manager
+        self.last_power_check = 0
+        self.power_allowed = False
+
+    def is_set(self):
+        m = self.manager
+        if m._stop_event.is_set() or bool(m.user_active_event is not None and m.user_active_event.is_set()):
+            return True
+        now = time.monotonic()
+        if now - self.last_power_check >= 1:
+            from allma_model.utils.background_work import power_allows_background
+            self.power_allowed = power_allows_background(m.system_monitor)
+            self.last_power_check = now
+        return not self.power_allowed
+
 
 @dataclass
 class ThoughtTrace:
@@ -37,10 +58,46 @@ class DreamManager:
         self.is_dreaming = False
         self.last_dream_timestamp = datetime.now()
         self.pending_verification = []
+        self._state_lock = threading.RLock()
+        self._journal_lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._worker = None
+        self._cancel_event = DreamCancellation(self)
+        self.pending_path = self.journal_path + '.pending.json'
+        self.processed_path = self.journal_path + '.processed.json'
+        self.processed_memories = []
+        self.review_store = None
+        try:
+            with open(self.processed_path, encoding='utf-8') as f:
+                processed = json.load(f)
+            if isinstance(processed, list):
+                self.processed_memories = [key for key in processed[-1000:] if isinstance(key, str)]
+        except (OSError, ValueError):
+            pass
+        try:
+            with open(self.pending_path, encoding='utf-8') as f:
+                pending = json.load(f)
+            if isinstance(pending, list):
+                self.pending_verification = [item for item in pending[-MAX_DREAM_ENTRIES:]
+                                             if isinstance(item, dict) and isinstance(item.get('text'), str)
+                                             and item.get('user_id')]
+        except (OSError, ValueError):
+            pass
         
+        try:
+            from .review_store import DreamReviewStore
+            review_store = DreamReviewStore(self.journal_path + '.reviews.db')
+            review_store.ingest(self.pending_verification)
+            self.review_store = review_store
+        except Exception as error:
+            # Preserve the damaged/unavailable archive. This optional system must
+            # not prevent startup of the main chat or silently reset past reviews.
+            self.logger.error('Dream review archive unavailable: %s', error)
+
         # TreeOfThoughts riceve il wrapper LLM direttamente (non il ReasoningEngine)
         from .tree_of_thoughts import TreeOfThoughts
-        self.tot = TreeOfThoughts(llm_engine=llm_wrapper)  # <-- llm_wrapper, non reasoning_engine
+        self.tot = TreeOfThoughts(llm_engine=llm_wrapper, max_depth=1)
+        self.tot.cancel_event = self._cancel_event
         # Callback per streamare il diario al frontend
         self.output_callback = None
         self._user_active_event = None
@@ -54,7 +111,11 @@ class DreamManager:
         if os.path.exists(self.journal_path):
             try:
                 with open(self.journal_path, 'r', encoding='utf-8') as f:
-                    self.dream_history = json.load(f)
+                    history = json.load(f)
+                    if not isinstance(history, list):
+                        raise ValueError('Il diario deve essere una lista')
+                    self.dream_history = [entry for entry in history[-MAX_DREAM_ENTRIES:]
+                                          if isinstance(entry, dict) and isinstance(entry.get('text'), str)]
             except Exception as e:
                 self.logger.error(f"Errore nel caricamento del diario dei sogni: {e}")
                 self.dream_history = []
@@ -90,10 +151,12 @@ class DreamManager:
         entry = {
             'timestamp': datetime.now().isoformat(),
             'text': text,
-            'phase': phase
+            'phase': phase,
+            'user_id': getattr(self, 'current_user_id', None)
         }
-        self.dream_history.append(entry)
-        self._save_dream_journal()
+        with self._journal_lock:
+            self.dream_history.append(entry)
+            self._save_dream_journal()
         
         # 2. Invia alla UI in tempo reale
         if self.output_callback:
@@ -104,79 +167,86 @@ class DreamManager:
         self.logger.info(f"[Dream/{phase}] {text}")
 
     def check_and_start_dream(self, user_id=None):
-        """
-        Controlla se è il momento di sognare e avvia il thread.
-        Non bloccante.
-        """
-        if self.is_dreaming or not user_id or self.llm_wrapper is None:
-            return
-            
-        self.current_user_id = user_id
-        # Logica: Sogno se sono passate almeno x ore o se c'è molto da elaborare
-        # Per ora: Avvio manuale o su trigger di inattività
-        self._start_dream_thread()
+        return self._launch(user_id, self._dream_cycle)
+
+    def _launch(self, user_id, target):
+        with self._state_lock:
+            if self.is_dreaming or not user_id or self.llm_wrapper is None:
+                return False
+            if self.user_active_event is not None and self.user_active_event.is_set():
+                return False
+            self.current_user_id = user_id
+            self._stop_event.clear()
+            self.is_dreaming = True  # Reserve before starting: no duplicate workers.
+            self._worker = threading.Thread(target=target, daemon=True, name='ALLMADreamCycle')
+            try:
+                self._worker.start()
+            except Exception:
+                self.is_dreaming = False
+                raise
+            return True
+
+    def cancel(self):
+        self._stop_event.set()
+
+    def close(self):
+        self.cancel()
+        worker = self._worker
+        if worker is not None and worker is not threading.current_thread():
+            worker.join(timeout=2)
+
+    def get_history(self, user_id=None):
+        with self._journal_lock:
+            return [dict(entry) for entry in self.dream_history
+                    if user_id is None or entry.get('user_id') == user_id]
+
+    def _power_allows_dream(self):
+        if self._cancel_event.is_set() or self.system_monitor is None:
+            return False
+        from allma_model.utils.background_work import power_allows_background
+        return power_allows_background(self.system_monitor)
 
     def _start_dream_thread(self):
-        dream_thread = threading.Thread(target=self._dream_cycle)
-        dream_thread.daemon = True # Si chiude se l'app principale muore
-        dream_thread.start()
+        return self.check_and_start_dream(getattr(self, 'current_user_id', None))
 
     def _dream_cycle(self):
-        """
-        Il Ciclo del Sogno (Tree of Thoughts Lite).
-        """
-        self.is_dreaming = True
-        
-        # BRAIN V2: METABOLIC GATING
-        is_charging = False
-        if self.system_monitor:
-             is_charging = self.system_monitor.get_metabolic_state().is_charging
-        
-        mode = "REM (Active/Deep)" if is_charging else "NREM (Passive/Light)"
-        self._log_dream(f"Ciclo onirico avviato — Modalità: {mode}", 'start')
-        
+        acquired = False
         try:
-            # 1. Recupero Memorie Recenti
-            self._log_dream("Recupero memorie delle ultime 24 ore...", 'memory')
-            recent_memories = self._fetch_unconsolidated_memories()
-            
-            if not is_charging:
-                self._log_dream("Non in carica — Sonno leggero (NREM). Nessuna elaborazione profonda.", 'paused')
+            self._cancel_event.last_power_check = 0
+            if self.review_store is None:
+                self._log_dream('Archivio delle revisioni non disponibile. Sogni sospesi.', 'error')
                 return
-
-            if self.system_monitor:
-                self.system_monitor.acquire_wake_lock("ALLMA:Dream:REM")
-
-            try:
-                if not recent_memories:
-                    self._log_dream("Nessuna memoria recente — Attivazione Motore di Curiosità...", 'curiosity')
-                    recent_memories = self._generate_curiosity_seeds()
-
-                if not recent_memories:
-                    self._log_dream("Mente vuota. Sonno profondo senza sogni.", 'paused')
-                    return
-
-                self._log_dream(f"{len(recent_memories)} memorie trovate. Avvio Tree of Thoughts...", 'tot')
-                insights = self._run_tree_of_thoughts(recent_memories)
-                
-                self._log_dream(f"{len(insights)} insight generati. Consolidamento in corso...", 'insight')
-                self._consolidate_insights(insights)
-                
-                self._log_dream("Raffinamento varianti di risposta per topic HIGH confidence...", 'refine')
-                self._refine_fast_path_responses()
-                
-                self.last_dream_timestamp = datetime.now()
-                self._log_dream("Ciclo onirico completato. ALLMA si è evoluta.", 'done')
-                
-            finally:
-                if self.system_monitor:
-                    self.system_monitor.release_wake_lock()
-            
+            if not self._power_allows_dream():
+                return
+            self._log_dream('Ciclo di riflessione avviato.', 'start')
+            self.system_monitor.acquire_wake_lock('ALLMA:Dream:REM')
+            acquired = True
+            self.review_store.ingest(self.pending_verification)
+            if self.review_store.pending_count(self.current_user_id) >= MAX_DREAM_ENTRIES:
+                self._log_dream('Hai 50 ipotesi da verificare. Il ciclo riprenderà dopo la revisione.', 'paused')
+                return
+            memories = self._fetch_unconsolidated_memories()
+            if not memories:
+                # No fabricated autobiographical experience at birth.
+                self._log_dream('Nessuna esperienza recente da esplorare.', 'paused')
+                return
+            insights = self._run_tree_of_thoughts(memories)
+            if self._cancel_event.is_set():
+                self._log_dream('Ciclo interrotto: priorità alla conversazione.', 'paused')
+                return
+            self._consolidate_insights(insights)
+            self.last_dream_timestamp = datetime.now()
+            self._log_dream(f'Ciclo completato: {len(insights)} ipotesi, ancora da verificare.', 'done')
         except Exception as e:
-            self._log_dream(f"Errore nel sogno: {e}", 'error')
-            self.logger.error(f"Incubo (Errore nel sogno): {e}")
+            self.logger.exception('Errore nel ciclo onirico')
+            self._log_dream(f'Errore nel sogno: {e}', 'error')
         finally:
-            self.is_dreaming = False
+            try:
+                if acquired:
+                    self.system_monitor.release_wake_lock()
+            finally:
+                with self._state_lock:
+                    self.is_dreaming = False
 
     def _fetch_unconsolidated_memories(self) -> List[Dict]:
         # Recupera i log della chat delle ultime 24 ore
@@ -193,6 +263,10 @@ class DreamManager:
             )
             memories = []
             for m in raw_mems:
+                if (m.get('user_id', self.current_user_id) != self.current_user_id
+                        or m.get('role', 'user') != 'user'
+                        or (m.get('metadata') or {}).get('is_valid') is False):
+                    continue
                 text = m.get('content', '')
                 if text:
                     memories.append({
@@ -210,8 +284,12 @@ class DreamManager:
             )
             memories = []
             for m in recent_msgs:
-                if getattr(m, 'role', 'user') == 'user':
+                if (getattr(m, 'role', 'user') == 'user'
+                        and getattr(m, 'user_id', self.current_user_id) == self.current_user_id
+                        and (getattr(m, 'metadata', None) or {}).get('is_valid') is not False):
                     ts = getattr(m, 'timestamp', datetime.now())
+                    if isinstance(ts, datetime) and ts < datetime.now() - timedelta(hours=24):
+                        continue
                     memories.append({
                         'text': m.content, 
                         'content': m.content, 
@@ -223,87 +301,39 @@ class DreamManager:
         return []
 
     def _run_tree_of_thoughts(self, memories: List[Dict]) -> List[str]:
-        self.logger.info("🧠 Tree of Thoughts: Analisi profonda delle connessioni...")
-        
         insights = []
-        for memory in memories:
-            # Extract content from memory
+        memories = [memory for memory in memories if self._memory_key(memory) not in self.processed_memories]
+        # A bounded cycle; avoid dozens of model calls while the phone is idle.
+        for memory in sorted(memories, key=lambda item: str(item.get('timestamp', '')), reverse=True)[:3]:
+            if self.review_store.pending_count(self.current_user_id) >= MAX_DREAM_ENTRIES:
+                break
+            if not self._power_allows_dream():
+                self.cancel()
+                break
             content = memory.get('text') or memory.get('content', '')
-            if not content:
-                continue
-                
-            # Run ToT
-            solutions = self.tot.solve(initial_problem=content, context=[memory])
-            insights.extend(solutions)
-            
-        if not insights:
-            insights = ["Nessun insight significativo generato."]
-            
-        return insights
+            if content:
+                generated = self.tot.solve(initial_problem=content, context=[memory])
+                if generated and not self._cancel_event.is_set():
+                    accepted = self._consolidate_insights(generated, evidence=memory)
+                    if not accepted:
+                        continue
+                    if self._cancel_event.is_set():
+                        break
+                    from allma_model.utils.persistence import atomic_write_json
+                    processed = (self.processed_memories + [self._memory_key(memory)])[-1000:]
+                    atomic_write_json(self.processed_path, processed)
+                    self.processed_memories = processed
+                    insights.extend(accepted)
+        return list(dict.fromkeys(insights))
+
+    def _memory_key(self, memory):
+        evidence = [self.current_user_id, memory.get('text') or memory.get('content', ''), str(memory.get('timestamp', ''))]
+        return hashlib.sha256(json.dumps(evidence, ensure_ascii=False).encode('utf-8')).hexdigest()
 
     def _refine_fast_path_responses(self):
-        """
-        FASE ONIRICA: per ogni topic con confidenza HIGH,
-        usa l'LLM (a bassa temperatura) per generare 2 varianti della risposta cached.
-        Risultato: fast-path mai ripetitivo, sempre vivo.
-        Eseguito solo durante REM (charging, temperatura ok).
-        """
-        if not self.incremental_learner:
-            return
-        if not self.reasoning_engine or not getattr(self.reasoning_engine, 'llm', None):
-            self.logger.info("🌙 Dream Refine: LLM non disponibile. Skip.")
-            return
-
-        try:
-            from allma_model.learning_system.incremental_learning import ConfidenceLevel
-        except ImportError:
-            from allma_model.learning_system.incremental_learning import ConfidenceLevel
-
-        high_topics = {
-            t: s for t, s in self.incremental_learner.knowledge_states.items()
-            if s.confidence == ConfidenceLevel.HIGH
-        }
-
-        if not high_topics:
-            self.logger.info("🌙 Dream Refine: nessun topic HIGH confidence. Skip.")
-            return
-
-        self.logger.info(f"🌙 Dream Refine: generazione varianti per {len(high_topics)} topic(s) HIGH...")
-
-        for topic, state in high_topics.items():
-            try:
-                original = state.content[:300]  # max 300 char come base
-                prompt = (
-                    f'<|im_start|>system\n'
-                    f'Sei ALLMA, un\'intelligenza viva. Rispondi in modo naturale e personale.\n<|im_end|>\n'
-                    f'<|im_start|>user\n'
-                    f'Hai già risposto in passato a domande sul tema "{topic}" così:\n'
-                    f'"{original}"\n\n'
-                    f'Scrivi 2 varianti brevi (max 2 frasi ciascuna) della stessa risposta, '
-                    f'con tono leggermente diverso ma stesso significato. '
-                    f'Separa le 2 varianti con [VAR].\n<|im_end|>\n'
-                    f'<|im_start|>assistant\n'
-                )
-                result = self.reasoning_engine.llm.generate(
-                    prompt,
-                    max_tokens=200,
-                    temperature=0.75,
-                    stop=['<|im_end|>']
-                )
-                if result and '[VAR]' in result:
-                    raw_variants = [v.strip() for v in result.split('[VAR]') if v.strip()]
-                    variants = [state.content] + raw_variants[:2]  # originale + 2 varianti
-                    self.incremental_learner.add_response_variants(topic, variants)
-                    self.logger.info(f"✨ Dream Refine: '{topic}' ora ha {len(variants)} varianti.")
-                else:
-                    self.logger.info(f"🌙 Dream Refine: '{topic}' — nessuna variante generata.")
-
-            except Exception as e:
-                self.logger.warning(f"Dream Refine failed for '{topic}': {e}")
-
-        # Salva le varianti su disco
-        self.incremental_learner.save_state()
-        self.logger.info("💾 Dream Refine: varianti salvate su disco.")
+        # Generated paraphrases need equivalence checks before joining a verified cache.
+        # Keep existing learned answers; dreams must not create confirmation evidence.
+        return
 
     def _generate_curiosity_seeds(self) -> List[Dict]:
         """
@@ -364,122 +394,53 @@ class DreamManager:
             'timestamp': datetime.now().isoformat()
         }]
 
-    def _consolidate_insights(self, insights: List[str]):
-        """
-        Consolida le intuizioni nella memoria a lungo termine o chiede validazione.
-        """
-        for insight in insights:
-            # Calcola confidenza (Mock per ora, in futuro dal ToT)
-            confidence = 0.85 if "relazione" in insight.lower() else 0.4
-            
-            if confidence > 0.8:
-                # ALTA CONFIDENZA -> Apprendimento Diretto
-                self.logger.info(f"💾 Consolidamento (High Conf): {insight}")
-                
-                # 1. Aggiorna Knowledge Base
-                if self.incremental_learner:
-                    from ...learning_system.incremental_learning import LearningUnit, ConfidenceLevel
-                    unit = LearningUnit(
-                        topic="dream_insight",
-                        content=insight,
-                        source="dream_cycle",
-                        confidence=ConfidenceLevel.HIGH,
-                        timestamp=datetime.now(),
-                        metadata={"type": "autonomous_thought"}
-                    )
-                    self.incremental_learner.add_learning_unit(unit)
-
-                # V6 Sprint 2: Pubblica l'insight sul bus per il Core consumer
-                try:
-                    from allma_model.core.event_bus import EventBus, BusEvent
-                    bus = getattr(self, "event_bus", None) or EventBus.get_instance()
-                    bus.publish_sync(BusEvent(
-                        event_type='dream_insight',
-                        payload={'insight': insight},
-                        source='dream_manager',
-                        priority=7,
-                    ))
-                except Exception as bus_err:
-                    self.logger.warning(f"[DreamManager] EventBus publish failed: {bus_err}")
-                
-                # V8.2: Notifiche Push Proattive Android dal Background
-                self._push_android_notification("Intuizione Spontanea (" + str(int(confidence*100)) + "%)", insight)
-
-                
-                # 2. Evoluzione Personalità
-                if self.coalescence_processor:
-                    self.coalescence_processor.process_droplet(text=insight)
-                    
-            else:
-                # BASSA CONFIDENZA -> Richiesta Validazione Utente
-                self.logger.info(f"🤔 Incertezza (Low Conf): {insight}. Salvataggio per validazione.")
-                self.pending_verification.append({
-                    'text': insight,
-                    'timestamp': datetime.now(),
-                    'tried_count': 0
-                })
+    def _consolidate_insights(self, insights: List[str], evidence=None):
+        from allma_model.utils.persistence import atomic_write_json
+        accepted = []
+        with self._journal_lock:
+            # Reconcile a prior successful JSON write if SQLite failed afterwards.
+            self.review_store.ingest(self.pending_verification)
+            for insight in insights:
+                if self._cancel_event.is_set():
+                    break
+                if not isinstance(insight, str) or not insight.strip():
+                    continue
+                if any(item['text'] == insight and item.get('user_id') == self.current_user_id
+                       for item in self.pending_verification):
+                    accepted.append(insight)
+                    continue
+                if self.review_store.pending_count(self.current_user_id) >= MAX_DREAM_ENTRIES:
+                    break
+                # These are generated hypotheses, never verified facts or personal memories.
+                pending = self.pending_verification + [{
+                    'text': insight, 'timestamp': datetime.now().isoformat(),
+                    'user_id': self.current_user_id, 'tried_count': 0,
+                    'source': 'dream_hypothesis', 'status': 'unverified',
+                    'evidence': {'text': (evidence.get('text') or evidence.get('content', ''))[:2000],
+                                 'timestamp': str(evidence.get('timestamp', '')), 'role': 'user'} if evidence else {},
+                }]
+                pending = pending[-MAX_DREAM_ENTRIES:]
+                # Commit to disk before making it visible in RAM; a failed write
+                # must remain retryable instead of being skipped as a duplicate.
+                atomic_write_json(self.pending_path, pending)
+                self.pending_verification = pending
+                self.review_store.ingest(pending)
+                accepted.append(insight)
+                self._log_dream(insight, 'hypothesis')
+        return accepted
 
     # --- VISUALIZATION / DEBUGGING ---
     def start_lucid_dream(self, user_id: str, webview_bridge):
-        """
-        Avvia un 'Sogno Lucido' visibile all'utente per debug/verifica.
-        Bypassa i controlli energetici e mostra il pensiero.
-        """
-        if self.is_dreaming:
-            return False
-            
-        self.current_user_id = user_id
-        self.webview_bridge = webview_bridge
-        
-        dream_thread = threading.Thread(target=self._lucid_dream_cycle)
-        dream_thread.daemon = True
-        dream_thread.start()
-        return True
+        # The debug path obeys the same admission and power rules as ordinary cycles.
+        with self._state_lock:
+            if self.is_dreaming:
+                return False
+            self.webview_bridge = webview_bridge
+            return self._launch(user_id, self._lucid_dream_cycle)
 
     def _lucid_dream_cycle(self):
-        """
-        Ciclo onirico visibile (streamed to UI).
-        """
-        self.is_dreaming = True
-        self.logger.info("👁️ Inizio Sogno Lucido (Visual Test).")
-        
-        try:
-            # 1. Notify Start
-            self._stream_to_ui("👁️ Attivazione Sogno Lucido...", is_thought=True)
-            time.sleep(1)
-            
-            # 2. Acquire Curiosity
-            self._stream_to_ui("🧠 Generazione curiosità sintetica...", is_thought=True)
-            seeds = self._generate_curiosity_seeds()
-            if not seeds:
-                self._stream_to_ui("❌ Mente vuota.", is_thought=True)
-                return
-                
-            seed_text = seeds[0]['content']
-            self._stream_to_ui(f"❓ Domanda: {seed_text}", is_thought=True)
-            time.sleep(1.5)
-            
-            # 3. Tree of Thoughts (Streamed)
-            self._stream_to_ui("🌳 Avvio Tree of Thoughts...", is_thought=True)
-            
-            # Mocking ToT steps visualization (since real ToT inside is atomic)
-            # In V3 we will make ToT streamable. For now, we wrap the result.
-            insights = self._run_tree_of_thoughts(seeds)
-            
-            for insight in insights:
-                self._stream_to_ui(f"💡 Insight: {insight}", is_thought=True)
-                time.sleep(1)
-
-            # 4. Consolidation
-            self._consolidate_insights(insights)
-            self._stream_to_ui("💾 Consolidamento memorie completato.", is_thought=True)
-            self._stream_to_ui("✅ Ciclo onirico terminato.", is_thought=True)
-
-        except Exception as e:
-            self.logger.error(f"Lucid Dream Error: {e}")
-            self._stream_to_ui(f"❌ Errore nel sogno: {e}", is_thought=True)
-        finally:
-            self.is_dreaming = False
+        self._stream_to_ui('Esploro le esperienze recenti come ipotesi, non come fatti.', is_thought=True)
+        self._dream_cycle()
 
     def _push_android_notification(self, title: str, text: str):
         """
@@ -535,11 +496,13 @@ class DreamManager:
             formatted = f"💭 {text}" if is_thought else text
             self.webview_bridge.send_message_to_js(formatted, sender='system')
     def get_and_clear_pending_verification(self) -> Optional[Dict]:
-        """
-        Recupera un insight in attesa di validazione e lo rimuove dalla coda.
-        """
-        if not self.pending_verification:
-            return None
-            
-        # Ritorna il primo (FIFO)
-        return self.pending_verification.pop(0)
+        from allma_model.utils.persistence import atomic_write_json
+        with self._journal_lock:
+            for index, item in enumerate(self.pending_verification):
+                if item.get('user_id') == getattr(self, 'current_user_id', None):
+                    result = self.pending_verification[index]
+                    pending = self.pending_verification[:index] + self.pending_verification[index + 1:]
+                    atomic_write_json(self.pending_path, pending)
+                    self.pending_verification = pending
+                    return result
+        return None

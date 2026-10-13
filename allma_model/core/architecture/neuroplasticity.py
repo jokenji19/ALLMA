@@ -16,6 +16,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta
+import re
+from allma_model.utils.cognitive_state import CognitiveStateStore
 
 @dataclass
 class LearnedRule:
@@ -46,9 +48,34 @@ class NeuroplasticitySystem:
         self.logger = logging.getLogger(__name__)
         self.rules: Dict[str, LearnedRule] = {}
         self.max_synapses = 50 # Biological Cap (Limite massimo di regole attive)
+        self._store = CognitiveStateStore(db_path)
         
         # Inizializza con regole base (Bootstrap)
         self._bootstrap_memory()
+        saved = self._store.get('neuroplasticity').get('rules', [])
+        if isinstance(saved, list):
+            for item in saved[:self.max_synapses]:
+                try:
+                    if not isinstance(item, dict) or not isinstance(item.get('pattern'), str) or not isinstance(item.get('replacement'), str):
+                        continue
+                    if type(item.get('activation_count')) is not int or item['activation_count'] < 0:
+                        continue
+                    re.compile(item['pattern'])
+                    rule = LearnedRule(pattern=item['pattern'], replacement=item['replacement'],
+                        activation_count=item['activation_count'],
+                        last_activated=datetime.fromisoformat(item['last_activated']),
+                        created_at=datetime.fromisoformat(item['created_at']))
+                    if rule.last_activated.tzinfo or rule.created_at.tzinfo:
+                        continue
+                    self.rules[rule.pattern] = rule
+                except (ValueError, TypeError, KeyError, re.error):
+                    continue
+
+    def _save(self):
+        self._store.put('neuroplasticity', {'rules': [{
+            'pattern': r.pattern, 'replacement': r.replacement, 'activation_count': r.activation_count,
+            'last_activated': r.last_activated.isoformat(), 'created_at': r.created_at.isoformat()
+        } for r in self.rules.values()]})
 
     def _bootstrap_memory(self):
         """Carica le regole innate (hardcoded) nella memoria plastica."""
@@ -62,6 +89,9 @@ class NeuroplasticitySystem:
 
     def add_rule(self, pattern: str, replacement: str, initial_activation: int = 1):
         """Aggiunge o aggiorna una regola."""
+        re.compile(pattern)
+        if not pattern or not isinstance(replacement, str) or type(initial_activation) is not int or initial_activation < 0:
+            raise ValueError('Invalid learned rule')
         if pattern not in self.rules:
             self.rules[pattern] = LearnedRule(
                 pattern=pattern, 
@@ -72,6 +102,8 @@ class NeuroplasticitySystem:
             # Se esiste già, rinforzala
             self.rules[pattern].activation_count += initial_activation
             self.rules[pattern].last_activated = datetime.now()
+        self.prune_synapses()
+        self._save()
 
     def analyze(self, violations: List[str]):
         """
@@ -96,6 +128,7 @@ class NeuroplasticitySystem:
         if reinforced_count > 0:
             # Se abbiamo imparato qualcosa, potiamo le connessioni deboli
             self.prune_synapses()
+            self._save()
 
     def prune_synapses(self):
         """

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from allma_model.utils.generation_control import GenerationCancelled, check_cancelled
+from allma_model.utils.repetition_guard import repetition_start
 
 import os
 import logging
@@ -24,7 +25,7 @@ class MobileGemmaWrapper:
     Ottimizzato per Android/Mobile.
     """
 
-    def __init__(self, models_dir: str, model_name: str = _DEFAULT_MODEL_NAME, n_ctx: int = 2048, system_monitor=None):  # Optimized: was 2048, keeping for performance
+    def __init__(self, models_dir: str, model_name: str = _DEFAULT_MODEL_NAME, n_ctx: int = 2048, system_monitor=None, reasoning=None):  # Optimized: was 2048, keeping for performance
         """
         Inizializza il wrapper mobile.
         
@@ -37,6 +38,7 @@ class MobileGemmaWrapper:
         self.models_dir = models_dir
         self.model_path = os.path.join(models_dir, model_name)
         self.n_ctx = n_ctx
+        self.reasoning_capability = reasoning
         self.system_monitor = system_monitor
         self.llm = None
         self.inference_lock = threading.Lock() # <--- CRITICAL FIX: Global Lock
@@ -48,24 +50,23 @@ class MobileGemmaWrapper:
             logging.error("Tentativo di inizializzare MobileGemmaWrapper senza llama_cpp installato.")
             return
 
-        # Auto-Scan for GGUF if default not found
-        if not os.path.exists(self.model_path):
-             logging.warning(f"Default model not found at {self.model_path}. Scanning dir...")
-             found_models = [f for f in os.listdir(models_dir) if f.endswith('.gguf')]
-             if found_models:
-                 # Pick the largest one (likely the model)
-                 best_model = max(found_models, key=lambda f: os.path.getsize(os.path.join(models_dir, f)))
-                 self.model_path = os.path.join(models_dir, best_model)
-                 logging.info(f"Auto-selected model: {best_model}")
-             else:
-                 logging.error(f"No GGUF models found in {models_dir}")
-                 return
+        from .model_binding import select_model
+        if model_name != _DEFAULT_MODEL_NAME and not os.path.isfile(self.model_path):
+            raise ValueError('Selected model is unavailable')
+        preferred = model_name if os.path.isfile(self.model_path) else None
+        self.model_path = str(select_model(models_dir, preferred))
 
-            
         size = os.path.getsize(self.model_path)
         logging.info(f"[MobileGemma] File exists! Size: {size} bytes ({size/(1024*1024):.2f} MB)")
         
         self._load()
+        if self.llm is not None:
+            from .model_binding import ModelBinding
+            try:
+                self.binding = ModelBinding.from_native(self.llm, self.n_ctx, self.reasoning_capability)
+            except Exception:
+                self.close()
+                raise
 
     def _load(self):
         """Carica il modello con llama.cpp"""
@@ -471,7 +472,7 @@ class MobileGemmaWrapper:
 
             self.llm = Llama(
                 model_path=self.model_path,
-                n_ctx=2048, # Manteniamo a 2048 fisso (Ottimizzazione RAM)
+                n_ctx=self.n_ctx,
                 n_threads=safe_threads,   # Hybrid Arch: leave cores for AsyncIO and OS
                 n_batch=512,        # Performance: High batch for CPU
                 n_gpu_layers=0,     # CPU FALLBACK: Disabled GPU to eliminate OpenCL dispatch latency
@@ -486,6 +487,26 @@ class MobileGemmaWrapper:
         except Exception as e:
             logging.error(f"[MobileGemma] Error loading model: {e}")
             self.llm = None
+
+    def prepare_chat(self, messages, budget, reasoning=True):
+        from .model_binding import ModelBinding
+        with self.inference_lock:
+            if not self.llm:
+                raise RuntimeError('Model is not loaded')
+            if not hasattr(self, 'binding'):
+                self.binding = ModelBinding.from_native(self.llm, self.n_ctx)
+            return self.binding.prepare(messages, lambda data: self.llm.tokenize(data, add_bos=False, special=True), budget, reasoning)
+
+    def close(self):
+        with self.inference_lock:
+            native, self.llm = self.llm, None
+            if hasattr(self, '_conv_caches'):
+                self._conv_caches.clear()
+                self._conv_cache_prefix.clear()
+            if hasattr(self, 'binding'):
+                del self.binding
+            if native is not None:
+                native.close()
 
     def generate(
         self,
@@ -502,7 +523,13 @@ class MobileGemmaWrapper:
         repeat_penalty: Optional[float] = None,
         repeat_last_n: Optional[int] = None,
         cancel_event=None,
-        thought_budget=None
+        thought_budget=None,
+        allow_repetition=False,
+        seed=None,
+        answer_contract=None,
+        top_k=None,
+        min_p=None,
+        native_prompt=False
     ) -> str:
         """
         Genera testo dato un prompt.
@@ -524,10 +551,29 @@ class MobileGemmaWrapper:
                 from allma_model.utils.thinking_stream import answer_from_completion
                 return answer_from_completion(text, prompt)
 
+            # Adapt older internal prompt call sites (dreams/reasoning) too.
+            metadata = getattr(self.llm, 'metadata', None)
+            if not native_prompt and isinstance(metadata, dict) and metadata.get('tokenizer.chat_template'):
+                from .model_binding import legacy_messages
+                messages = legacy_messages(prompt)
+                if messages is None:
+                    from allma_model.core.autobiographical_identity import system_instruction
+                    messages = [{'role':'system','content':system_instruction()}, {'role':'user','content':prompt}]
+                prepared = self.prepare_chat(messages, max_tokens, reasoning=thought_budget is not None)
+                prompt = prepared.prompt
+                stop = list(prepared.stops) or None
+                native_prompt = True
+                if not prepared.reasoning:
+                    thought_budget = None
+
+            import time
+            lock_started = time.perf_counter()
             with self.inference_lock:
+                lock_wait_ms = (time.perf_counter()-lock_started)*1000
+                prepare_started = time.perf_counter()
                 check_cancelled(cancel_event)
                 import random
-                random_seed = random.randint(0, 2**31 - 1)
+                random_seed = seed if type(seed) is int and 0 <= seed < 2**31 else random.randint(0, 2**31 - 1)
                 stream_mode = callback is not None or cancel_event is not None
                 self.last_generation = {
                     "request_id": request_id,
@@ -538,6 +584,7 @@ class MobileGemmaWrapper:
                     "repeat_penalty": repeat_penalty,
                     "repeat_last_n": repeat_last_n,
                     "seed": random_seed,
+                    "lock_wait_ms": lock_wait_ms,
                     "stream": stream_mode,
                     "prompt_tokens": None,
                     "completion_tokens": None,
@@ -596,7 +643,29 @@ class MobileGemmaWrapper:
                     except Exception:
                         pass
 
+                from allma_model.utils.prompt_budget import fit_prompt
+                # Reserve enough context for both reasoning and final answer. Do not
+                # silently cut the current question when old history fills the window.
+                if native_prompt:
+                    native_tokens = self.llm.tokenize(prompt.encode('utf-8'), add_bos=False, special=True)
+                    if len(native_tokens) > self.n_ctx-max_tokens-32:
+                        raise ValueError('Prepared native prompt exceeds context')
+                    removed_turns = 0
+                    prompt_count = len(native_tokens)
+                else:
+                    prompt, removed_turns = fit_prompt(prompt, self.llm.tokenize, self.n_ctx, max_tokens)
+                    prompt_count = len(self.llm.tokenize(prompt.encode('utf-8')))
+                self.last_generation['history_turns_removed'] = removed_turns
+                self.last_generation['prompt_tokens'] = prompt_count
+
                 logging.info(f"[MobileGemma] Generating response (Stream={stream_mode}, Seed={random_seed})")
+                grammar = None
+                if answer_contract:
+                    from allma_model.utils.output_contract import native_grammar
+                    grammar = native_grammar(answer_contract)
+                self.last_generation['answer_contract'] = answer_contract
+                self.last_generation['answer_grammar_active'] = grammar is not None
+                self.last_generation['prompt_prepare_ms'] = (time.perf_counter()-prepare_started)*1000
 
                 llm_kwargs = dict(
                     max_tokens=max_tokens,
@@ -607,27 +676,39 @@ class MobileGemmaWrapper:
                     stream=stream_mode,
                     seed=random_seed
                 )
+                if top_k is not None:
+                    llm_kwargs['top_k'] = int(top_k)
+                    self.last_generation['top_k'] = int(top_k)
+                if min_p is not None:
+                    llm_kwargs['min_p'] = float(min_p)
+                    self.last_generation['min_p'] = float(min_p)
                 if repeat_penalty is not None:
                     llm_kwargs["repeat_penalty"] = float(repeat_penalty)
                 if repeat_last_n is not None:
-                    llm_kwargs["repeat_last_n"] = int(repeat_last_n)
+                    if hasattr(self.llm, 'last_n_tokens_size'):
+                        self.llm.last_n_tokens_size = max(16,min(512,int(repeat_last_n)))
+                    else:
+                        llm_kwargs["repeat_last_n"] = int(repeat_last_n)
 
+                generation_llm = self.llm
+                if native_prompt:
+                    from .model_binding import NativeCompletion
+                    generation_llm = NativeCompletion(self.llm)
                 if thought_budget is not None and prompt.rstrip().endswith('<think>'):
                     from allma_model.utils.generation_budget import bounded_completion
-                    output = bounded_completion(self.llm, prompt, llm_kwargs, thought_budget,
-                                                callback, cancel_event)
+                    output = bounded_completion(generation_llm, prompt, llm_kwargs, thought_budget,
+                                                callback, cancel_event, allow_repetition=allow_repetition, answer_grammar=grammar)
                     self.last_generation.update(output['budget_meta'])
                     stream_mode = False  # callbacks were delivered by the bounded iterator
                 else:
-                    try:
-                        output = self.llm(prompt, **llm_kwargs)
-                    except TypeError:
-                        llm_kwargs.pop("repeat_penalty", None)
-                        llm_kwargs.pop("repeat_last_n", None)
-                        output = self.llm(prompt, **llm_kwargs)
+                    from allma_model.utils.repetition_guard import completion_with_compat
+                    if grammar is not None:
+                        llm_kwargs['grammar'] = grammar
+                    output = completion_with_compat(generation_llm, prompt, llm_kwargs)
 
                 if stream_mode:
                     full_text = ""
+                    generated_text = ""
                     import time
                     gen_t0 = time.perf_counter()
                     first_token_ts = None
@@ -653,13 +734,20 @@ class MobileGemmaWrapper:
                         for chunk in output:
                             check_cancelled(cancel_event)
                             token = chunk["choices"][0]["text"]
+                            generated_text += token
                             if first_token_ts is None:
                                 first_token_ts = time.perf_counter()
                                 try:
                                     self.last_generation["ttft_ms"] = float((first_token_ts - gen_t0) * 1000.0)
                                 except Exception:
                                     pass
-                            full_text += token
+                            candidate = full_text + token
+                            loop = None if allow_repetition else repetition_start(candidate)
+                            if loop is not None:
+                                full_text = candidate[:loop]
+                                self.last_generation['finish_reason'] = 'repetition'
+                                break
+                            full_text = candidate
                             if callback:
                                 try:
                                     callback(token)
@@ -672,7 +760,7 @@ class MobileGemmaWrapper:
                             output.close()
                     check_cancelled(cancel_event)
                     try:
-                        self.last_generation["completion_tokens"] = int(len(self.llm.tokenize(full_text.encode("utf-8"))))
+                        self.last_generation["completion_tokens"] = int(len(self.llm.tokenize(generated_text.encode("utf-8"))))
                         if self.last_generation.get("prompt_tokens") is not None:
                             self.last_generation["total_tokens"] = int(self.last_generation["prompt_tokens"] + self.last_generation["completion_tokens"])
                     except Exception:
@@ -680,10 +768,10 @@ class MobileGemmaWrapper:
                     try:
                         ct = self.last_generation.get("completion_tokens")
                         mt = self.last_generation.get("max_tokens")
-                        if ct is not None and mt is not None and mt != -1 and int(ct) >= int(mt) - 1:
+                        if self.last_generation.get('finish_reason') != 'repetition' and ct is not None and mt is not None and mt != -1 and int(ct) >= int(mt) - 1:
                             self.last_generation["finish_reason"] = "max_tokens"
                         else:
-                            self.last_generation["finish_reason"] = "stop"
+                            self.last_generation["finish_reason"] = self.last_generation.get("finish_reason") or "stop"
                     except Exception:
                         pass
                     try:
@@ -728,6 +816,11 @@ class MobileGemmaWrapper:
                                 self.last_generation["finish_reason"] = self.last_generation.get("finish_reason") or "stop"
                         except Exception:
                             pass
+                    clean_answer = strip_think(raw_text)
+                    loop = None if allow_repetition else repetition_start(clean_answer)
+                    if loop is not None:
+                        clean_answer = clean_answer[:loop]
+                        self.last_generation['finish_reason'] = 'repetition'
                     try:
                         if request_id:
                             self._generation_meta_by_id[request_id] = dict(self.last_generation)
@@ -735,7 +828,7 @@ class MobileGemmaWrapper:
                                 self._generation_meta_by_id.pop(next(iter(self._generation_meta_by_id)))
                     except Exception:
                         pass
-                    return strip_think(raw_text)
+                    return clean_answer
 
         except GenerationCancelled:
             raise

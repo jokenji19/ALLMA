@@ -17,6 +17,7 @@ from typing import List, Dict, Optional, Deque
 from collections import deque
 from datetime import datetime
 import math
+from allma_model.utils.cognitive_state import CognitiveStateStore, unit_number
 
 @dataclass
 class IdentityState:
@@ -89,9 +90,11 @@ class IdentityStateEngine:
         self.logger = logging.getLogger(__name__)
         self.entropy_tracker = EntropyTracker()
         
-        # Stato persistente (Simulato per ora, da collegare a DB vero)
-        self._maturity = 0.5
-        self._base_stability = 0.9
+        self._store = CognitiveStateStore(db_path)
+        saved = self._store.get('identity_state')
+        self._maturity = unit_number(saved.get('maturity'), 0.5)
+        self._base_stability = unit_number(saved.get('stability'), 0.9)
+        # Entropy history and current duress remain transient.
         
     def compute_state(self, context_metrics: Dict[str, float]) -> IdentityState:
         """
@@ -146,6 +149,7 @@ class IdentityStateEngine:
         # 3. Maturità: Cresce linearmente con l'esperienza (simulato)
         # In produzione, questo dipenderebbe dalla qualità del feedback utente
         self._maturity = min(1.0, self._maturity + 0.0001)
+        self._store.put('identity_state', {'maturity': self._maturity, 'stability': self._base_stability})
         
         self.logger.info(
             f"🧠 State Update: Entropy={new_entropy:.2f}, Stability={self._base_stability:.2f} (Violations: {len(violations)})"

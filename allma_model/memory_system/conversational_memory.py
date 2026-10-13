@@ -470,26 +470,29 @@ class ConversationalMemory:
         self,
         user_id: str,
         before_date: datetime,
-        llm_callback: callable
+        llm_callback: callable,
+        cancel_event=None
     ) -> int:
         """
-        Condense vecchie conversazioni estraendo i concetti chiave (macro-fatti) usando un LLM,
-        poi le cancella per liberare RAM e vettori.
+        Estrae citazioni dell'utente dalle vecchie conversazioni, conservando
+        integralmente la cronologia. Restituisce il numero di record rimossi (zero).
         """
         if user_id not in self.conversations:
             return 0
+        from allma_model.utils.generation_control import check_cancelled, GenerationCancelled
+        check_cancelled(cancel_event)
             
         with self.lock:
             old_messages = [
                 m for m in self.messages
-                if m.user_id == user_id and m.timestamp < before_date
+                if m.user_id == user_id and m.timestamp < before_date and m.role == 'user'
             ]
         
         if not old_messages:
             return 0
             
         # Preparazione del testo per l'estrazione
-        text_to_compress = "\n".join([f"{m.role}: {m.content}" for m in old_messages])
+        text_to_compress = "\n".join([f"{m.role}: {m.content}" for m in old_messages[-40:]])
         
         prompt = (
             f"Sei un estrattore di memorie a lungo termine. Analizza la seguente cronologia passata e "
@@ -502,21 +505,28 @@ class ConversationalMemory:
         
         try:
             extracted_json_str = llm_callback(prompt)
+            check_cancelled(cancel_event)
             # Pulizia JSON
             import re
             json_str = re.sub(r'```json\n|\n```|```', '', extracted_json_str).strip()
             extracted_facts = json.loads(json_str)
-            
-            # Salvataggio in user_data
-            self.user_data = getattr(self, 'user_data', {})
-            if user_id not in self.user_data: self.user_data[user_id] = {}
-            
+            if not isinstance(extracted_facts, dict):
+                return 0
+            # Extraction is not verification: retain only verbatim user evidence.
+            normalized_source = ' '.join(text_to_compress[:8000].casefold().split())
+            extracted_facts = {k: v for k, v in extracted_facts.items()
+                               if isinstance(k, str) and isinstance(v, str) and v.strip()
+                               and ' '.join(v.casefold().split()) in normalized_source}
+
+            staged_facts = {}
             for k, v in extracted_facts.items():
                 if isinstance(v, str):
                     clean_k = re.sub(r'[^a-zA-Z0-9_]', '_', k.lower())[:30] # safe key
-                    self.user_data[user_id][clean_k] = v[:100] # truncate long values
-                    print(f"🧠 GC FACT EXTRACTED: {clean_k} = {v[:100]}")
+                    if clean_k:
+                        staged_facts[clean_k] = v[:100]
                     
+        except GenerationCancelled:
+            raise
         except Exception as e:
             import logging
             logging.error(f"[ConversationalMemory] GC Condensation failed: {e}", exc_info=True)
@@ -524,23 +534,15 @@ class ConversationalMemory:
 
         if not extracted_facts or not any(isinstance(v, str) and v.strip() for v in extracted_facts.values()):
             return 0
-        self.save_memory()  # Commit facts before removing source messages.
-        # Ora che abbiamo salvato i macro concetti, procediamo col wiping pesante
-        
         with self.lock:
-            # Rimuovi messaggi piatti
-            self.messages = [
-                m for m in self.messages
-                if m.user_id != user_id or m.timestamp >= before_date
-            ]
-
-        # Rimuovi conversazioni strutturate e vettori (richiama la logica standard)
-        wiped_conversations = self.clear_old_conversations(user_id, before_date)
-        
-        # Salva disco
+            check_cancelled(cancel_event)
+            # Never overwrite a more recent explicitly learned fact with an old quote.
+            target = self.user_data.setdefault(user_id, {})
+            for key, value in staged_facts.items():
+                target.setdefault(key, value)
+        # A lossy summary must not erase autobiographical evidence.
         self.save_memory()
-        
-        return wiped_conversations
+        return 0
 
     def store_message(
         self,
