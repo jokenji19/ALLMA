@@ -1,4 +1,5 @@
 import argparse
+import configparser
 import hashlib
 import json
 import os
@@ -82,6 +83,21 @@ def run_command(command: list):
         sys.exit(result.returncode)
 
 
+def android_toolchain_ready():
+    """Buildozer's clean command requires the p4a checkout as its cwd."""
+    config = configparser.ConfigParser(interpolation=None)
+    config.read(ROOT / 'buildozer.spec', encoding='utf-8')
+    source = config.get('app', 'p4a.source_dir', fallback='').strip()
+    if source:
+        checkout = Path(source).expanduser()
+    else:
+        build_dir = Path(config.get('buildozer', 'build_dir', fallback='.buildozer')).expanduser()
+        checkout = build_dir / 'android/platform/python-for-android'
+    if not checkout.is_absolute():
+        checkout = ROOT / checkout
+    return checkout.is_dir()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
@@ -92,7 +108,8 @@ def main():
         run_command([sys.executable, "pack_brain.py"])
     current_hash = compute_hash()
     previous_state = load_state(state_path)
-    needs_clean = previous_state is None or previous_state.get("hash") != current_hash
+    inputs_changed = previous_state is None or previous_state.get("hash") != current_hash
+    needs_clean = inputs_changed and android_toolchain_ready()
 
     if args.dry_run:
         print("clean_required" if needs_clean else "clean_not_required")

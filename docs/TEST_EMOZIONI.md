@@ -60,3 +60,9 @@ Gli altri casi reali verificano gioia e tristezza in inglese e le due aspettativ
 - Controlli JavaScript previsti dal workflow: superati.
 
 Le 15 prove saltate preesistevano a questa correzione. I 15 nuovi casi offline aggiungono copertura della disponibilità del modello e dell'isolamento dell'ambiente: i numeri non rappresentano un aumento percentuale dell'intelligenza di ALLMA.
+
+## Primo avvio della compilazione su GitHub
+
+Superati i test, il job di compilazione ha esposto un problema distinto: `build_android_safe.py` chiedeva sempre una pulizia alla prima esecuzione, quando il checkout di python-for-android non esiste ancora. Buildozer usa quel percorso come cartella di lavoro e terminava con `FileNotFoundError` prima di prepararlo.
+
+La pulizia ora richiede anche che il checkout configurato esista; al primo avvio parte direttamente la preparazione della build. La verifica dell'APK resta obbligatoria e le build già inizializzate continuano a essere pulite quando cambiano gli input. Sei nuove prove sintetiche coprono avvio iniziale, cartelle personalizzate e riuso delle build. Non sostituiscono una compilazione Android completa.
