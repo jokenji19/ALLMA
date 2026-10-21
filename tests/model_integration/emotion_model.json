@@ -1,0 +1,13 @@
+{
+  "repo_id": "j-hartmann/emotion-english-distilroberta-base",
+  "revision": "0e1cd914e3d46199ed785853e12b57304e04178b",
+  "files": [
+    "config.json",
+    "merges.txt",
+    "pytorch_model.bin",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.json"
+  ]
+}

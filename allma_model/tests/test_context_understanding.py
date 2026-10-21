@@ -1,10 +1,12 @@
 import unittest
 from datetime import datetime
+from unittest.mock import Mock, call, patch
 from allma_model.core.context_understanding import ContextUnderstandingSystem
 
 class TestContextUnderstanding(unittest.TestCase):
     def setUp(self):
-        self.context_system = ContextUnderstandingSystem()
+        # These tests cover context handling, not downloaded model accuracy.
+        self.context_system = ContextUnderstandingSystem(load_models=False)
         
     def test_multilingual_analysis(self):
         """Test analisi multilingua"""
@@ -34,24 +36,40 @@ class TestContextUnderstanding(unittest.TestCase):
         self.assertIn('error', result_invalid)
         
     def test_emotion_analysis(self):
-        """Test analisi delle emozioni"""
+        """Forward classifier results and select the highest scoring label."""
+        detector = Mock(side_effect=[
+            [[{'label': 'neutral', 'score': .1}, {'label': 'joy', 'score': .9}]],
+            [[{'label': 'neutral', 'score': .15}, {'label': 'sadness', 'score': .85}]],
+            [[{'label': 'neutral', 'score': .8}, {'label': 'joy', 'score': .2}]],
+        ])
+        self.context_system.emotion_detector = detector
+        language_detection = patch('allma_model.core.context_understanding.LANGDETECT_AVAILABLE', False)
+        language_detection.start()
+        self.addCleanup(language_detection.stop)
         # Test emozioni positive
         result_happy = self.context_system.analyze_emotions(
             "I am extremely happy and excited about this!"
         )
         self.assertGreater(result_happy['score'], 0.5)
+        self.assertEqual(result_happy, {'label': 'joy', 'score': .9})
         
         # Test emozioni negative
         result_sad = self.context_system.analyze_emotions(
             "I am feeling very sad and depressed."
         )
         self.assertGreater(result_sad['score'], 0.5)
+        self.assertEqual(result_sad, {'label': 'sadness', 'score': .85})
         
         # Test testo neutro
         result_neutral = self.context_system.analyze_emotions(
             "The weather is cloudy today."
         )
-        self.assertIn('label', result_neutral)
+        self.assertEqual(result_neutral, {'label': 'neutral', 'score': .8})
+        self.assertEqual(detector.call_args_list, [
+            call('I am extremely happy and excited about this!'),
+            call('I am feeling very sad and depressed.'),
+            call('The weather is cloudy today.'),
+        ])
         
     def test_translation(self):
         """Test traduzione"""

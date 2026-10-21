@@ -70,6 +70,7 @@ ENV/
 # Logs
 *.log
 /test-results/
+/model-test-results.xml
 
 # Local tooling / caches
 .kivy/

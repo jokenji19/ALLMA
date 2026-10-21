@@ -1,5 +1,8 @@
 import unittest
 import time
+from types import SimpleNamespace
+from unittest.mock import Mock, call, patch
+import torch
 from typing import Dict, List, Any
 from ..core.nlp_processor import NLPProcessor
 from ..core.information_extractor import InformationExtractor
@@ -14,11 +17,21 @@ class TestFullBetaConversation(unittest.TestCase):
     
     def setUp(self):
         """Inizializza tutti i componenti necessari per i test"""
+        # Exercise the NLP adapter and downstream modules with controlled logits.
+        # Real model inference has a separate, pinned integration suite.
+        self.emotion_tokenizer = Mock(return_value={'input_ids': torch.tensor([[0]])})
+        self.emotion_model = Mock(return_value=SimpleNamespace(
+            logits=torch.tensor([[0., 0., 0., 0., 4., 0., 0.]])))
+        for name, value in [('AutoTokenizer', self.emotion_tokenizer),
+                            ('AutoModelForSequenceClassification', self.emotion_model)]:
+            loader = patch(f'allma_model.core.nlp_processor.{name}.from_pretrained', return_value=value)
+            loader.start()
+            self.addCleanup(loader.stop)
         self.nlp = NLPProcessor()
         self.extractor = InformationExtractor()
         self.knowledge = KnowledgeMemory(nlp=self.nlp)
         self.personality = Personality()
-        self.context = ContextUnderstandingSystem()
+        self.context = ContextUnderstandingSystem(load_models=False)
         self.doc_processor = DocumentProcessor()
         self.response_generator = ResponseGenerator(
             context_system=self.context,
@@ -115,6 +128,7 @@ class TestFullBetaConversation(unittest.TestCase):
         
     def test_2_emotional_response_conversation(self):
         """Verifica l'integrazione delle risposte emotive attraverso una conversazione"""
+        self.emotion_model.return_value.logits = torch.tensor([[0., 0., 0., 4., 0., 0., 0.]])
         conversation = [
             {
                 'text': "Sono molto felice di imparare con te!"
@@ -127,6 +141,11 @@ class TestFullBetaConversation(unittest.TestCase):
         history = self.simulate_conversation(conversation)
         self.assertEqual(len(history), 2)
         self.assertEqual(history[1]['emotion'], 'joy')
+        self.assertEqual(self.emotion_tokenizer.call_args_list, [
+            call(item['text'], return_tensors='pt', truncation=True, max_length=512)
+            for item in conversation
+        ])
+        self.assertEqual(self.emotion_model.call_count, 2)
         self.assertTrue(any(end in history[1]['response'] for end in [
             "È affascinante, vero?",
             "Che ne pensi?",
@@ -170,6 +189,7 @@ class TestFullBetaConversation(unittest.TestCase):
         
     def test_5_personality_evolution_conversation(self):
         """Verifica l'evoluzione della personalità attraverso una conversazione"""
+        self.emotion_model.return_value.logits = torch.tensor([[0., 0., 0., 4., 0., 0., 0.]])
         conversation = [
             {
                 'text': "Mi piace molto parlare con te!"

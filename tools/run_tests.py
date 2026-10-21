@@ -8,6 +8,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,8 +59,14 @@ def main():
     if args.batch_size<1 or args.timeout<1: parser.error('Positive batch size and timeout required')
     args.output=args.output.resolve()
     args.output.mkdir(parents=True,exist_ok=True)
+    # Offline alone still reads a developer's cache. Start with a fresh hub so
+    # the same missing-model paths run on a workstation and on GitHub.
+    hf_home=Path(tempfile.mkdtemp(prefix='hf-offline-',dir=args.output))
     env=dict(os.environ,KIVY_NO_ARGS='1',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',
+             HF_HOME=str(hf_home),HF_HUB_CACHE=str(hf_home/'hub'),
+             HUGGINGFACE_HUB_CACHE=str(hf_home/'hub'),
              TOKENIZERS_PARALLELISM='false',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1')
+    env.pop('TRANSFORMERS_CACHE',None)
     def run(name,extra):
         with (args.output/(name+'.log')).open('w') as log:
             process=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'--worker',
@@ -96,6 +103,7 @@ def main():
     passed=complete and all(r['exit_code']==0 for r in results)
     summary={'collected':len(nodes),'counts':dict(counts),'complete':complete,'successful':passed,
         'scope':'Offline source tests, synthetic data; no claim of Android or model quality',
+        'model_cache':'Fresh isolated Hugging Face cache; downloads disabled',
         'failures':[c for r in results for c in r['cases'] if c['status'] in ('failure','error')]}
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2))
     print(json.dumps(summary,indent=2))
