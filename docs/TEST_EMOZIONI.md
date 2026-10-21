@@ -51,3 +51,12 @@ Una richiesta esplicita della suite senza i pesi produce un errore: non diventa 
 La frase neutra `The weather is cloudy today.` viene classificata come tristezza dal modello fissato. Il vecchio test controllava solo la presenza di un'etichetta e non rilevava questo errore semantico. Il nuovo caso mantiene l'aspettativa `neutral` ed è dichiarato `xfail(strict=True)`: un limite noto e visibile del modello, non una prova superata. Se il comportamento cambia e la classificazione diventa corretta, il successo inatteso richiede di aggiornare questa dichiarazione.
 
 Gli altri casi reali verificano gioia e tristezza in inglese e le due aspettative italiane originarie attraverso l'adattatore NLP, che applica anche un rinforzo lessicale. Queste ultime non dimostrano accuratezza generale del modello inglese in italiano e non misurano il riconoscimento emotivo dell'app Android.
+
+## Risultati locali del 21 ottobre 2026
+
+- Suite completa con cache vuota: **2.104 casi raccolti, 2.089 superati, 15 saltati, nessun fallimento**.
+- Sottoinsieme mirato dei componenti modificati e dei nuovi controlli: **33 casi superati**.
+- Modello reale fissato: **4 casi superati e 1 fallimento atteso**, relativo al meteo e descritto sopra.
+- Controlli JavaScript previsti dal workflow: superati.
+
+Le 15 prove saltate preesistevano a questa correzione. I 15 nuovi casi offline aggiungono copertura della disponibilità del modello e dell'isolamento dell'ambiente: i numeri non rappresentano un aumento percentuale dell'intelligenza di ALLMA.

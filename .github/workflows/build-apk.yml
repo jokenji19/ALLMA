@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      HF_HOME: ${{ runner.temp }}/allma-emotion-model
+      HF_HOME: /tmp/allma-emotion-model
       OMP_NUM_THREADS: '1'
       MKL_NUM_THREADS: '1'
       TOKENIZERS_PARALLELISM: 'false'
