@@ -54,6 +54,18 @@ def test_only_latest_assistant_and_no_history_are_safe():
     assert not DialogueContinuity('Nuovo tema',turns).duplicate(old)
 
 
+def test_continuation_repeated_opening_is_held_and_rejected():
+    old='Garibaldi fu importante perché unì il movimento per l’unità nazionale italiana. Un altro punto.'
+    guard=DialogueContinuity('Completa la risposta precedente dal punto in cui si è interrotta, senza ripetere la parte già scritta.',history(answer=old))
+    repeated='Garibaldi fu importante perché unì il movimento per l’unità nazionale italiana, con altri dettagli.'
+    assert guard.continuation and guard.duplicate(repeated)
+    assert not guard.duplicate('Il punto successivo riguarda invece le conseguenze politiche della sua attività.')
+    events=[];stream=AnswerStream(guard.message,events.append,guard)
+    stream.feed(repeated+' ')
+    assert stream.rejected and not events
+    assert not DialogueContinuity('Riassumi la risposta precedente',history(answer=old)).repeated_continuation_prefix(repeated)
+
+
 def test_answered_checkin_cannot_be_reasked_with_another_wording():
     turns=history('Ciao','Ciao! Come stai?')
     guard=DialogueContinuity('Bene, tu?',turns)
@@ -91,3 +103,46 @@ def test_smalltalk_budget_retains_reasoning_without_cutting_complex_tasks():
     assert reasoning_budget('Come stai?', 'SIMPLE', 224) == 32
     assert reasoning_budget('Come stai?', 'COMPLEX', 512) == 128
     assert reasoning_budget('Come va risolto questo problema?', 'SIMPLE', 256) == 64
+
+
+@pytest.mark.parametrize('question,answer,correction', [
+    ('Ci sono 7 palline; 2 diventano rosse. Quante rimangono nella scatola?', '5', 'Sbagliato, sono 7.'),
+    ('Ci sono 7 palline; 2 vengono tolte. Quante rimangono?', '5', 'La risposta corretta è 7'),
+    ('Una scatola contiene 9 oggetti; 3 si rompono. Quanti ne restano dentro?', '6', 'Non è così.'),
+])
+def test_content_challenges_recheck_without_accepting_proposed_facts(question, answer, correction):
+    guard = DialogueContinuity(correction, history(question, answer))
+    instruction = guard.guidance()
+    assert guard.factual_correction and not guard.correction
+    assert 'non accettarla automaticamente' in instruction
+    assert 'domanda originale' in instruction and 'effettivamente rimosso' in instruction
+    assert '5' not in instruction and '7' not in instruction
+    assert not guard.duplicate(answer)  # A false correction may leave the result unchanged.
+
+
+def test_quantity_guidance_applies_to_first_turn_but_no_spurious_correction():
+    guard = DialogueContinuity('Quanti oggetti rimangono nel contenitore?', [])
+    assert not guard.factual_correction
+    assert 'totale presente' in guard.guidance()
+    assert not DialogueContinuity('Sbagliato, sono 8.', []).factual_correction
+
+
+
+def test_stream_allows_exercise_premises_without_personal_claim_warning():
+    emitted = []
+    stream = AnswerStream('In una scatola ci sono 7 palline. Ne tolgo 2. Quante rimangono?', emitted.append)
+    stream.feed('Rimangono 5 palline. ')
+    stream.feed('All’inizio ci sono 7 palline e ne vengono tolte 2. ')
+    stream.feed('', final=True)
+    assert not stream.rejected
+    assert ''.join(item['content'] for item in emitted).startswith('Rimangono 5 palline.')
+    assert len([item for item in emitted if item['content'].strip()]) == 2
+
+
+def test_short_arithmetic_cannot_answer_a_new_explicit_explanation():
+    guard=DialogueContinuity('Spiegami perché si forma un arcobaleno in due fasi',history('Quanto fa 18 + 24?', '42'))
+    assert guard.duplicate('18 + 24 = 42')
+    assert guard.hold_prefix('18 + 24')
+    assert not guard.duplicate('La luce si separa nei colori attraversando le gocce.')
+    assert not DialogueContinuity('Spiegami il calcolo precedente',history('Quanto fa 18 + 24?','42')).duplicate('18 + 24 = 42')
+    assert not DialogueContinuity('Quanto fa 6 * 7?',history('Quanto fa 18 + 24?','42')).duplicate('42')

@@ -13,7 +13,7 @@ Architettura:
       └─ tabella "memories": id, user_id, content, vector_blob, timestamp, metadata_json
     
     RAM Index (self._index):
-      numpy matrix (n_docs × vocab_size) — rebuild on load, aggiornato incrementalmente
+      vettori sparsi + liste inverse per termine, senza matrice documenti × vocabolario
 
 Consistenza:
     Il testo SQLite è la fonte autorevole. Il vocabolario e tutti i vettori
@@ -36,8 +36,9 @@ import logging
 import math
 from collections import Counter
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, NamedTuple
 import threading
+from allma_model.utils.memory_concepts import words, concepts
 
 import numpy as np
 
@@ -115,7 +116,7 @@ class QueryExpander:
         if "come" in words and "fare" in words:
             variants.append(query.lower().replace("come fare", "istruzioni"))
             
-        return list(set(variants)) # Rimuove duplicati
+        return list(dict.fromkeys(variants))
 
 
 
@@ -123,34 +124,63 @@ class QueryExpander:
 #  TF-IDF leggiero (drop-in replacement di SimpleTfidf)
 # ─────────────────────────────────────────────────────────
 
+class SparseVector(NamedTuple):
+    indices: np.ndarray
+    weights: np.ndarray
+
+    @property
+    def nbytes(self):
+        return self.indices.nbytes + self.weights.nbytes
+
+
 class _LightTfidf:
     """
     TF-IDF incrementale: supporta .partial_fit(doc) per aggiornare
     il vocabolario senza dover riprocessare tutto il corpus.
     """
+    STOP_WORDS = frozenset({
+        'a','ad','al','alla','alle','allo','ai','agli','all','con','da','dal','dalla',
+        'dalle','di','del','della','dei','degli','delle','dell','e','ed','è','il','lo',
+        'la','le','gli','i','in','nel','nella','nelle','nello','nell','ne','per','su',
+        'un','uno','una','che','chi','cosa','come','dove','quale','quali','quando',
+        'mi','ti','ci','si','io','tu','ho','hai','ha','sono','era','sia','the',
+        'an','is','are','on','of','to','my','where','what','which',
+    })
+
     def __init__(self):
         self.vocab: Dict[str, int] = {}   # word -> dim index
         self.df: Dict[str, int] = {}      # word -> doc_frequency
         self.n_docs: int = 0
 
     def _tokenize(self, text: str) -> List[str]:
-        return text.lower().split()
+        # Discard grammatical glue, never identifiers, names or domain words.
+        return [word for word in words(text) if word not in self.STOP_WORDS]
 
     def encode(self, text: str) -> np.ndarray:
         """Restituisce il vettore TF-IDF per 'text' usando il vocabolario corrente."""
         if not self.vocab:
             return np.zeros(1, dtype=np.float32)
+        sparse = self.encode_sparse(text)
+        vec = np.zeros(len(self.vocab), dtype=np.float32)
+        vec[sparse.indices] = sparse.weights
+        return vec
+
+    def encode_sparse(self, text: str) -> SparseVector:
+        """Same normalized TF-IDF, allocating only terms present in the text."""
         tokens = self._tokenize(text)
         counts = Counter(tokens)
-        vec = np.zeros(len(self.vocab), dtype=np.float32)
+        pairs = []
         for word, cnt in counts.items():
             if word in self.vocab:
                 idf = 1.0 + math.log((self.n_docs + 1) / (self.df.get(word, 0) + 1))
-                vec[self.vocab[word]] = cnt * idf
-        norm = np.linalg.norm(vec)
+                pairs.append((self.vocab[word], cnt * idf))
+        pairs.sort()
+        indices = np.fromiter((i for i,_ in pairs),dtype=np.int32,count=len(pairs))
+        weights = np.fromiter((value for _,value in pairs),dtype=np.float32,count=len(pairs))
+        norm = np.linalg.norm(weights)
         if norm > 0:
-            vec /= norm
-        return vec
+            weights /= norm
+        return SparseVector(indices,weights)
 
     def partial_fit(self, text: str) -> None:
         """Aggiorna vocabolario e DF con un nuovo documento."""
@@ -222,9 +252,11 @@ class VectorMemoryEngine:
         self._lock = threading.Lock()
         self._tfidf = _LightTfidf()
 
-        # RAM index: lista di (row_id, user_id, np.ndarray)
-        self._index: List[Tuple[int, str, np.ndarray]] = []
+        # Both caches scale with observed terms, not all document/term pairs.
+        self._index: List[Tuple[int, str, SparseVector]] = []
+        self._lexical_index = {}
         self._index_dirty = False
+        self._concept_index = {}
 
         self._init_db()
         self._load_state()
@@ -251,13 +283,6 @@ class VectorMemoryEngine:
         # Content is authoritative: old releases persisted incompatible vectors.
         self._rebuild_index()
 
-    def _save_tfidf_state(self, cursor: sqlite3.Cursor) -> None:
-        state_json = json.dumps(self._tfidf.to_dict())
-        cursor.execute(
-            "INSERT OR REPLACE INTO tfidf_state (id, state) VALUES (1, ?)",
-            (state_json,)
-        )
-
     # ── Public API ────────────────────────────────────────
 
     def add(
@@ -280,35 +305,22 @@ class VectorMemoryEngine:
         ts = (timestamp or datetime.now()).isoformat()
 
         with self._lock:
-            # 1. Aggiorna vocabolario
-            self._tfidf.partial_fit(content)
-
-            # 2. Encode
-            vec = self._tfidf.encode(content)
-            blob = _vec_to_blob(vec)
-
-            # 3. Inserisci su DB
+            # Check idempotence before touching vocabulary or its persisted cache.
             with self._conn() as c:
                 if source_key is not None:
                     existing = c.execute("SELECT id FROM memories WHERE user_id=? AND source_key=?",
                                          (user_id, source_key)).fetchone()
                     if existing:
-                        self._index_dirty = True
                         return existing[0]
                 cursor = c.execute(
                     "INSERT INTO memories (user_id, content, vector_blob, timestamp, metadata, source_key) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (user_id, content, blob, ts, json.dumps(metadata), source_key)
+                    (user_id, content, b'', ts, json.dumps(metadata), source_key)
                 )
                 row_id = cursor.lastrowid
-                self._save_tfidf_state(cursor)
-
-            # 4. Aggiorna indice RAM
-            self._index.append((row_id, user_id, vec))
-
-            # 5. Re-encode tutti i vettori se il vocabolario è cresciuto
-            # (Necessario perché un nuovo termine cambia le dimensioni)
-            # Lo facciamo in modo lazy: marco come dirty per il prossimo search()
+            # SQLite text is authoritative. Old dense blobs/state remain readable
+            # for compatibility, but are not copied again at every insertion.
+            # Publish cache invalidation only after the transaction succeeded.
             self._index_dirty = True
 
             logger.debug(f"[VectorMemory] Added memory id={row_id} for user={user_id}")
@@ -320,7 +332,8 @@ class VectorMemoryEngine:
         query: str,
         top_k: int = 5,
         use_expansion: bool = True,
-        allowed_roles=None
+        allowed_roles=None,
+        exclude_query_replays=False
     ) -> List[Dict[str, Any]]:
         """
         Ricerca semantica: restituisce le `top_k` memorie più simili alla query.
@@ -338,68 +351,101 @@ class VectorMemoryEngine:
                 self._rebuild_index()
 
             # Filtra per user_id
-            user_entries = [(rid, vec) for rid, uid, vec in self._index if uid == user_id]
+            user_entries = [(i,rid) for i,(rid,uid,_) in enumerate(self._index) if uid == user_id]
             if not user_entries:
                 return []
 
-            ids = [e[0] for e in user_entries]
-            matrix = np.vstack([e[1] for e in user_entries])  # shape: (n, vocab)
+            ids = [rid for _,rid in user_entries]
+            user_positions = np.full(len(self._index),-1,dtype=np.intp)
+            user_positions[[i for i,_ in user_entries]] = np.arange(len(ids))
 
             # Genera varianti della query (Query Expansion)
             query_variants = QueryExpander.expand(query) if use_expansion else [query]
             
             # Max-Score Algorithm: Calcola i cosine_scores per ogni variante e prendi il massimo per ogni documento
-            max_scores = np.zeros(matrix.shape[0])
+            max_scores = np.zeros(len(ids),dtype=np.float32)
             
             for qv in query_variants:
-                q_vec = self._tfidf.encode(qv)
-                
-                # Allinea dimensioni (il vocab potrebbe essere cresciuto)
-                if q_vec.shape[0] != matrix.shape[1]:
-                    min_dim = min(q_vec.shape[0], matrix.shape[1])
-                    q_vec = q_vec[:min_dim]
-                    mat_aligned = matrix[:, :min_dim]
-                else:
-                    mat_aligned = matrix
-                    
-                # Cosine similarity per questa variante
-                scores_variant = mat_aligned @ q_vec
+                q_vec = self._tfidf.encode_sparse(qv)
+                scores_variant = np.zeros(len(ids),dtype=np.float32)
+                for term,weight in zip(q_vec.indices,q_vec.weights):
+                    positions,weights = self._lexical_index[int(term)]
+                    scoped_positions = user_positions[positions]
+                    mask = scoped_positions >= 0
+                    # One posting per document/term: no duplicate indices.
+                    scores_variant[scoped_positions[mask]] += weights[mask]*weight
                 
                 # Element-wise maximum
                 max_scores = np.maximum(max_scores, scores_variant)
 
-            # Top-k basato sul Max-Score
-            top_indices = np.argsort(max_scores)[::-1]
-            if allowed_roles is None:
-                top_indices = top_indices[:top_k]
+            max_scores = np.clip(max_scores, 0., 1.)
+            lexical_scores = max_scores.copy()
+            query_concepts = concepts(query) if use_expansion else frozenset()
+            concept_matches = {}
+            if query_concepts:
+                positions = {rid:i for i,rid in enumerate(ids)}
+                for concept in query_concepts:
+                    for rid in self._concept_index.get(concept, ()):
+                        if rid in positions:
+                            concept_matches.setdefault(rid, set()).add(concept)
+                for rid, matched in concept_matches.items():
+                    # A retrieval relevance estimate, not probability or truth.
+                    max_scores[positions[rid]] = max(max_scores[positions[rid]],
+                        .65 * len(matched)/len(query_concepts))
+
+            # Stable ordering; ties do not select a different source on restart.
+            top_indices = np.lexsort((-np.asarray(ids), -max_scores))
+            top_indices = [int(i) for i in top_indices if max_scores[i] > 0]
 
         # Fetch da DB i record selezionati
         selected_ids = [ids[i] for i in top_indices]
         results = []
         try:
             with self._conn() as c:
-                placeholders = ",".join("?" * len(selected_ids))
+              # Android SQLite may limit parameters to 999. Filter each batch
+              # before counting hits; irrelevant roles cannot consume top_k.
+              for start in range(0, len(selected_ids), 256):
+                batch = selected_ids[start:start+256]
+                placeholders = ",".join("?" * len(batch))
                 rows = c.execute(
-                    f"SELECT id, content, metadata, timestamp FROM memories WHERE id IN ({placeholders})",
-                    selected_ids
-                ).fetchall()
+                    f"SELECT id, content, metadata, timestamp FROM memories WHERE user_id=? AND id IN ({placeholders})",
+                    [user_id, *batch]).fetchall()
                 row_map = {r[0]: r for r in rows}
-
-            for i, sid in zip(top_indices, selected_ids):
-                if sid in row_map and max_scores[i] > 0:
+                for i, sid in zip(top_indices[start:start+256], batch):
+                    if sid not in row_map:
+                        continue
                     r = row_map[sid]
-                    metadata = json.loads(r[2] or '{}')
+                    try:
+                        metadata = json.loads(r[2] or '{}')
+                    except (ValueError, TypeError):
+                        continue
+                    if not isinstance(metadata, dict):
+                        continue
                     if allowed_roles is not None and (metadata.get('role') not in allowed_roles or metadata.get('is_valid') is False):
                         continue
+                    if metadata.get('revoked') is True or metadata.get('status') in ('revoked','superseded'):
+                        continue
+                    if exclude_query_replays:
+                        from allma_model.utils.memory_evidence import is_replayed_question
+                        if is_replayed_question(r[1], query):
+                            continue
                     results.append({
                         "id": r[0],
                         "content": r[1],
                         "score": float(max_scores[i]),
                         "metadata": metadata,
                         "timestamp": r[3],
+                        "retrieval": {
+                            'kind':('hybrid' if lexical_scores[i] > 0 else 'concept')
+                                   if sid in concept_matches else 'lexical',
+                            'concept_matches': sorted(concept_matches.get(sid, ())),
+                            'world_truth_verified': False,
+                        },
                     })
                     if len(results) >= top_k:
                         break
+                if len(results) >= top_k:
+                    break
         except Exception as e:
             logger.error(f"[VectorMemory] Search fetch error: {e}")
 
@@ -424,6 +470,17 @@ class VectorMemoryEngine:
 
     # ── Internal ──────────────────────────────────────────
 
+    def release_cache(self):
+        """Drop reconstructible RAM state; return the retained record count."""
+        with self._lock:
+            count = self.count()
+            self._index = []
+            self._lexical_index = {}
+            self._concept_index = {}
+            self._tfidf = _LightTfidf()
+            self._index_dirty = True
+            return count
+
     def _rebuild_index(self) -> None:
         """
         Re-encode tutti i vettori usando il vocabolario corrente.
@@ -435,28 +492,33 @@ class VectorMemoryEngine:
         try:
             with self._conn() as c:
                 rows = c.execute(
-                    "SELECT id, user_id, content FROM memories"
+                    "SELECT id, user_id, content FROM memories ORDER BY id"
                 ).fetchall()
 
-            self._tfidf = _LightTfidf()
+            tfidf = _LightTfidf()
             for _, _, content in rows:
-                self._tfidf.partial_fit(content)
+                tfidf.partial_fit(content)
             new_index = []
-            updated_blobs = []
+            concept_index = {}
+            postings = {}
             for row_id, uid, content in rows:
-                vec = self._tfidf.encode(content)
+                vec = tfidf.encode_sparse(content)
+                position = len(new_index)
                 new_index.append((row_id, uid, vec))
-                updated_blobs.append((_vec_to_blob(vec), row_id))
+                for term,weight in zip(vec.indices,vec.weights):
+                    posting = postings.setdefault(int(term),([],[]))
+                    posting[0].append(position)
+                    posting[1].append(weight)
+                for concept in concepts(content):
+                    concept_index.setdefault(concept, set()).add(row_id)
 
-            # Aggiorna i blob su DB in batch
-            with self._conn() as c:
-                c.executemany(
-                    "UPDATE memories SET vector_blob=? WHERE id=?",
-                    updated_blobs
-                )
-                self._save_tfidf_state(c.cursor())
-
+            # Content is authoritative; rebuilt vectors are a RAM cache.
+            # Do not rewrite every SQLite blob on each search/restart.
             self._index = new_index
+            self._tfidf = tfidf
+            self._lexical_index = {term:(np.asarray(indices,dtype=np.intp),np.asarray(weights,dtype=np.float32))
+                                   for term,(indices,weights) in postings.items()}
+            self._concept_index = concept_index
             self._index_dirty = False
             self._signature = (len(rows), max((row[0] for row in rows), default=None))
             logger.info(f"[VectorMemory] Index rebuilt: {len(self._index)} entries")

@@ -66,7 +66,7 @@ def pack_and_update():
                     zf.write(abs_path, rel_path)
 
         # 4. Add specific root scripts
-        root_scripts = ['benchmark_iq.py', 'reproduce_memory_fail.py', 'verify_soul.py']
+        root_scripts = ['startup_ui.py', 'benchmark_iq.py', 'reliability_battery.py', 'reliability_android.py', 'memory_recovery_battery.py', 'long_history_battery.py', 'preservation_battery.py', 'reproduce_memory_fail.py', 'verify_soul.py']
         for script in root_scripts:
             if os.path.exists(script):
                  print(f"Adding (Root Script) {script}", flush=True)

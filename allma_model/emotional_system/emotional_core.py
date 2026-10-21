@@ -61,8 +61,8 @@ class EmotionalCore:
         self.current_emotion = None
         self.emotion_intensity = 0.0
         
-    def _heuristic_detect_emotion(self, text: str) -> EmotionalState:
-        result = analyze(text)
+    def _heuristic_detect_emotion(self, text: str, learned_aliases=None) -> EmotionalState:
+        result = analyze(text, learned_aliases=learned_aliases)
         analysis = result.pop('analysis')
         return EmotionalState(**result, context={'emotion_analysis': analysis})
 
@@ -176,8 +176,9 @@ class EmotionalCore:
 
     def detect_emotion(self, text: str, context=None, llm_client=None) -> EmotionalState:
         """Lightweight evidence; llm_client retained for API compatibility only."""
-        state = self._heuristic_detect_emotion(text)
         supplied = dict(context) if isinstance(context, dict) else {}
+        learned_aliases = supplied.pop('learned_emotion_aliases', None)
+        state = self._heuristic_detect_emotion(text, learned_aliases=learned_aliases)
         supplied.pop('emotion_analysis', None)
         state.context.update(supplied)
         return state

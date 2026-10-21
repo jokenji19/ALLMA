@@ -27,9 +27,7 @@ class DocumentProcessor:
         self.supported_extensions = {
             'pdf': self._process_pdf,
             'docx': self._process_docx,
-            'doc': self._process_docx,
             'xlsx': self._process_excel,
-            'xls': self._process_excel,
             'txt': self._process_text,
             'jpg': self._process_image,
             'jpeg': self._process_image,
@@ -93,7 +91,7 @@ class DocumentProcessor:
                 with pdfplumber.open(file_path) as pdf:
                     for i, page in enumerate(pdf.pages):
                         # Estrai testo
-                        text = page.extract_text()
+                        text = page.extract_text() or ''
                         
                         # Estrai tabelle
                         tables = page.extract_tables()
@@ -288,43 +286,28 @@ class DocumentProcessor:
             print(f"Error in _process_image: {e}")
             return {'error': str(e)}
 
+    @staticmethod
+    def text_from_result(result):
+        """Read an already parsed document without parsing or OCR a second time."""
+        if 'error' in result:
+            raise ValueError('Document extraction failed')
+        if 'pages' in result:
+            values = [page.get('text') or '' for page in result['pages']]
+        elif 'paragraphs' in result:
+            values = [paragraph.get('text') or '' for paragraph in result['paragraphs']]
+        elif 'sheets' in result:
+            values = [' '.join(str(value) if value is not None else '' for value in row)
+                      for sheet in result['sheets'] for row in sheet.get('data', [])]
+        elif 'content' in result:
+            values = [result['content']]
+        else:
+            raw = result.get('text', '')
+            values = [raw] if isinstance(raw, str) else [item.get('text') or '' for item in raw]
+        return '\n'.join(values)
+
     def extract_text_from_document(self, file_path: str) -> str:
-        """Estrae solo il testo da un documento"""
         try:
-            result = self.process_document(file_path)
-            
-            if 'error' in result:
-                return ''
-                
-            text = []
-            
-            # PDF
-            if 'pages' in result:
-                for page in result['pages']:
-                    text.append(page.get('text', ''))
-                    
-            # Word
-            elif 'paragraphs' in result:
-                for para in result['paragraphs']:
-                    text.append(para.get('text', ''))
-                    
-            # Excel
-            elif 'sheets' in result:
-                for sheet in result['sheets']:
-                    for row in sheet['data']:
-                        text.append(' '.join(row))
-                        
-            # Testo
-            elif 'content' in result:
-                text.append(result['content'])
-                
-            # OCR
-            elif 'text' in result:
-                for item in result['text']:
-                    text.append(item.get('text', ''))
-                    
-            return '\n'.join(text)
-            
-        except Exception as e:
-            print(f"Error in extract_text_from_document: {e}")
+            return self.text_from_result(self.process_document(file_path))
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            print(f"Document text extraction unavailable: {type(error).__name__}")
             return ''

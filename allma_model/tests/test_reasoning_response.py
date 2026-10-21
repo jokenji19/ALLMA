@@ -4,10 +4,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Dict, List, Any
 import pytest
-from core.reasoning_engine import ReasoningEngine
-from core.response_generator import ResponseGenerator
-from core.knowledge_base import KnowledgeBase
-from core.context_understanding import ContextUnderstandingSystem
+from allma_model.core.reasoning_engine import ReasoningEngine
+from allma_model.core.response_generator import ResponseGenerator
+from allma_model.core.knowledge_base import KnowledgeBase
+from allma_model.core.context_understanding import ContextUnderstandingSystem
 from allma_model.personality_system.personality import Personality
 
 def print_separator(title: str = ""):

@@ -38,7 +38,7 @@ class ModelBinding:
         self.context_size = context_size
         if reasoning is not None and type(reasoning) is not bool:
             raise ValueError('Reasoning capability must be explicitly boolean')
-        self.reasoning = self.architecture in {'qwen3', 'qwen3moe'} if reasoning is None else reasoning
+        self.reasoning = self.architecture in {'qwen3', 'qwen3moe', 'qwen35', 'qwen35moe'} if reasoning is None else reasoning
         self.extra_stops = ()
         self.bos, self.eos = bos, eos
         self.template = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True).from_string(template)
@@ -57,7 +57,7 @@ class ModelBinding:
         return binding
 
     def sampling(self):
-        if self.architecture in {'qwen3', 'qwen3moe'}:
+        if self.architecture in {'qwen3', 'qwen3moe', 'qwen35', 'qwen35moe'}:
             return dict(temperature=.6, top_p=.95, top_k=20, min_p=0.)
         return dict(temperature=.4, top_p=.9)
 

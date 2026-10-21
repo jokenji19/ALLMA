@@ -59,7 +59,7 @@ class ModuleStateManager:
             logging.error(f"Failed to save state for {module_name}: {e}")
             return False
 
-    def load_state(self, module_name: str) -> Optional[Dict[str, Any]]:
+    def load_state(self, module_name: str, *, strict=False) -> Optional[Dict[str, Any]]:
         """
         Load a module's state from the database.
         
@@ -79,8 +79,23 @@ class ModuleStateManager:
                 row = cursor.fetchone()
                 
                 if row:
-                    return json.loads(row[0])
+                    return json.loads(row[0], parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Nonfinite state'))) if strict else json.loads(row[0])
                 return None
         except Exception as e:
+            if strict:
+                raise
             logging.error(f"Failed to load state for {module_name}: {e}")
             return None
+
+    def transact_state(self, module_name, transform):
+        """Atomic read/validate/update, preserving existing bytes on any failure."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT state_json FROM module_states WHERE module_name=?', (module_name,)).fetchone()
+            previous = json.loads(row[0], parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Nonfinite state'))) if row else None
+            updated = transform(previous)
+            encoded = json.dumps(updated, allow_nan=False)
+            if previous != updated or row is None:
+                conn.execute('INSERT OR REPLACE INTO module_states(module_name,state_json,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)',
+                             (module_name, encoded))
+            return updated

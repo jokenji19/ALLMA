@@ -44,7 +44,7 @@ def test_user_facts_have_ownership_source_and_survive_restart(memory):
     answer, source, evidence = grounded_reply('Come mi chiamo?', restored, 'u')
     assert 'Ada' in answer and source == 'user_declaration'
     assert evidence == ['Mi chiamo Ada.']
-    add(restored, 'Mi chiamo Anna.')
+    add(restored, 'Rettifico: mi chiamo Anna.')
     assert 'Anna' in grounded_reply('Come mi chiamo?', restored, 'u')[0]
     assert grounded_reply('Come ti chiami?', restored, 'u')[0] == 'Mi chiamo ALLMA.'
 

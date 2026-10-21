@@ -13,13 +13,7 @@ import numpy as np
 import logging
 from datetime import datetime
 # from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
-
-def cosine_similarity(v1, v2):
-    norm1 = np.linalg.norm(v1)
-    norm2 = np.linalg.norm(v2)
-    if norm1 == 0 or norm2 == 0: return 0.0
-    return np.dot(v1, v2) / (norm1 * norm2)
+from allma_model.utils.text_processing import cosine_similarity
 
 # import spacy # Removed for ALLMA Neural-Light Architecture
 import re
@@ -150,20 +144,6 @@ class PatternRecognitionSystem:
         self.stemmed_positive = {self.stemmer.stem(word) for word in self.positive_keywords}
         self.stemmed_negative = {self.stemmer.stem(word) for word in self.negative_keywords}
 
-    def _tokenize(self, text: str) -> List[str]:
-        """Semplice tokenizer basato su regex"""
-        if not isinstance(text, str):
-            return []
-        text = text.lower()
-        # Rimuovi punteggiatura semplice e dividi
-        return re.findall(r'\b\w+\b', text)
-    
-    def _ngrams(self, tokens: List[str], n: int) -> List[Tuple[str, ...]]:
-        """Generatore di n-grams"""
-        if len(tokens) < n:
-            return []
-        return list(zip(*[tokens[i:] for i in range(n)]))
-            
         # Carica il modello spaCy per l'italiano - REMOVED for NLA
         self.nlp = None
             
@@ -196,6 +176,20 @@ class PatternRecognitionSystem:
             'sad': 'negative_emotion'
         }
         
+    def _tokenize(self, text: str) -> List[str]:
+        """Semplice tokenizer basato su regex"""
+        if not isinstance(text, str):
+            return []
+        text = text.lower()
+        # Rimuovi punteggiatura semplice e dividi
+        return re.findall(r'\b\w+\b', text)
+
+    def _ngrams(self, tokens: List[str], n: int) -> List[Tuple[str, ...]]:
+        """Generatore di n-grams"""
+        if len(tokens) < n:
+            return []
+        return list(zip(*[tokens[i:] for i in range(n)]))
+
     def register_observer(self, observer):
         """Registra un nuovo osservatore"""
         if observer not in self.observers:
@@ -283,6 +277,7 @@ class PatternRecognitionSystem:
                 max_matches = len(matched_words)
                 best_category = category
                 
+        matched_keywords = matches[best_category]
         # Converti la categoria interna in categoria esterna
         if best_category in self.categories.values():
             # Trova la chiave corrispondente al valore
@@ -298,7 +293,7 @@ class PatternRecognitionSystem:
         pattern = Pattern(
             category=best_category,
             confidence=confidence,
-            keywords=matches[best_category],
+            keywords=matched_keywords,
             text=text
         )
         
@@ -790,14 +785,17 @@ class PatternRecognitionSystem:
         Returns:
             List[float]: Vettore embedding
         """
-        # Hash semplice del testo per generare un vettore pseudo-casuale ma deterministico
-        # Questo serve solo per mantenere la struttura dei dati, non ha significato semantico profondo senza un modello
+        # Lexical hashing: shared words share features; no random pseudo-semantics.
         import hashlib
-        hash_obj = hashlib.md5(text.encode())
-        # Usa l'hash per generare 300 float deterministici
-        seed = int(hash_obj.hexdigest(), 16)
-        np.random.seed(seed % (2**32)) 
-        return np.random.rand(300).tolist()
+        features = np.zeros(300, dtype=float)
+        for token in self._tokenize(text):
+            stem = self.stemmer.stem(token)
+            slot = int.from_bytes(hashlib.sha256(stem.encode()).digest()[:4], 'big') % len(features)
+            features[slot] += 1.0
+        norm = np.linalg.norm(features)
+        if norm:
+            features /= norm
+        return features.tolist()
 
     def _extract_linguistic_features(self, text: Union[str, Any]) -> Dict[str, float]:
         """

@@ -8,6 +8,7 @@ associativa e procedurale.
 """
 
 from typing import Dict, List, Any, Optional, Tuple, Set
+from types import SimpleNamespace
 from dataclasses import dataclass, field
 import numpy as np
 from datetime import datetime, timedelta
@@ -129,7 +130,7 @@ class WorkingMemory:
     def __init__(self, capacity: int = 7):  # Miller's Law: 7 ± 2 items
         self.capacity = capacity
         self.items: List[MemoryItem] = []
-        self._lock = Lock()
+        self._lock = RLock()
         
     def add_item(self, item: MemoryItem):
         """Aggiunge un item alla memoria di lavoro"""
@@ -155,7 +156,7 @@ class ShortTermMemory:
     def __init__(self, retention_time: timedelta = timedelta(seconds=10)):
         self.retention_time = retention_time
         self.items: List[MemoryItem] = []
-        self._lock = Lock()
+        self._lock = RLock()
         
     def add_item(self, item: MemoryItem):
         """Aggiunge un item alla memoria a breve termine"""
@@ -186,7 +187,7 @@ class LongTermMemory:
     def __init__(self):
         self.items: List[MemoryItem] = []
         self.associations: Dict[str, Set[str]] = defaultdict(set)
-        self._lock = Lock()
+        self._lock = RLock()
         
     def add_item(self, item: MemoryItem):
         """Aggiunge un item alla memoria a lungo termine"""
@@ -243,7 +244,7 @@ class AssociativeMemory:
     def __init__(self, embedding_dim: int = 64):
         self.embedding_dim = embedding_dim
         self.concept_embeddings: Dict[str, 'torch.Tensor'] = {}
-        self._lock = Lock()
+        self._lock = RLock()
         
     def add_association(self, concept1: str, concept2: str, strength: float = 1.0):
         """Crea o rafforza un'associazione tra due concetti"""
@@ -291,7 +292,7 @@ class ProceduralMemory:
     
     def __init__(self):
         self.procedures: Dict[str, Dict] = {}
-        self._lock = Lock()
+        self._lock = RLock()
         
     def add_procedure(self, name: str, steps: List[str], context: Dict = None):
         """Aggiunge una nuova procedura"""
@@ -637,7 +638,7 @@ class SemanticMemory:
     def __init__(self):
         self.concepts: Dict[str, Dict] = {}
         self.relationships: Dict[str, Set[Tuple[str, str]]] = defaultdict(set)
-        self._lock = Lock()
+        self._lock = RLock()
         
     def add_concept(self, concept: str, attributes: Dict):
         """Aggiunge o aggiorna un concetto"""
@@ -704,7 +705,7 @@ class MemorySystem:
         self.relevance_weight = 0.3
         self.last_consolidation = datetime.now()
         
-    def process_experience(self, experience: str, emotional_valence: float = 0.0) -> dict:
+    def process_experience(self, experience: str, emotional_valence: float = 0.0, context: Dict = None) -> dict:
         """
         Processa una nuova esperienza
         
@@ -735,7 +736,8 @@ class MemorySystem:
             "timestamp": datetime.now().isoformat(),
             "emotional_valence": emotional_valence,
             "importance": importance,
-            "concepts": concepts
+            "concepts": concepts,
+            "context": dict(context or {})
         }
         
         self.add_memory(memory_item)
@@ -744,7 +746,7 @@ class MemorySystem:
         consolidation_performed = False
         if self._should_consolidate():
             # Esegui consolidamento in modo asincrono
-            threading.Thread(target=self._consolidate_memories).start()
+            threading.Thread(target=self._consolidate_memories, daemon=True).start()
             consolidation_performed = True
         
         return {
@@ -766,7 +768,7 @@ class MemorySystem:
         """
         with self._lock:
             # Recupera memorie da varie fonti
-            working_memories = self.working_memory
+            working_memories = list(self.working_memory)
             short_term_memories = []
             episodic_memories = self.episodic.recall(query, context)
             
@@ -777,8 +779,10 @@ class MemorySystem:
             now = datetime.now()
             memories_with_scores = []
             for memory in all_memories:
-                # Calcola il timestamp una sola volta
-                timestamp = datetime.fromisoformat(memory["timestamp"])
+                memory = dict(memory) if isinstance(memory, dict) else dict(vars(memory))
+                # Normalize episodic dataclasses and working-memory records.
+                raw_timestamp = memory['timestamp']
+                timestamp = datetime.fromisoformat(raw_timestamp) if isinstance(raw_timestamp, str) else raw_timestamp
                 recency_score = -((now - timestamp).total_seconds())
                 
                 # Crea una tupla con tutti i valori di ordinamento
@@ -885,12 +889,13 @@ class MemorySystem:
     def memories(self):
         """Restituisce tutte le memorie del sistema"""
         with self._lock:
-            return self.working_memory + self.episodic.memories
+            working = self.working_memory.get_items() if hasattr(self.working_memory, 'get_items') else list(self.working_memory)
+            return working + self.episodic.memories
 
     def get_memory_stats(self) -> Dict:
         """Restituisce le statistiche del sistema di memoria"""
         with self._lock:
-            memories = self.memories
+            memories = [SimpleNamespace(**m) if isinstance(m, dict) else m for m in self.memories]
             total_memories = len(memories)
             consolidated_memories = sum(1 for m in memories if getattr(m, 'consolidated', False))
             retrieved_memories = sum(1 for m in memories if getattr(m, 'retrieved', False))
@@ -903,19 +908,25 @@ class MemorySystem:
             }
             
     def _consolidate_memories(self):
-        """Consolida le memorie dalla working memory alla long term memory"""
-        now = datetime.now()
-        
-        # Sposta le memorie vecchie nella long term memory
-        for memory in self.working_memory[:]:
-            memory_time = datetime.fromisoformat(memory["timestamp"])
-            if (now - memory_time).total_seconds() >= self.consolidation_interval:
-                self.working_memory.remove(memory)
-                self.long_term_memory.append(memory)
-                
-        # Aggiorna il timestamp dell'ultimo consolidamento
-        self.last_consolidation = now
-        
+        """Move old working items to a defined destination without dropping data."""
+        with self._lock:
+            now = datetime.now()
+            working = self.working_memory.get_items() if hasattr(self.working_memory, 'get_items') else list(self.working_memory)
+            for item in working:
+                record = item if isinstance(item, dict) else vars(item)
+                stamp = record['timestamp']
+                stamp = datetime.fromisoformat(stamp) if isinstance(stamp, str) else stamp
+                if (now - stamp).total_seconds() < self.consolidation_interval:
+                    continue
+                if hasattr(self, 'long_term'):
+                    self.long_term.add_item(item)
+                    with self.working_memory._lock:
+                        self.working_memory.items.remove(item)
+                else:
+                    self.episodic.add_memory(record['content'], record.get('emotional_valence', 0.), record.get('context', {}))
+                    self.working_memory.remove(item)
+            self.last_consolidation = now
+
     def save_to_file(self, filename: str):
         """Salva lo stato del sistema su file"""
         with self._lock:
@@ -1136,7 +1147,13 @@ class EnhancedMemorySystem(MemorySystem):
         results.extend(episodic_results)
         
         # Rimuovi duplicati e ordina per rilevanza
-        unique_results = list(set(results))
+        # MemoryItem is mutable/unhashable; deduplicate by persisted identity.
+        unique = {}
+        for item in results:
+            key = (item.content, item.timestamp.isoformat(), item.type,
+                   json.dumps(item.context, sort_keys=True, default=str))
+            unique.setdefault(key, item)
+        unique_results = list(unique.values())
         unique_results.sort(key=lambda x: self._calculate_relevance(query, x.content), reverse=True)
         
         return unique_results

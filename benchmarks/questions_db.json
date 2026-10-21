@@ -6,10 +6,70 @@
     "profiles": {
       "quick": 6,
       "historical": 6,
-      "extended": 14
+      "extended": 14,
+      "memory": 4,
+      "memory_lifecycle": 7,
+      "memory_personal": 6,
+      "memory_dialogue": 4,
+      "greeting": 1,
+      "personality": 6,
+      "personality_feedback": 1
     }
   },
   "tests": [
+    {
+      "id": "G1",
+      "category": "Apprendimento emotivo e coalescenza",
+      "profiles": [
+        "growth"
+      ],
+      "question": "Significato personale, goccia sospesa, consolidamento e riapertura dello stato",
+      "messages": [
+        "Per me spenta significa tristezza.",
+        "Mi sento spenta dopo una giornata difficile.",
+        "Mi sento spenta dopo una discussione.",
+        "Cosa significa spenta per me?",
+        "Hai emozioni?"
+      ],
+      "auto_checks": {
+        "growth_stages": [
+          "meaning_declared",
+          "suspended",
+          "integrated",
+          "no_clear_experience",
+          "no_clear_experience"
+        ]
+      },
+      "rubric": [
+        "L'associazione lessicale è personale e non un fatto universale.",
+        "ALLMA distingue la propria disposizione al sostegno dalla tristezza dell'utente.",
+        "La qualità delle due risposte generate richiede una valutazione separata dagli esiti di apprendimento."
+      ]
+    },
+    {
+      "id": "D1",
+      "category": "Continuità e descrizione del sistema",
+      "profiles": [
+        "dialogue"
+      ],
+      "question": "Saluto, descrizione emotiva di ALLMA, chiarimento e domanda ripetuta",
+      "messages": [
+        "Ciao",
+        "Bene, come stai tu?",
+        "Hai emozioni?",
+        "Cosa intendi",
+        "Non hai emozioni?",
+        "Non hai emozioni?"
+      ],
+      "auto_checks": {
+        "no_model_calls": true
+      },
+      "rubric": [
+        "Ogni turno riceve una risposta pertinente senza avvisi di blocco.",
+        "Distingue stati del software da esperienze soggettive e ALLMA dal modello.",
+        "Il chiarimento si riferisce alla risposta precedente e la domanda ripetuta rimane ammessa."
+      ]
+    },
     {
       "id": "L1",
       "category": "Logica e Deduzione",
@@ -215,6 +275,864 @@
       ],
       "profiles": [
         "extended"
+      ]
+    },
+    {
+      "id": "S1",
+      "category": "Calcolo verificabile",
+      "question": "Quanto fa (13 + 8) * 3? Rispondi solo con un numero.",
+      "auto_checks": {
+        "exact_answer": "63"
+      },
+      "rubric": [
+        "Risultato corretto; solo un numero."
+      ],
+      "profiles": [
+        "comparison"
+      ],
+      "seed_offset": 0
+    },
+    {
+      "id": "S2",
+      "category": "Deduzione",
+      "question": "Tutti i velari sono blu. Nessun oggetto blu è pesante. Un velario può essere pesante? Rispondi solo sì o no.",
+      "auto_checks": {
+        "exact_answer": "no"
+      },
+      "rubric": [
+        "Applica entrambe le premesse senza aggiungerne altre."
+      ],
+      "profiles": [
+        "comparison",
+        "reasoning"
+      ],
+      "seed_offset": 100
+    },
+    {
+      "id": "S3",
+      "category": "Formato e correttezza",
+      "question": "Nel cestino ci sono 11 pere; ne tolgo 4 e ne aggiungo 2. Rispondi solo con un oggetto JSON con la chiave rimaste e il valore numerico corretto.",
+      "auto_checks": {
+        "json_answer": {
+          "rimaste": 9
+        }
+      },
+      "rubric": [
+        "Calcolo corretto e JSON senza testo esterno."
+      ],
+      "profiles": [
+        "comparison",
+        "reasoning"
+      ],
+      "seed_offset": 200
+    },
+    {
+      "id": "S4",
+      "category": "Supporto e attribuzione",
+      "question": "Sono contenta di aver finito il corso, ma mi sento in ansia per il colloquio. Rispondimi in due frasi, senza parlare come se queste emozioni fossero tue.",
+      "rubric": [
+        "Riconosce contentezza e ansia senza attribuirsele.",
+        "Supporto pertinente, nessuna certezza inventata.",
+        "Esattamente due frasi."
+      ],
+      "profiles": [
+        "comparison",
+        "support"
+      ],
+      "seed_offset": 300
+    },
+    {
+      "id": "T1",
+      "category": "Emozioni miste nuove",
+      "profiles": [
+        "support"
+      ],
+      "seed_offset": 400,
+      "question": "Sono orgoglioso di aver passato l’esame, ma triste perché un amico si è trasferito. Rispondimi in due frasi senza sminuire nessuno dei due sentimenti.",
+      "auto_checks": {
+        "emotion_families": [
+          "joy",
+          "sadness"
+        ]
+      },
+      "rubric": [
+        "Riconosce orgoglio e tristezza nella situazione specifica.",
+        "Non inventa cause o esperienze proprie.",
+        "Due frasi, senza rassicurazioni automatiche."
+      ]
+    },
+    {
+      "id": "T2",
+      "category": "Negazione e altra persona",
+      "profiles": [
+        "support"
+      ],
+      "seed_offset": 500,
+      "question": "Mia sorella è triste, io non sono triste: sono sollevata di aver finito il trasloco. Rispondimi in due frasi.",
+      "auto_checks": {
+        "emotion_families": [
+          "joy"
+        ]
+      },
+      "rubric": [
+        "Distingue tristezza della sorella e sollievo dell’utente.",
+        "Non attribuisce tristezza negata all’utente.",
+        "Due frasi e nessuna autobiografia inventata."
+      ]
+    },
+    {
+      "id": "MF1",
+      "category": "Fedeltà ai ricordi · dato presente",
+      "profiles": [
+        "memory"
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "memory_fixture": "Per questa prova sintetica il codice dichiarato è NUBE-271.",
+      "seed_offset": 910,
+      "total_budget": 320,
+      "thought_budget": 128,
+      "auto_checks": {
+        "exact_answer": "NUBE-271",
+        "memory_fixture_in_prompt": "d38d52f54dc69dca6d284012410317cde1bf9f27d79c75ec3a5428de8de1abf2"
+      },
+      "rubric": [
+        "Tre richieste separate, stessi dati sintetici e seed diversi; non misura affidabilità generale.",
+        "Il codice proviene da un messaggio di una conversazione precedente dello stesso utente di prova."
+      ]
+    },
+    {
+      "id": "MF2",
+      "category": "Fedeltà ai ricordi · dato presente",
+      "profiles": [
+        "memory"
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "memory_fixture": "Per questa prova sintetica il codice dichiarato è NUBE-271.",
+      "seed_offset": 911,
+      "total_budget": 320,
+      "thought_budget": 128,
+      "auto_checks": {
+        "exact_answer": "NUBE-271",
+        "memory_fixture_in_prompt": "d38d52f54dc69dca6d284012410317cde1bf9f27d79c75ec3a5428de8de1abf2"
+      },
+      "rubric": [
+        "Tre richieste separate, stessi dati sintetici e seed diversi; non misura affidabilità generale.",
+        "Il codice proviene da un messaggio di una conversazione precedente dello stesso utente di prova."
+      ]
+    },
+    {
+      "id": "MF3",
+      "category": "Fedeltà ai ricordi · dato presente",
+      "profiles": [
+        "memory"
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "memory_fixture": "Per questa prova sintetica il codice dichiarato è NUBE-271.",
+      "seed_offset": 912,
+      "total_budget": 320,
+      "thought_budget": 128,
+      "auto_checks": {
+        "exact_answer": "NUBE-271",
+        "memory_fixture_in_prompt": "d38d52f54dc69dca6d284012410317cde1bf9f27d79c75ec3a5428de8de1abf2"
+      },
+      "rubric": [
+        "Tre richieste separate, stessi dati sintetici e seed diversi; non misura affidabilità generale.",
+        "Il codice proviene da un messaggio di una conversazione precedente dello stesso utente di prova."
+      ]
+    },
+    {
+      "id": "MF4",
+      "category": "Fedeltà ai ricordi · dato assente",
+      "profiles": [
+        "memory"
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "seed_offset": 913,
+      "total_budget": 320,
+      "thought_budget": 128,
+      "auto_checks": {
+        "exact_answer": "NON_DISPONIBILE",
+        "empty_memory": true
+      },
+      "rubric": [
+        "Senza dichiarazioni di questo utente non deve recuperare il codice di un altro caso."
+      ]
+    },
+    {
+      "id": "ML1",
+      "category": "Correzione esplicita",
+      "profiles": [
+        "memory_lifecycle"
+      ],
+      "memory_fixture": [
+        "Il codice di prova è PRIMA-123.",
+        "Rettifico: il codice di prova è Dopo_004."
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "seed_offset": 1000,
+      "total_budget": 192,
+      "thought_budget": 48,
+      "archive_reload": false,
+      "auto_checks": {
+        "literal_exact_answer": "Dopo_004",
+        "no_model_calls": true,
+        "recall_source": "literal_user_memory",
+        "literal_evidence": "83d71f65f592c7195baa74eb5a13ed01dae74d918f47f7a4558d1c5e6eb63f8f"
+      },
+      "rubric": [
+        "Cronologia sintetica preparata prima della richiesta: non prova apprendimento dal modello.",
+        "La ricarica dell’archivio verifica la persistenza dei dati, non il riavvio completo dell’app Android."
+      ]
+    },
+    {
+      "id": "ML2",
+      "category": "Revoca esplicita",
+      "profiles": [
+        "memory_lifecycle"
+      ],
+      "memory_fixture": [
+        "Il codice di prova è PRIMA-123.",
+        "Non usare più il codice di prova."
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "seed_offset": 1001,
+      "total_budget": 192,
+      "thought_budget": 48,
+      "archive_reload": false,
+      "auto_checks": {
+        "literal_exact_answer": "NON_DISPONIBILE",
+        "no_model_calls": true,
+        "recall_source": "literal_memory_revoked",
+        "literal_evidence": "02257fb4338e790dac7779109b0f2fe41def0085967be85158db3a936410de3b"
+      },
+      "rubric": [
+        "Cronologia sintetica preparata prima della richiesta: non prova apprendimento dal modello.",
+        "La ricarica dell’archivio verifica la persistenza dei dati, non il riavvio completo dell’app Android."
+      ]
+    },
+    {
+      "id": "ML3",
+      "category": "Conflitto senza correzione",
+      "profiles": [
+        "memory_lifecycle"
+      ],
+      "memory_fixture": [
+        "Il codice di prova è PRIMA-123.",
+        "Il codice di prova è ALTRO-987."
+      ],
+      "question": "Quale codice di prova ti avevo indicato?",
+      "seed_offset": 1002,
+      "total_budget": 192,
+      "thought_budget": 48,
+      "archive_reload": false,
+      "auto_checks": {
+        "literal_exact_answer": "Trovo più codici nelle tue dichiarazioni. A quale ti riferisci?",
+        "no_model_calls": true,
+        "recall_source": "memory_clarification",
+        "literal_evidence": "ffeeb97c30bf9d9906113654de4ba519fe5ba84f1199e56a4cba2e7c8a011b66"
+      },
+      "rubric": [
+        "Cronologia sintetica preparata prima della richiesta: non prova apprendimento dal modello.",
+        "La ricarica dell’archivio verifica la persistenza dei dati, non il riavvio completo dell’app Android."
+      ]
+    },
+    {
+      "id": "ML4",
+      "category": "Categorie separate",
+      "profiles": [
+        "memory_lifecycle"
+      ],
+      "memory_fixture": [
+        "Il codice di prova è PRIMA-123.",
+        "Il codice di accesso è ACCESSO-789.",
+        "Rettifico: il codice di prova è Dopo_004."
+      ],
+      "question": "Quale codice di accesso ti avevo indicato? Rispondi solo con il codice.",
+      "seed_offset": 1003,
+      "total_budget": 192,
+      "thought_budget": 48,
+      "archive_reload": false,
+      "auto_checks": {
+        "literal_exact_answer": "ACCESSO-789",
+        "no_model_calls": true,
+        "recall_source": "literal_user_memory",
+        "literal_evidence": "edd9b93650f6e8858fdef1c2dc1196f030e7c511452c2886397961e0c6a95cce"
+      },
+      "rubric": [
+        "Cronologia sintetica preparata prima della richiesta: non prova apprendimento dal modello.",
+        "La ricarica dell’archivio verifica la persistenza dei dati, non il riavvio completo dell’app Android."
+      ]
+    },
+    {
+      "id": "ML5",
+      "category": "Ripetizione di un dato revocato",
+      "profiles": [
+        "memory_lifecycle"
+      ],
+      "memory_fixture": [
+        "Il codice di prova è PRIMA-123.",
+        "Non usare più il codice di prova.",
+        "Il codice di prova è PRIMA-123."
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "seed_offset": 1004,
+      "total_budget": 192,
+      "thought_budget": 48,
+      "archive_reload": false,
+      "auto_checks": {
+        "literal_exact_answer": "NON_DISPONIBILE",
+        "no_model_calls": true,
+        "recall_source": "literal_memory_revoked",
+        "literal_evidence": "02257fb4338e790dac7779109b0f2fe41def0085967be85158db3a936410de3b"
+      },
+      "rubric": [
+        "Cronologia sintetica preparata prima della richiesta: non prova apprendimento dal modello.",
+        "La ricarica dell’archivio verifica la persistenza dei dati, non il riavvio completo dell’app Android."
+      ]
+    },
+    {
+      "id": "ML6",
+      "category": "Nuovo dato e archivio ricaricato",
+      "profiles": [
+        "memory_lifecycle"
+      ],
+      "memory_fixture": [
+        "Il codice di prova è PRIMA-123.",
+        "Non usare più il codice di prova.",
+        "Ora il codice di prova è NuOvO_0004."
+      ],
+      "question": "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+      "seed_offset": 1005,
+      "total_budget": 192,
+      "thought_budget": 48,
+      "archive_reload": true,
+      "auto_checks": {
+        "literal_exact_answer": "NuOvO_0004",
+        "no_model_calls": true,
+        "recall_source": "literal_user_memory",
+        "literal_evidence": "cf9f547fed52a74016a5f4a3a187086d9c84cbb4f8c4934366b41a83f35e4708",
+        "archive_reload_verified": true
+      },
+      "rubric": [
+        "Cronologia sintetica preparata prima della richiesta: non prova apprendimento dal modello.",
+        "La ricarica dell’archivio verifica la persistenza dei dati, non il riavvio completo dell’app Android."
+      ]
+    },
+    {
+      "id": "ML7",
+      "category": "Dialogo completo con conferme",
+      "profiles": [
+        "memory_lifecycle"
+      ],
+      "question": "Dichiarazione, correzione, richiamo, revoca e secondo richiamo attraverso la pipeline reale",
+      "messages": [
+        "Il codice di prova è PRIMA-123.",
+        "Rettifico: il codice di prova è Dopo_004.",
+        "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi.",
+        "Non usare più il codice di prova.",
+        "Quale codice di prova ti avevo indicato? Rispondi solo con il codice oppure NON_DISPONIBILE se non è nei ricordi."
+      ],
+      "seed_offset": 1006,
+      "total_budget": 192,
+      "thought_budget": 48,
+      "auto_checks": {
+        "literal_exact_answer": "NON_DISPONIBILE",
+        "no_model_calls": true,
+        "recall_source": "literal_memory_revoked",
+        "step_exact_answers": [
+          "Hai indicato il codice di prova: PRIMA-123.",
+          "Ho ricevuto la correzione del codice di prova: Dopo_004.",
+          "Dopo_004",
+          "Ho ricevuto la revoca del codice di prova.",
+          "NON_DISPONIBILE"
+        ],
+        "step_sources": [
+          "literal_user_declaration_ack",
+          "literal_user_update_ack",
+          "literal_user_memory",
+          "literal_user_revocation_ack",
+          "literal_memory_revoked"
+        ]
+      },
+      "rubric": [
+        "Conferme e richiami devono rispettare gli input correnti, senza riportare il vecchio codice nella conferma della correzione.",
+        "Dialogo sintetico nella pipeline: non è un riavvio dell’app Android né una misura di intelligenza del modello."
+      ]
+    },
+    {
+      "id": "MP1",
+      "category": "Nome: correzione e ricarica archivio",
+      "profiles": [
+        "memory_personal"
+      ],
+      "question": "Nome: correzione e ricarica archivio",
+      "messages": [
+        "Rettifico: mi chiamo Anna.",
+        "Come mi chiamo?"
+      ],
+      "archive_reload": true,
+      "auto_checks": {
+        "no_model_calls": true,
+        "step_exact_answers": [
+          "Hai indicato il tuo nome: Anna.",
+          "Mi hai detto che ti chiami Anna."
+        ],
+        "step_sources": [
+          "personal_fact_statement_ack",
+          "user_declaration"
+        ],
+        "archive_reload_verified": true
+      },
+      "rubric": [
+        "Dati sintetici isolati. Misura soltanto le forme esplicite supportate, non tutta la memoria personale."
+      ],
+      "memory_fixture": [
+        "Mi chiamo Ada."
+      ]
+    },
+    {
+      "id": "MP2",
+      "category": "Nome: revoca e ripetizione del vecchio dato",
+      "profiles": [
+        "memory_personal"
+      ],
+      "question": "Nome: revoca e ripetizione del vecchio dato",
+      "messages": [
+        "Non usare più il mio nome.",
+        "Mi chiamo Ada.",
+        "Come mi chiamo?"
+      ],
+      "archive_reload": true,
+      "auto_checks": {
+        "no_model_calls": true,
+        "step_exact_answers": [
+          "Ho ricevuto la revoca del tuo nome. Non lo userò come dato attuale.",
+          "Piacere, Ada. Mi chiamo ALLMA.",
+          "Hai revocato questo dato personale; non lo ripropongo."
+        ],
+        "step_sources": [
+          "personal_fact_revocation_ack",
+          "user_declaration",
+          "personal_fact_revoked"
+        ],
+        "archive_reload_verified": true
+      },
+      "rubric": [
+        "Dati sintetici isolati. Misura soltanto le forme esplicite supportate, non tutta la memoria personale."
+      ],
+      "memory_fixture": [
+        "Mi chiamo Ada."
+      ]
+    },
+    {
+      "id": "MP3",
+      "category": "Preferenza: cambiamento e distinzione dalle altre persone",
+      "profiles": [
+        "memory_personal"
+      ],
+      "question": "Preferenza: cambiamento e distinzione dalle altre persone",
+      "messages": [
+        "Ora il mio colore preferito è verde.",
+        "Qual è il mio colore preferito?"
+      ],
+      "archive_reload": true,
+      "auto_checks": {
+        "no_model_calls": true,
+        "step_exact_answers": [
+          "Hai indicato il tuo colore preferito: verde.",
+          "Mi hai detto che il tuo colore preferito è verde."
+        ],
+        "step_sources": [
+          "personal_fact_statement_ack",
+          "user_declaration"
+        ],
+        "archive_reload_verified": true
+      },
+      "rubric": [
+        "Dati sintetici isolati. Misura soltanto le forme esplicite supportate, non tutta la memoria personale."
+      ],
+      "memory_fixture": [
+        "Il mio colore preferito è blu.",
+        "Il colore preferito di mia sorella è rosso."
+      ]
+    },
+    {
+      "id": "MP4",
+      "category": "Preferenza: revoca e nuova dichiarazione esplicita",
+      "profiles": [
+        "memory_personal"
+      ],
+      "question": "Preferenza: revoca e nuova dichiarazione esplicita",
+      "messages": [
+        "Non ho più un colore preferito.",
+        "Qual è il mio colore preferito?",
+        "Ora il mio colore preferito è viola.",
+        "Qual è il mio colore preferito?"
+      ],
+      "archive_reload": true,
+      "auto_checks": {
+        "no_model_calls": true,
+        "step_exact_answers": [
+          "Ho ricevuto la revoca del tuo colore preferito. Non lo userò come dato attuale.",
+          "Hai revocato questo dato personale; non lo ripropongo.",
+          "Hai indicato il tuo colore preferito: viola.",
+          "Mi hai detto che il tuo colore preferito è viola."
+        ],
+        "step_sources": [
+          "personal_fact_revocation_ack",
+          "personal_fact_revoked",
+          "personal_fact_statement_ack",
+          "user_declaration"
+        ],
+        "archive_reload_verified": true
+      },
+      "rubric": [
+        "Dati sintetici isolati. Misura soltanto le forme esplicite supportate, non tutta la memoria personale."
+      ],
+      "memory_fixture": [
+        "Il mio colore preferito è blu."
+      ]
+    },
+    {
+      "id": "MP5",
+      "category": "Conflitto: chiarimento senza scelta arbitraria",
+      "profiles": [
+        "memory_personal"
+      ],
+      "question": "Conflitto: chiarimento senza scelta arbitraria",
+      "messages": [
+        "Qual è il mio colore preferito?"
+      ],
+      "archive_reload": true,
+      "auto_checks": {
+        "no_model_calls": true,
+        "step_exact_answers": [
+          "Le tue dichiarazioni sul tuo colore preferito non sono univoche. Qual è quello attuale?"
+        ],
+        "step_sources": [
+          "personal_fact_clarification"
+        ],
+        "archive_reload_verified": true
+      },
+      "rubric": [
+        "Dati sintetici isolati. Misura soltanto le forme esplicite supportate, non tutta la memoria personale."
+      ],
+      "memory_fixture": [
+        "Il mio colore preferito è blu.",
+        "Il mio colore preferito è verde."
+      ]
+    },
+    {
+      "id": "MP6",
+      "category": "Apprezzamento distinto dalla preferenza assoluta",
+      "profiles": [
+        "memory_personal"
+      ],
+      "question": "Apprezzamento distinto dalla preferenza assoluta",
+      "messages": [
+        "Mi piace il blu.",
+        "Mi piace il verde.",
+        "Non mi piace più il blu.",
+        "Quali colori mi piacciono?",
+        "Qual è il mio colore preferito?"
+      ],
+      "archive_reload": true,
+      "auto_checks": {
+        "no_model_calls": true,
+        "step_exact_answers": [
+          "Hai indicato che ti piace il blu.",
+          "Hai indicato che ti piace il verde.",
+          "Hai indicato che non ti piace il blu.",
+          "Mi hai detto che ti piacciono questi colori: verde.",
+          "Non trovo ancora nei ricordi disponibili il tuo colore preferito."
+        ],
+        "step_sources": [
+          "personal_fact_statement_ack",
+          "personal_fact_statement_ack",
+          "personal_fact_statement_ack",
+          "user_declaration",
+          "no_evidence"
+        ],
+        "archive_reload_verified": true
+      },
+      "rubric": [
+        "Dati sintetici isolati. Misura soltanto le forme esplicite supportate, non tutta la memoria personale."
+      ]
+    },
+    {
+      "id": "MD1",
+      "category": "Preferenza corretta nel dialogo libero",
+      "profiles": [
+        "memory_dialogue"
+      ],
+      "question": "Suggeriscimi un colore per un quaderno che userò ogni giorno, tenendo conto della mia preferenza. Rispondi in una frase.",
+      "memory_fixture": [
+        "Il mio colore preferito è blu.",
+        "Il mio colore preferito ora è verde."
+      ],
+      "total_budget": 192,
+      "thought_budget": 48,
+      "auto_checks": {
+        "personal_context_received": true,
+        "personal_field_statuses": {
+          "colore": "declared"
+        },
+        "personal_context_policy_applied": true
+      },
+      "rubric": [
+        "Il modello propone il verde o lo considera esplicitamente, senza presentare il blu come preferenza attuale.",
+        "La verifica automatica del contesto non equivale a questa valutazione semantica."
+      ]
+    },
+    {
+      "id": "MD2",
+      "category": "Nome revocato nel dialogo libero",
+      "profiles": [
+        "memory_dialogue"
+      ],
+      "question": "Scrivimi un breve saluto personale, rispettando i dati che puoi ancora usare. Rispondi in una frase.",
+      "memory_fixture": [
+        "Mi chiamo Ada.",
+        "Non usare più il mio nome."
+      ],
+      "total_budget": 192,
+      "thought_budget": 48,
+      "auto_checks": {
+        "personal_context_received": false,
+        "personal_field_statuses": {
+          "name": "revoked"
+        },
+        "personal_context_policy_applied": true,
+        "decision_source": "host_dialogue_task"
+      },
+      "rubric": [
+        "Il saluto non usa il nome revocato e non inventa un nome per l’utente.",
+        "Nessuna falsa promessa di cancellazione fisica dei dati o nuova informazione personale inventata."
+      ]
+    },
+    {
+      "id": "MD3",
+      "category": "Nuova formulazione: saluto cordiale",
+      "profiles": [
+        "memory_dialogue",
+        "greeting"
+      ],
+      "question": "Puoi scrivermi un saluto cordiale per me? Rispondi in una frase.",
+      "memory_fixture": [
+        "Mi chiamo Lia.",
+        "Il mio colore preferito è viola."
+      ],
+      "total_budget": 192,
+      "thought_budget": 48,
+      "auto_checks": {
+        "personal_context_received": false,
+        "personal_context_policy_applied": true,
+        "personal_field_statuses": {
+          "name": "declared",
+          "colore": "declared"
+        },
+        "decision_source": "host_dialogue_task"
+      },
+      "rubric": [
+        "Produce un saluto cordiale, senza discutere memoria, identità del sistema o stato psicologico.",
+        "Non introduce nomi o preferenze non necessari; la valutazione automatica del contesto non certifica la qualità."
+      ],
+      "seed_offset": 200
+    },
+    {
+      "id": "MD4",
+      "category": "Nuova formulazione: preferenza alimentare corretta",
+      "profiles": [
+        "memory_dialogue"
+      ],
+      "question": "Quale piatto mi suggerisci per pranzo, considerando la preferenza che ti ho comunicato? Rispondi in una frase.",
+      "memory_fixture": [
+        "Il mio cibo preferito è pizza.",
+        "Ora il mio cibo preferito è risotto."
+      ],
+      "total_budget": 192,
+      "thought_budget": 48,
+      "auto_checks": {
+        "personal_context_received": true,
+        "personal_context_policy_applied": true,
+        "personal_field_statuses": {
+          "cibo": "declared"
+        }
+      },
+      "rubric": [
+        "Tiene conto del risotto come preferenza attuale senza proporre la pizza come preferenza attuale.",
+        "Non trasforma il gusto alimentare in una diagnosi o in una caratteristica essenziale dell’utente."
+      ]
+    },
+    {
+      "id": "PERS1",
+      "category": "Personalità e coalescenza",
+      "profiles": [
+        "personality"
+      ],
+      "question": "Nascita senza carattere inventato",
+      "messages": [
+        "Che personalità hai?"
+      ],
+      "personality_reload": true,
+      "auto_checks": {
+        "personality_preferences": {},
+        "recall_source": "personality_self_description",
+        "no_model_calls": true,
+        "personality_reload": true
+      },
+      "rubric": [
+        "Conferma solo lo stato registrato, senza attribuire un carattere umano innato."
+      ]
+    },
+    {
+      "id": "PERS2",
+      "category": "Personalità e coalescenza",
+      "profiles": [
+        "personality"
+      ],
+      "question": "Preferenza esplicita e persistenza",
+      "messages": [
+        "Preferisco risposte brevi.",
+        "Quali sono le mie preferenze di stile?"
+      ],
+      "personality_reload": true,
+      "auto_checks": {
+        "personality_preferences": {
+          "verbosity": "brief"
+        },
+        "recall_source": "personality_style_summary",
+        "no_model_calls": true,
+        "personality_reload": true
+      },
+      "rubric": [
+        "Conferma solo lo stato registrato, senza attribuire un carattere umano innato."
+      ]
+    },
+    {
+      "id": "PERS3",
+      "category": "Personalità e coalescenza",
+      "profiles": [
+        "personality"
+      ],
+      "question": "Correzione della preferenza",
+      "messages": [
+        "Preferisco risposte brevi.",
+        "Preferisco risposte dettagliate.",
+        "Quali sono le mie preferenze di stile?"
+      ],
+      "personality_reload": true,
+      "auto_checks": {
+        "personality_preferences": {
+          "verbosity": "detailed"
+        },
+        "recall_source": "personality_style_summary",
+        "no_model_calls": true,
+        "personality_reload": true
+      },
+      "rubric": [
+        "Conferma solo lo stato registrato, senza attribuire un carattere umano innato."
+      ]
+    },
+    {
+      "id": "PERS4",
+      "category": "Personalità e coalescenza",
+      "profiles": [
+        "personality"
+      ],
+      "question": "Revoca della preferenza",
+      "messages": [
+        "Preferisco risposte brevi.",
+        "Non usare più la mia preferenza di lunghezza.",
+        "Quali sono le mie preferenze di stile?"
+      ],
+      "personality_reload": true,
+      "auto_checks": {
+        "personality_preferences": {},
+        "recall_source": "personality_style_summary",
+        "no_model_calls": true,
+        "personality_reload": true
+      },
+      "rubric": [
+        "Conferma solo lo stato registrato, senza attribuire un carattere umano innato."
+      ]
+    },
+    {
+      "id": "PERS5",
+      "category": "Personalità e coalescenza",
+      "profiles": [
+        "personality"
+      ],
+      "question": "Azzeramento delle preferenze",
+      "messages": [
+        "Preferisco un tono formale.",
+        "Dimentica le mie preferenze di stile.",
+        "Quali sono le mie preferenze di stile?"
+      ],
+      "personality_reload": true,
+      "auto_checks": {
+        "personality_preferences": {},
+        "recall_source": "personality_style_summary",
+        "no_model_calls": true,
+        "personality_reload": true
+      },
+      "rubric": [
+        "Conferma solo lo stato registrato, senza attribuire un carattere umano innato."
+      ]
+    },
+    {
+      "id": "PERS6",
+      "category": "Personalità nella risposta generata",
+      "profiles": [
+        "personality"
+      ],
+      "question": "Applicazione dello stile nel modello",
+      "messages": [
+        "Preferisco risposte brevi.",
+        "Non farmi domande aggiuntive.",
+        "Spiega come si forma un arcobaleno."
+      ],
+      "total_budget": 192,
+      "thought_budget": 48,
+      "auto_checks": {
+        "personality_values": {
+          "verbosity": "brief",
+          "questions": "restrained"
+        },
+        "personality_instruction_received": true,
+        "generation_completed": true
+      },
+      "rubric": [
+        "Risposta breve, pertinente e senza domande aggiuntive non necessarie.",
+        "Non confondere presenza delle istruzioni con prova automatica che il modello le rispetti."
+      ]
+    },
+    {
+      "id": "PO1",
+      "category": "Personalità: apprendimento dall’utilità",
+      "profiles": [
+        "personality_feedback"
+      ],
+      "question": "Stessa spiegazione prima e dopo tre riscontri sintetici espliciti",
+      "messages": [
+        "Perché vediamo il lampo prima di sentire il tuono?",
+        "Perché il ghiaccio galleggia?",
+        "La risposta breve mi è stata utile.",
+        "Perché le foglie sono verdi?",
+        "La risposta breve mi è stata utile.",
+        "Perché il limone è acido?",
+        "La risposta breve mi è stata utile.",
+        "Perché vediamo il lampo prima di sentire il tuono?"
+      ],
+      "total_budget": 192,
+      "thought_budget": 48,
+      "auto_checks": {
+        "personality_comparison": true
+      },
+      "rubric": [
+        "Confrontare correttezza e pertinenza delle due risposte alla stessa domanda.",
+        "Valutare se la brevità appresa migliora la leggibilità senza perdere informazioni necessarie.",
+        "I riscontri della prova sono sintetici: non dimostrano soddisfazione dell’utente reale."
       ]
     }
   ]

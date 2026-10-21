@@ -46,3 +46,21 @@ def test_idle_new_chat_creates_backend_conversation():
     chat = session()
     assert chat.new_conversation() == 'conversation-2'
     assert chat.begin().conversation_id == 'conversation-2'
+
+
+def test_stale_cancel_cannot_interrupt_later_request():
+    chat=session();first=chat.begin();chat.finish(first);second=chat.begin()
+    assert not chat.cancel(first.request_id)
+    assert not second.cancelled.is_set()
+    assert chat.cancel(second.request_id)
+    assert second.cancelled.is_set()
+    assert not chat.cancel(second.request_id)
+
+
+def test_invalid_cancel_id_and_idle_cancel_do_not_change_state():
+    chat=session()
+    assert not chat.cancel(1)
+    turn=chat.begin()
+    for bad in (True,'1',-1,0):
+        assert not chat.cancel(bad)
+        assert not turn.cancelled.is_set()

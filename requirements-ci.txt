@@ -1,0 +1,27 @@
+# Test environment, separate from the Android recipe dependencies.
+# CPU torch is installed separately from the official wheel index in CI.
+pytest==8.3.4
+pytest-cov==6.0.0
+numpy==2.2.0
+pandas==2.2.3
+psutil==6.1.0
+nltk==3.9.1
+langdetect==1.0.9
+pytz==2024.2
+networkx==3.4.2
+scikit-learn==1.6.0
+transformers==4.47.1
+Jinja2==3.1.4
+Kivy==2.3.1
+kivymd==1.2.0
+opencv-python-headless==4.11.0.86
+Pillow==11.1.0
+pytesseract==0.3.13
+pypdf==5.2.0
+pdfplumber==0.11.5
+python-docx==1.1.2
+openpyxl==3.1.5
+fpdf2==2.7.8
+SpeechRecognition==3.14.1
+Flask==3.1.0
+PyYAML==6.0.2

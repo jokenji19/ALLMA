@@ -1,3 +1,4 @@
+import logging
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
@@ -96,6 +97,11 @@ class ChatView(MDScreen):
         core = None
         try:
             core = ALLMACore(db_path=db_path, models_dir=models_dir, mobile_mode=mobile)
+            def report_progress(dt):
+                if not self._startup_cancelled.is_set():
+                    self.intro.set_progress(60)
+            if not self._startup_cancelled.is_set():
+                Clock.schedule_once(report_progress)
             if mobile and not self._startup_cancelled.is_set():
                 core._ensure_mobile_llm()
                 if getattr(core, '_llm_ready', False) is not True:
@@ -142,7 +148,7 @@ class ChatView(MDScreen):
             
             # Define callback for JS messages (Input from User)
             def on_js_message(message):
-                print(f"Message from WebView: {message}")
+                print("Message from WebView received")
                 
                 try:
                     # Try to parse as JSON for system messages
@@ -173,13 +179,16 @@ class ChatView(MDScreen):
                             return
                         
                         if msg_type == 'action' and action in ('new_chat', 'cancel_generation'):
+                            if action == 'cancel_generation':
+                                request_id = data.get('request_id')
+                                if type(request_id) is not int or not self.chat_session.cancel(request_id):
+                                    return
+                                print(f"Chat cancel accepted: request_id={request_id} origin=composer")
                             if self.stt:
                                 self.stt.stop_listening(cancel=True)
                             if self.tts:
                                 self.tts.stop()
-                            if action == 'cancel_generation':
-                                self.chat_session.cancel()
-                            else:
+                            if action == 'new_chat':
                                 try:
                                     conversation = self.chat_session.new_conversation()
                                     if conversation is not None:
@@ -194,7 +203,7 @@ class ChatView(MDScreen):
                             if action == 'update_profile':
                                 name = data.get('name')
                                 age = data.get('age')
-                                print(f"ChatView: Updating Profile -> {name}, {age}")
+                                print("ChatView: Profile update requested")
                                 if self.core:
                                     self.core.update_user_identity(name, int(age) if age else 0)
                             return
@@ -250,6 +259,21 @@ class ChatView(MDScreen):
                         
                         # UI Actions (Mic / Voice Mode)
                         if msg_type == 'action':
+                            if action == 'download_voice_pack':
+                                self.voice_pack.download()
+                                return
+                            if action == 'preview_voice':
+                                if not self.chat_session.is_busy and self.tts:
+                                    if self.stt: self.stt.stop_listening(cancel=True)
+                                    self.tts.speak('Ciao, mi chiamo ALLMA. Possiamo parlare con calma, un pensiero alla volta.',
+                                                   {'language': 'it-IT'}, flush=True)
+                                return
+                            if action == 'set_voice_options':
+                                self.set_voice_options(data)
+                                return
+                            if action == 'get_voice_options':
+                                self._report_voice_stack_status()
+                                return
                             if action == 'toggle_mic':
                                 self.toggle_voice_listening()
                                 return
@@ -343,23 +367,35 @@ class ChatView(MDScreen):
                 # Send to Core (Standard Chat)
                 self.submit_message(message)
                 
+            from allma_model.voice_system.preferences import VoicePreferences
+            self.voice_preferences = VoicePreferences(getattr(getattr(self.core, 'meta_learner', None), 'state_manager', None))
+            from pathlib import Path
+            from allma_model.voice_system.voice_pack import VoicePack
+            self.voice_pack = VoicePack(Path(self.core.models_dir).parent / 'voices' / 'kokoro-v1',
+                                        on_change=lambda: Clock.schedule_once(lambda dt: self._report_voice_stack_status(), 0))
             # Initialize TTS Engine
             try:
                 from allma_model.voice_system.tts_engine import TTSEngine
                 self.tts = TTSEngine(on_state=self._on_tts_state)
+                self.tts.voice_pack = self.voice_pack
+                self.tts.voice_choice = self.voice_preferences.options['voice']
                 print("ChatView: TTS Engine Linked.")
             except Exception as e:
                 print(f"ChatView: TTS Init Failed: {e}")
                 self.tts = None
 
             # Initialize Bridge
-            self.bridge = WebViewBridge(on_js_message)
+            self.bridge = WebViewBridge(on_js_message, core=self.core)
             self.is_initialized = True
             self.voice_mode_enabled = False # Track Voice Mode State
             
             # Register UI Output Callback with Core (For Proactive Messages)
             if hasattr(self.core, 'register_output_callback'):
                 self.core.register_output_callback(self._handle_core_output)
+                from kivy.app import App
+                self.core.set_foreground(not getattr(App.get_running_app(), '_paused', False))
+                if self.core._current_user_id is None:
+                    self.core._current_user_id = 'user_default'
                 
             # Initialize STT Engine
             try:
@@ -392,7 +428,10 @@ class ChatView(MDScreen):
                     if self.voice_mode_enabled and self.bridge:
                         self.bridge.update_voice_text(text)
 
-                self.stt = STTEngine(on_stt_text, on_stt_partial, on_state=self._on_stt_state, on_level=self._on_voice_level)
+                options = self.voice_preferences.options
+                self.stt = STTEngine(on_stt_text, on_stt_partial, on_state=self._on_stt_state, on_level=self._on_voice_level,
+                                     language=options['language'], on_language=self._on_voice_language,
+                                     allow_service_fallback=options['allow_service_fallback'])
                 print("ChatView: STT Engine Linked.")
             except Exception as e:
                 print(f"ChatView: STT Init Failed: {e}")
@@ -402,7 +441,10 @@ class ChatView(MDScreen):
 
             # Start Learning Status Loop (Every 5 seconds)
             self._learning_status_event = Clock.schedule_interval(self.update_learning_status, 5.0)
+            self._proactive_future = None
+            self._proactive_event = Clock.schedule_interval(self._check_proactive_tick, 60.0)
             self.is_initialized = True
+            self.intro.set_progress(90)
             self.intro.stop()
             
         except Exception as e:
@@ -448,7 +490,7 @@ class ChatView(MDScreen):
 
         try:
             # Call the ACTUAL Core API
-            print(f"Processing message: {user_text}")
+            print("Processing user message")
             
             # Start Stream UI
             if echo_user:
@@ -484,7 +526,8 @@ class ChatView(MDScreen):
             
             # End Stream
             check_cancelled(turn.cancelled)
-            self.bridge.end_stream(processed_response.content, turn.request_id)
+            self.bridge.end_stream(processed_response.content, turn.request_id,
+                generation=(getattr(processed_response, 'metadata', None) or {}).get('generation', {}))
 
             if self.bridge and self.voice_mode_enabled:
                 try:
@@ -517,7 +560,13 @@ class ChatView(MDScreen):
             if self.tts and processed_response.content.strip() and self.voice_mode_enabled:
                 voice_params = dict(voice_params or {})
                 language = getattr(self.core, '_language_lock', {}).get(turn.conversation_id, 'it')
-                voice_params['language'] = {'it': 'it-IT', 'en': 'en-US', 'fr': 'fr-FR', 'de': 'de-DE', 'es': 'es-ES'}.get(language, 'it-IT')
+                from allma_model.voice_system.languages import language_tag
+                voice_params['language'] = language_tag(language)
+                options = self.voice_preferences.options
+                if options['language'] != 'auto':
+                    voice_params['language'] = options['language']
+                elif getattr(self.stt, 'detected_language', None):
+                    voice_params['language'] = self.stt.detected_language
                 self.tts.speak(processed_response.content.strip(), voice_params=voice_params, flush=True)
             
 
@@ -566,8 +615,31 @@ class ChatView(MDScreen):
         if self.bridge and self.voice_mode_enabled:
             self.bridge.call_js_function('updateVoiceLevel', str(float(level)))
 
+    def _on_voice_language(self, tag):
+        if self.voice_mode_enabled and self.chat_session:
+            self.core._language_lock[self.chat_session.conversation_id] = tag.split('-')[0]
+        self._report_voice_stack_status()
+
+    def set_voice_options(self, data):
+        if self.chat_session.is_busy:
+            self._voice_state('thinking', 'Attendi la fine della risposta per cambiare lingua o voce.')
+            self._report_voice_stack_status()
+            return
+        try:
+            options = self.voice_preferences.update(data)
+            if self.stt:
+                self.stt.configure(options['language'], options['allow_service_fallback'])
+            if self.tts:
+                self.tts.stop()
+                self.tts.voice_choice = options['voice']
+            self._voice_state('idle', 'Preferenze salvate. Tocca il microfono per parlare.')
+        except Exception:
+            self._voice_state('error', 'Impossibile salvare le preferenze vocali.')
+        self._report_voice_stack_status()
+
     def set_voice_mode(self, enabled):
         self.voice_mode_enabled = enabled
+        self._report_voice_stack_status()
         if not enabled:
             if self.stt: self.stt.stop_listening(cancel=True)
             if self.tts: self.tts.stop()
@@ -575,6 +647,8 @@ class ChatView(MDScreen):
         if self.chat_session.is_busy:
             self._voice_state('thinking', 'Sto preparando la risposta…')
         elif self.stt:
+            options = self.voice_preferences.options
+            if options['language'] != 'auto': self._on_voice_language(options['language'])
             self.stt.start_listening()
         else:
             self._voice_state('error', 'Il riconoscimento vocale non è disponibile.')
@@ -591,10 +665,13 @@ class ChatView(MDScreen):
         elif self.stt.is_listening:
             self.stt.stop_listening()
         else:
+            options = self.voice_preferences.options
+            if options['language'] != 'auto': self._on_voice_language(options['language'])
             self.stt.start_listening()
 
     def suspend_voice(self, close=False):
         self.voice_mode_enabled = False
+        if close and hasattr(self, 'voice_pack'): self.voice_pack.close()
         if self.stt:
             self.stt.close() if close else self.stt.stop_listening(cancel=True)
         if self.tts:
@@ -603,8 +680,8 @@ class ChatView(MDScreen):
             self.bridge.call_js_function('hideVoiceMode')
 
     def _report_voice_stack_status(self):
-        stt_ok = (True if self.stt.is_ready else False if self.stt.last_error else None) if self.stt else False
-        tts_ok = (True if self.tts.is_ready else False if self.tts.last_error else None) if self.tts else False
+        stt_ok = (False if self.stt.last_error else True if self.stt.is_ready else None) if self.stt else False
+        tts_ok = (False if self.tts.last_error else True if self.tts.is_ready else None) if self.tts else False
         llm_ready = bool(getattr(self.core, '_llm_ready', False))
         llm_error = getattr(self.core, '_mobile_llm_error', None)
         models_dir = getattr(self.core, 'models_dir', None)
@@ -612,6 +689,13 @@ class ChatView(MDScreen):
         self.voice_stack_status = {
             'stt': stt_ok,
             'tts': tts_ok,
+            'voice_pack': {'ready': self.voice_pack.ready, 'busy': self.voice_pack.busy, 'progress': self.voice_pack.progress,
+                           'error': self.voice_pack.error} if hasattr(self, 'voice_pack') else {},
+            'voice_busy': bool(self.chat_session.is_busy) if getattr(self, 'chat_session', None) else False,
+            'options': dict(self.voice_preferences.options) if hasattr(self, 'voice_preferences') else {},
+            'language_support': getattr(self.stt, 'support', {}),
+            'detected_language': getattr(self.stt, 'detected_language', None),
+            'stt_error_code': getattr(self.stt, 'last_error_code', None),
             'stt_error': getattr(self.stt, 'last_error', None),
             'tts_error': getattr(self.tts, 'last_error', None),
             'stt_on_device': getattr(self.stt, 'on_device', False),
@@ -633,74 +717,18 @@ class ChatView(MDScreen):
             except Exception:
                 pass
     def update_learning_status(self, dt):
+        """Report observed activity; message count is not intelligence."""
         if not self.core or not self.bridge:
             return
-            
         try:
-             # --- CALCOLO REALISTICO LIFELONG LEARNING ---
-             # Recupera metriche dal profilo utente (o calcola da memoria)
-             msg_count = 0
-             days_active = 0.0
-             
-             # Tentativo 1: UserProfile
-             if hasattr(self.core, 'user_profile') and self.core.user_profile:
-                 metrics = self.core.user_profile.interaction_metrics
-                 msg_count = metrics.total_interactions
-                 # Calcola giorni attivi
-                 import time
-                 first_ts = metrics.first_interaction_timestamp
-                 days_active = (time.time() - first_ts) / 86400.0
-             
-             # Tentativo 2: Fallback su ConversationalMemory se msg_count è 0 (profilo non persistito)
-             if msg_count == 0 and hasattr(self.core, 'conversational_memory'):
-                  if hasattr(self.core.conversational_memory, 'messages'):
-                       msg_count = len(self.core.conversational_memory.messages)
-                       # Stima giorni (grezza) se non abbiamo timestamp preciso
-                       if msg_count > 0:
-                           days_active = 0.1 # Almeno iniziata
-             
-             # --- FORMULA DI EVOLUZIONE ---
-             import math
-             
-             if msg_count < 20:
-                 # FASE 0-10% (Onboarding - Primi passi)
-                 # Lineare veloce: 20 msg = 10%
-                 synergy_percent = (msg_count / 20.0) * 10.0
-             else:
-                 # FASE 10-100% (Logaritmica - La vera scalata)
-                 # log10(20) ~= 1.3  -> 10%
-                 # log10(100) = 2    -> 30%
-                 # log10(1000) = 3   -> 60%
-                 # log10(10000) = 4  -> 90%
-                 
-                 log_val = math.log10(msg_count)
-                 # Mappiamo range [1.3, 4.0] su [10, 90]
-                 # Slope ~ 30
-                 synergy_percent = 10.0 + 30.0 * (log_val - 1.301)
-                 
-                 # Bonus Tempo: +1% per ogni giorno di attività (Max 10%)
-                 time_bonus = min(10.0, days_active * 1.0)
-                 synergy_percent += time_bonus
-
-             # Cap a 100%
-             synergy_percent = min(100.0, max(0.0, synergy_percent))
-             
-             # Determina Stato
-             status_text = "Simbiosi Attiva"
-             if synergy_percent < 10: status_text = "Analisi Iniziale"
-             elif synergy_percent < 30: status_text = "Costruzione Pattern"
-             elif synergy_percent < 60: status_text = "Simbiosi Neurale" 
-             elif synergy_percent < 90: status_text = "Coscienza Condivisa"
-             else: status_text = "Unità Completa"
-             
-             # Formatta per UI (Intero)
-             final_score = int(synergy_percent)
-             
-             self.bridge.update_synergy(final_score, status_text)
-             
-        except Exception as e:
-            # print(f"Error updating learning status: {e}") # Silenzia log per pulizia
-            pass
+            memory = self.core.conversational_memory
+            with memory.lock:
+                count = sum(message.role == 'user' and
+                            (message.user_id or message.metadata.get('user_id')) == 'user_default'
+                            for message in memory.messages)
+            self.bridge.update_synergy(None, f'{count} messaggi tuoi registrati')
+        except Exception as error:
+            logging.debug('Learning activity unavailable: %s', error)
 
     def _get_diagnostics_data(self):
         """Collects system stats and soul state for the Diagnostics Panel."""
@@ -729,7 +757,7 @@ class ChatView(MDScreen):
                 stats["soul"] = {
                     "energy": getattr(eng, '_maturity', 0.0), # Reusing energy bar for Maturity
                     "chaos": getattr(eng, '_base_stability', 0.5), # Reusing chaos bar for Stability 
-                    "entropy": 0.0, # Placeholder, computed below
+                    "entropy": getattr(eng, "_last_entropy", 1.0),
                     "state_label": f"Maturity: {getattr(eng, '_maturity', 0):.2f}"
                 }
                 
@@ -782,6 +810,12 @@ class ChatView(MDScreen):
         
         return stats
 
+    def _check_proactive_tick(self, dt):
+        if not self.core or self.voice_mode_enabled or not self.core._foreground or not self.core.dream_enabled:
+            return
+        if self._proactive_future is None or self._proactive_future.done():
+            self._proactive_future = self.core.cpu_pool.submit(self.core.check_proactive_trigger)
+
     def _handle_core_output(self, data):
         """
         Handle output pushed from Core (e.g. Proactive Messages).
@@ -790,21 +824,25 @@ class ChatView(MDScreen):
         try:
             msg_type = data.get('type')
             content = data.get('content')
+            if data.get('user_id') and data['user_id'] != 'user_default':
+                return
             
             if not self.bridge:
                 print("ChatView: Cannot handle core output - Bridge not ready.")
                 return
 
-            print(f"ChatView: Handling Core Output -> {msg_type}: {content}")
+            print(f"ChatView: Core output type={msg_type}")
             
             if msg_type == 'thought':
                 # Show thought bubble
                 cleaned = content.replace('"', '\\"').replace('\n', ' ')
                 self.bridge.execute_js(f"window.showThought('{cleaned}')")
                 
-            elif msg_type == 'text':
+            elif msg_type in ('text','proactive'):
                 # Show bot message
                 self.bridge.send_message_to_js(content, 'bot')
+                if msg_type == 'proactive':
+                    self.bridge.notify_event('message')
                 
             elif msg_type == 'status':
                 # Handle Status Updates (e.g. Dreaming)
@@ -813,6 +851,8 @@ class ChatView(MDScreen):
                     self.bridge.execute_js(f"window.updateStatus('{key}', {js_val})")
 
             elif msg_type == 'dream_log':
+                if isinstance(content, dict) and content.get('phase') == 'done':
+                    self.bridge.notify_event('dream')
                 # Stream dream reasoning to the Dream Journal panel
                 import json
                 self.bridge.execute_js(f"window.handleDreamLog && window.handleDreamLog({json.dumps(content)})")

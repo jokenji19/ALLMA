@@ -250,7 +250,7 @@ class PreferenceAnalyzer:
         
         if saved_preferences and "learning_style" in saved_preferences:
             learning_style = saved_preferences["learning_style"]
-            style_value = learning_style.get("primary_style")
+            style_value = learning_style.get("primary_style", learning_style.get("style"))
             confidence = learning_style.get("confidence", 0.0)
             
             try:
@@ -480,13 +480,15 @@ class PreferenceAnalyzer:
                     if isinstance(pref_data, dict) and 'style' in pref_data:
                         cursor.execute("""
                             INSERT INTO user_preferences 
-                            (user_id, preference_type, preference_value, confidence)
-                            VALUES (?, ?, ?, ?)
+                            (user_id, preference_type, preference_value, confidence, last_updated, metadata)
+                            VALUES (?, ?, ?, ?, ?, ?)
                         """, (
                             user_id,
                             pref_type,
                             pref_data['style'],
-                            1.0  # Massima confidenza per preferenze esplicite
+                            1.0,  # Massima confidenza per preferenze esplicite
+                            datetime.now().isoformat(),
+                            "{}"
                         ))
                 
                 conn.commit()

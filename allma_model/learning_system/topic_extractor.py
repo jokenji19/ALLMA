@@ -33,35 +33,17 @@ class TopicExtractor:
             Embeddings del testo
         """
         try:
-            base_vocab = [
-                "technical", "programming", "code", "development", "python", "java", "javascript", "tecnologia", "intelligenza", "artificiale",
-                "progetto", "project", "management", "tasks", "timeline", "android", "apk", "buildozer", "kivy",
-                "learning", "education", "training", "study", "imparare", "studiare", "lezione",
-                "help", "support", "assistance", "guidance", "aiuto", "supporto", "assistenza",
-                "history", "storia", "chi era", "quando", "guerra", "impero", "napoleone",
-                "emotion", "emozione", "felice", "triste", "arrabbiato", "paura", "ansia",
-                "preference", "preferisco", "mi piace", "odio", "adoro", "colore", "colori", "chiaro", "chiari", "scuro", "scuri", "vestiti", "tessuto", "estate", "sudare",
-                "general", "conversation", "discussion", "chat", "parla", "spiega"
-            ]
-            
-            # Aggiungi il testo corrente al vocabolario
-            texts = base_vocab + [text]
-            
-            # Calcola gli embeddings
-            max_features = 40
-            self.vectorizer = SimpleTfidf(max_features=max_features)
-            embeddings = self.vectorizer.fit_transform(texts)
-            
-            # Restituisci l'embedding dell'ultimo testo (quello corrente)
-            vec = embeddings[-1]
-            if hasattr(vec, 'toarray'):
-                return vec.toarray()[0]
-            else:
-                return vec
-            
+            # Stable lexical features: every call uses the same coordinates.
+            import hashlib
+            vector = np.zeros(256, dtype=float)
+            for word in re.findall(r'\w+', text.casefold()):
+                slot = int.from_bytes(hashlib.sha256(word.encode()).digest()[:4], 'big') % len(vector)
+                vector[slot] += 1.0
+            norm = np.linalg.norm(vector)
+            return vector / norm if norm else vector
         except Exception as e:
             logging.error(f"Errore nel calcolo embeddings: {e}")
-            return np.zeros(40)
+            return np.zeros(256)
             
     def extract_topic(
         self,

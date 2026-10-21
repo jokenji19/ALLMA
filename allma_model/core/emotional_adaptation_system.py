@@ -88,20 +88,23 @@ class EmotionalAdaptationSystem:
                 result['metadata']['adapted'] = True
             return result
 
-        directive = _EMOTION_STYLE_MAP.get(emotion.lower(), "")
+        directive = ('Mantieni un tono equilibrato per emozioni miste: riconosci ciascuna emozione espressa, '
+                     'senza cancellarne una per rassicurare sull’altra e senza aggiungerne di nuove.' if details.get('mixed')
+                     else _EMOTION_STYLE_MAP.get(emotion.lower(), ""))
         if directive:
             result["system_instruction"].append(directive)
             result["metadata"]["adapted"] = True
             self._adaptations[emotion] = self._adaptations.get(emotion, 0) + 1
             logger.debug(f"[EmotionalAdaptation] Adapting for '{emotion}': {directive}")
 
+        nuance_directives = 0
         for label in list(nuances)[:4]:
             if label in _NUANCE_STYLE:
                 result['system_instruction'].append(_NUANCE_STYLE[label])
                 result['metadata']['adapted'] = True
-                break
-        if details.get('mixed'):
-            result['system_instruction'].append('Rispetta le emozioni miste, senza ridurle a un unico sentimento.')
+                nuance_directives += 1
+                if nuance_directives >= 2:
+                    break
 
         return result
 

@@ -4,9 +4,48 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1 libegl1 tesseract-ocr
+          python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements-ci.txt
+      - name: Run isolated offline tests
+        run: xvfb-run -a python tools/run_tests.py --output test-results
+      - name: Check JavaScript
+        run: |
+          node --check assets/web/script_v24.js
+          node --check assets/web/brain_view.js
+          node tests/regression/brain_view_checks.cjs
+          node tests/regression/cancel_action_checks.cjs
+          node tests/regression/completion_action_checks.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results/
+
   build:
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
@@ -15,20 +54,21 @@ jobs:
 
       - name: Build APK with Docker (Official Kivy Image)
         run: |
-          # Fix permissions for the workspace
-          chmod -R 777 .
-
           # Regenerate the embedded sources before compiling the APK.
           python3 pack_brain.py
 
           # Run buildozer inside the official Kivy Docker container
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             --volume "$PWD":/home/user/hostcwd \
+            --workdir /home/user/hostcwd \
+            --env HOME=/tmp/allma-build-home \
             --env APP_ANDROID_NDK_PATH= \
             --env APP_ANDROID_SDK_PATH= \
             --entrypoint /bin/bash \
-            kivy/buildozer \
-            -c "python3 tools/build_android_safe.py"
+            ghcr.io/kivy/buildozer@sha256:d5b9d1b5e3241fc6ec8eb78b8ecff9e975054645e26c07075c0a60d18c471c1f \
+            -c 'mkdir -p "$HOME"
+                python3 tools/build_android_safe.py'
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

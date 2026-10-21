@@ -24,7 +24,6 @@ from allma_model.core.context_understanding import ContextUnderstandingSystem
 from allma_model.core.understanding_system import AdvancedUnderstandingSystem
 from allma_model.core.reasoning_engine import ReasoningEngine, ThoughtTrace
 from allma_model.core.dream_system.dream_manager import DreamManager
-from .communication_style import CommunicationStyleAdapter
 from allma_model.user_system.user_preferences import (
     UserPreferenceAnalyzer,
     LearningStyle,
@@ -65,7 +64,7 @@ from allma_model.core.architecture.structural_core import StructuralCore
 from allma_model.core.architecture.identity_state import IdentityStateEngine
 from allma_model.core.architecture.neuroplasticity import NeuroplasticitySystem
 from allma_model.core.architecture.volition_modulator import VolitionModulator
-from allma_model.core.cognitive_pipeline import CognitivePipeline  # V6 Sprint 1
+from allma_model.core.cognitive_pipeline import CognitivePipeline, CognitiveValidationError  # V6 Sprint 1
 from allma_model.core.event_bus import EventBus, BusEvent           # V6 Sprint 2
 from allma_model.core.information_extractor import InformationExtractor
 from allma_model.core.personality_coalescence import CoalescenceProcessor
@@ -110,12 +109,20 @@ class ALLMACore:
         """
         Inizializza il core di ALLMA
         """
+        from allma_model.utils.brain_activity import BrainActivity
+        self.brain_activity = BrainActivity()
         self.logger = logging.getLogger(__name__)
         self._current_user_id = None
+        self._foreground = True
+        self._proactive_cancel = threading.Event()
+        self._proactive_attempt_at = {}
         self._dream_thread = None
         self._shutdown_event = threading.Event()
         self.mobile_mode = mobile_mode
         self.models_dir = models_dir # Store it
+        from allma_model.agency_system.action_authority import ActionAuthority
+        from allma_model.utils.cognitive_state import CognitiveStateStore
+        self.action_authority = ActionAuthority(CognitiveStateStore(db_path))
         
         # BRAIN V3: PROPRIOCEPTION
         self.proprioception = ProprioceptionSystem()
@@ -139,6 +146,10 @@ class ALLMACore:
         self.personality = personality or Personality()
         self.topic_extractor = topic_extractor or TopicExtractor()
         self.temperature_monitor = TemperatureMonitor()
+        from allma_model.agency_system.decision_runtime import DecisionRuntime
+        self.decision_runtime = DecisionRuntime(models_dir, CognitiveStateStore(db_path),
+            temperature=lambda: self.temperature_monitor.get_temperatures().get('battery'))
+        self._owns_decision_runtime = True
         # Auto-detect Android: jnius è disponibile solo su Android (Buildozer)
         _is_android = False
         try:
@@ -157,6 +168,7 @@ class ALLMACore:
         self.db_path = db_path
         self.user_profile = UserProfile(user_id="user_default") # Profilo attivo di default
         self._lock = threading.RLock()
+        self._turn_lock = threading.Lock()
         self._settings_path = os.path.join(os.path.dirname(os.path.abspath(db_path)), 'allma_settings.json')
         try:
             import json
@@ -221,13 +233,15 @@ class ALLMACore:
             journal_path=os.path.join(os.path.dirname(os.path.abspath(db_path)), 'data', 'dream_journal.json')
         )
         self.dream_manager.user_active_event = self._user_active  # priorità chat
+        self.dream_manager.decision_runtime = self.decision_runtime
 
 
         
         # Inizializza Proactive Agency
         self.proactive_agency = ProactiveAgency(
-            memory_system=self.memory_system,
-            reasoning_engine=self.reasoning_engine
+            memory_system=self.conversational_memory,
+            reasoning_engine=self.reasoning_engine,
+            review_store=self.dream_manager.review_store
         )
         
         # Inizializza Vision System (Occhi)
@@ -279,9 +293,9 @@ class ALLMACore:
             neuroplasticity_v5=self.neuroplasticity_v5,
             identity_engine_v5=self.identity_engine_v5,
             volition_v5=self.volition_v5,
+            require_structural=True,
         )
 
-        self.human_style_adapter = CommunicationStyleAdapter()
         
         # Inizializza Pattern Recognition (Legacy Awakened — con guard se non disponibile)
         self.pattern_recognizer = PatternRecognitionSystem() if PatternRecognitionSystem else None
@@ -297,7 +311,7 @@ class ALLMACore:
         
         # Inizializza Advanced Context & Info Extraction
         try:
-            self.context_system = ContextUnderstandingSystem()
+            self.context_system = ContextUnderstandingSystem(load_models=not self.mobile_mode)
         except Exception as e:
             logging.error(f"Failed to initialize ContextUnderstandingSystem: {e}")
             self.context_system = None
@@ -458,6 +472,14 @@ class ALLMACore:
             self.cognitive_tracker = None
         
         logging.info(f"🎯 ModuleOrchestrator initialized with {len(self.module_orchestrator.modules)} modules")
+        from allma_model.core.delivery_updates import DeliveryUpdates
+        self.delivery_updates = None
+        self.delivery_recovery = {'status':'unavailable'}
+        try:
+            self.delivery_updates = DeliveryUpdates(self)
+            self.delivery_recovery = self.delivery_updates.recover(synchronize=True)
+        except Exception as error:
+            logging.warning('Delivery recovery unavailable: %s',type(error).__name__)
         
         # 3. Avvia il Garbage Collector della Memoria (Background Coroutine)
         # Sostituisce il vecchio thread bloccante con un task async
@@ -469,12 +491,17 @@ class ALLMACore:
         self.event_bus.register_consumer(self._handle_bus_event)
         asyncio.run_coroutine_threadsafe(self.event_bus.consume_loop(), self.async_loop)
         logging.info("✅ [V6.2] EventBus avviato e consumer registrato.")
+        from allma_model.utils.backup_runtime import BackupRuntime
+        self.backups = BackupRuntime(self)
+        self.backups.start()
 
     def close(self):
         """Stop schedulers and release the executor; may wait for worker completion."""
         if self._shutdown_event.is_set():
             return
         self._shutdown_event.set()
+        if getattr(self,'backups',None) is not None:self.backups.close()
+        self._proactive_cancel.set()
         self.dream_enabled = False
         self._user_active.set()  # Ask any dream inference to yield.
         if self.dream_manager:
@@ -494,6 +521,8 @@ class ALLMACore:
         if self._dream_thread is not None:
             self._dream_thread.join(timeout=2)
         self.cpu_pool.shutdown(wait=True, cancel_futures=True)
+        if getattr(self, '_owns_decision_runtime', False):
+            self.decision_runtime.close()
         with self._lock:
             if self._owns_llm and getattr(self, '_llm', None) is not None:
                 self._llm.close()
@@ -531,7 +560,7 @@ class ALLMACore:
                         'content': text,
                         'source': event.source,
                     })
-                    logging.info(f"[EventBus] ✉️ Proactive message routed to UI: {text[:60]}...")
+                    logging.info("[EventBus] Proactive message routed to UI")
 
             elif event.event_type == 'dream_insight':
                 # Un insight elaborato durante il sogno
@@ -539,7 +568,7 @@ class ALLMACore:
                 if insight:
                     # Per ora lo logghiamo; in futuro potrà essere offerto all'utente
                     # come "ho pensato a qualcosa mentre riposavo..."
-                    logging.info(f"[EventBus] 💭 Dream insight stored: {insight[:80]}...")
+                    logging.info("[EventBus] Dream insight stored")
 
             elif event.event_type == 'soul_state_change':
                 # La SoulCore ha avuto una transizione di stato significativa
@@ -598,109 +627,40 @@ class ALLMACore:
             self.preload_in_progress = False
 
     async def _async_memory_gc_loop(self):
+        """Release rebuildable search caches under measured memory pressure.
+
+        Never invoke the LLM or delete autobiographical records as RAM cleanup.
         """
-        Coroutine in background che ottimizza la memoria usando Isteresi (Hysteresis Memory GC).
-        - Attivazione: RAM Libera < 500MB
-        - Target di rilascio: Spazio sufficiente per tornare sopra i 700MB
-        - Cooldown: Almeno 1 ora tra le compattazioni per evitare battery thrashing.
-        """
-        import time
         import asyncio
-        from datetime import datetime, timedelta
-        
-        # Cooldown management
-        last_gc_time = datetime.min
-        cooldown_hours = 1
-        next_user = 0
-        
-        # Hysteresis Thresholds (in MB)
-        ACTIVATION_THRESHOLD_MB = 350 # Valore adattivo discusso dall'utente
-        
-        while True:
-            # Polling leggerissimo grazie ad asyncio (non blocca un Thread OS dedicato)
-            await asyncio.sleep(60) # Controllo ogni minuto
-            
-            if self._user_active.is_set(): 
-                continue # Evita di macinare RAM mentre l'utente chatta
-            from allma_model.utils.background_work import power_allows_background
-            if not power_allows_background(self.system_monitor) or self.dream_manager.is_dreaming:
+        import time
+        from allma_model.utils.background_work import power_allows_background
+        last_release = 0.0
+        while not self._shutdown_event.is_set():
+            await asyncio.sleep(60)
+            if (self._user_active.is_set() or self.dream_manager.is_dreaming
+                    or not power_allows_background(self.system_monitor)):
                 continue
-                
-            # Verifica Pressione RAM
-            try:
-                metrics = self.system_monitor.get_metrics()
-                free_ram = metrics.get('ram_free', 1000)
-            except Exception:
-                free_ram = 1000 # Salvo default
-                
-            now = datetime.now()
-            time_since_last_gc = now - last_gc_time
-            
-            # Condizioni di Trigger:
-            # 1. Trascorsa 1 ora (Default Time-based fallback)
-            # 2. RAM sotto la soglia di emergenza (Adaptive Pressure override)
-            trigger_from_time = time_since_last_gc > timedelta(hours=cooldown_hours)
-            trigger_from_pressure = free_ram < ACTIVATION_THRESHOLD_MB
+            metrics = self.system_monitor.get_metrics()
+            free_ram = metrics.get('ram_free')
+            if not isinstance(free_ram, (int, float)) or free_ram >= 350:
+                continue
+            now = time.monotonic()
+            if last_release and now - last_release < 600:
+                continue
+            engine = self.conversational_memory.vector_engine
+            if engine is not None:
+                released = await asyncio.get_running_loop().run_in_executor(
+                    self.cpu_pool, engine.release_cache)
+                logging.info('[Memory maintenance] Released %s cached search vectors; history preserved', released)
+                last_release = now
 
-            if not (trigger_from_time or trigger_from_pressure):
-                continue
-                
-            # Se siamo stati triggerati per pressione RAM ravvicinata, evadiamo il cooldown di 1 ora
-            # ma forziamo almeno 10 minuti di pausa fisica per evitare il loop istantaneo
-            if trigger_from_pressure and time_since_last_gc < timedelta(minutes=10):
-                continue
-                
-            logging.info(f"🧹 [Garbage Collector] Allerta Memoria. Free RAM: {free_ram:.1f}MB. Avvio pulizia...")
-            try:
-                # Cerca i messaggi più vecchi di 30 giorni
-                cutoff_date = datetime.now() - timedelta(days=30)
-                users = list(self.conversational_memory.conversations.keys())
-                if not users:
-                    continue
-                user_id = users[next_user % len(users)]
-                next_user += 1
-                from allma_model.utils.background_work import BackgroundCancellation
-                background_cancel = BackgroundCancellation(self._shutdown_event, self._user_active, self.system_monitor)
-                
-                # Questa operazione pesante CPU verrà in futuro spostata sul cpu_pool, ma per ora 
-                # usiamo un callback per non congelare l'intero sistema llm
-                def llm_extractor(prompt_text):
-                    check_cancelled(background_cancel)
-                    if hasattr(self, '_llm') and self._llm:
-                        return self._llm.generate(prompt_text, max_tokens=150, cancel_event=background_cancel)
-                    else:
-                        return "{}"
-
-                # Eseguiamo la pulizia pesante NON nel loop async main, ma offloadandola a un Worker Thread
-                loop = asyncio.get_running_loop()
-                deleted_count = await loop.run_in_executor(
-                    self.cpu_pool,
-                    self.conversational_memory.condense_and_clear_old,
-                    user_id,
-                    cutoff_date,
-                    llm_extractor,
-                    background_cancel
-                )
-                
-                if deleted_count > 0:
-                    logging.info(f"✨ [Garbage Collector] Rilascio Target completato. {deleted_count} conversazioni compattate.")
-                
-                # Aggiorna orologio cooldown
-                last_gc_time = datetime.now()
-                
-            except GenerationCancelled:
-                logging.info('[Memory maintenance] Yielding to user or power constraints')
-                last_gc_time = datetime.now()
-            except Exception as e:
-                logging.error(f"[Garbage Collector] Eccezione bloccante: {e}")
-                
     def update_user_identity(self, name: str, age: int):
         """Aggiorna l'identità dell'utente (nome ed età)"""
         if self.user_profile:
             self.user_profile.name = name
             self.user_profile.age = age
             self._save_settings()
-            logging.info(f"👤 Profilo Utente Aggiornato: Nome={name}, Età={age}")
+            logging.info("User profile updated")
         
     def start_conversation(
         self,
@@ -769,6 +729,7 @@ class ALLMACore:
                 self.reasoning_engine.llm = self._llm
                 self.dream_manager.llm_wrapper = self._llm
                 self.dream_manager.tot.llm = self._llm
+                self.dream_manager.decision_runtime = self.decision_runtime
                 logging.info("✅ Mobile Engine (Gemma) Activated & Linked to Reasoning Engine.")
             else:
                 logging.error("❌ Failed to load Mobile Engine.")
@@ -783,9 +744,13 @@ class ALLMACore:
         if not getattr(self, '_llm_ready', False) and not getattr(self, '_mobile_llm_error', None):
              self._mobile_llm_error = "llama-cpp-python import failed (LLAMA_CPP_AVAILABLE=False). Check logcat for dlopen errors."
 
-    def probe_model(self, message, max_tokens=256, thought_budget=64, seed=20261012, cancel_event=None):
+    def probe_model(self, message, max_tokens=256, thought_budget=64, seed=20261012, cancel_event=None, support_strategy='minimal', reasoning_mode='bounded'):
         """Diagnostic minimal dialogue; never write to ALLMA personal state."""
         import uuid
+        if support_strategy not in ('minimal', 'role_map'):
+            raise ValueError('Unknown diagnostic support strategy')
+        if reasoning_mode not in ('bounded','natural'):
+            raise ValueError('Unknown diagnostic reasoning mode')
         from allma_model.utils.generation_control import check_cancelled
         if not isinstance(message, str) or not message.strip() or type(max_tokens) is not int or max_tokens < 2:
             raise ValueError('A text request and positive token budget are required')
@@ -799,17 +764,33 @@ class ALLMACore:
                 engine = getattr(self, '_llm', None)
                 if engine is None or not callable(getattr(type(engine), 'prepare_chat', None)):
                     raise RuntimeError('A native model binding is required')
+                probe_instruction = 'Rispondi alla richiesta in italiano. Segui il formato richiesto.'
+                if support_strategy == 'role_map':
+                    from allma_model.utils.support_roles import role_instruction
+                    probe_instruction += '\n' + role_instruction(message)
                 prepared = engine.prepare_chat([
-                    {'role':'system','content':'Rispondi alla richiesta in italiano. Segui il formato richiesto.'},
+                    {'role':'system','content':probe_instruction},
                     {'role':'user','content':message}],max_tokens)
                 request_id = 'MODEL_PROBE:'+uuid.uuid4().hex
+                closure = {'tail':'','observed':False}
+                def observe_boundary(token):
+                    closure['tail'] = (closure['tail']+token)[-32:]
+                    closure['observed'] |= '</think>' in closure['tail']
+                if reasoning_mode == 'natural' and not prepared.reasoning:
+                    raise RuntimeError('Natural reasoning diagnostic requires a thinking model')
                 answer = engine.generate(prompt=prepared.prompt,max_tokens=max_tokens,
-                    thought_budget=thought_budget if prepared.reasoning else None,
-                    **engine.binding.sampling(), stop=list(prepared.stops),native_prompt=True,
+                    thought_budget=thought_budget if prepared.reasoning and reasoning_mode=='bounded' else None,
+                    **({'callback':observe_boundary} if reasoning_mode=='natural' else {}),
+                    **engine.binding.sampling(), repeat_penalty=1.10, repeat_last_n=128,
+                    stop=list(prepared.stops),native_prompt=True,
                     request_id=request_id,conversation_id=request_id,seed=seed,cancel_event=cancel_event)
+                generation = dict(engine.get_generation_meta(request_id))
+                if reasoning_mode == 'natural':
+                    generation.update(reasoning_mode='natural',reasoning_close_observed=closure['observed'],
+                                      answer_budget_reserved=False,shared_token_budget=max_tokens)
                 return {'source':'isolated_model_probe','answer':answer,
                     'architecture':engine.binding.architecture,
-                    'generation':engine.get_generation_meta(request_id)}
+                    'generation':generation}
             finally:
                 self._user_active.clear()
 
@@ -1338,7 +1319,207 @@ class ALLMACore:
                 return cached[0]
             raise
 
-    def process_message(
+    def process_message(self, user_id, conversation_id, message, context=None,
+                        stream_callback=None, cancel_event=None, **kwargs):
+        """Admit one foreground turn, allowing queued callers to cancel."""
+        if not user_id or not conversation_id or not message:
+            raise ValueError("User ID, conversation ID e messaggio sono richiesti")
+        from allma_model.utils.state_restore import PENDING
+        backup_runtime = getattr(self,'backups',None)
+        marker = (backup_runtime.store.root.parent/PENDING
+                  if backup_runtime is not None and backup_runtime.store.root.name=='allma_state' else None)
+        if marker is not None and marker.exists():
+            return ProcessedResponse(content='Ripristino preparato. Chiudi e riapri ALLMA per completarlo.',
+                is_valid=False,metadata={'generation':{'status':'restore_pending','llm_used':False}})
+        if backup_runtime is not None:backup_runtime.interrupt()
+        while not self._turn_lock.acquire(timeout=0.05):
+            if backup_runtime is not None:backup_runtime.interrupt()
+            check_cancelled(cancel_event)
+            if self._shutdown_event.is_set():
+                raise RuntimeError('ALLMA is closed')
+        admitted = False
+        try:
+            check_cancelled(cancel_event)
+            if marker is not None and marker.exists():
+                return ProcessedResponse(content='Ripristino preparato. Chiudi e riapri ALLMA per completarlo.',
+                    is_valid=False,metadata={'generation':{'status':'restore_pending','llm_used':False}})
+            with self._lock:
+                if self._shutdown_event.is_set():
+                    raise RuntimeError('ALLMA is closed')
+                if getattr(self, '_model_switching', False):
+                    return ProcessedResponse(content='Sto collegando il nuovo modello. Attendi il completamento.',
+                        is_valid=False, metadata={'generation': {'status':'model_switching','llm_used':False}})
+                if getattr(self, '_benchmark_active', False):
+                    return ProcessedResponse(content='È in corso il benchmark. Interrompilo per riprendere la conversazione.',
+                        is_valid=False, metadata={'generation': {'status':'benchmark_busy','llm_used':False}})
+                self._user_active.set()
+                admitted = True
+            self.brain_activity.begin()
+            try:
+                updates = getattr(self, 'delivery_updates', None)
+                if updates is not None:
+                    self.delivery_recovery = updates.recover()
+                result = self._process_message_turn(user_id, conversation_id, message, context,
+                                                  stream_callback, cancel_event, **kwargs)
+                self.brain_activity.finish('completed' if result.is_valid else 'failed')
+                return result
+            except GenerationCancelled:
+                self.brain_activity.finish('cancelled')
+                raise
+            except BaseException:
+                self.brain_activity.finish('failed')
+                raise
+        finally:
+            if admitted:
+                self._user_active.clear()
+            self._turn_lock.release()
+
+    def _store_user_message(self, conversation_id, content, metadata, user_id, response_context=None):
+        from allma_model.core.delivery_updates import DeliveryUpdates
+        if self.delivery_updates is None:
+            self.delivery_updates = DeliveryUpdates(self)
+        metadata = dict(metadata or {})
+        metadata['experience_update'] = self.delivery_updates.prepare_user(
+            user_id,conversation_id,content,response_context)
+        return self.brain_activity.call('storage', self.conversational_memory.store_message,
+            conversation_id,content,metadata,'user',user_id)
+
+    def _observe_emotional_growth(self, user_id, conversation_id, message, response_context=None):
+        # Observe only a durably stored user event, never an answer or a dream.
+        with self.conversational_memory.lock:
+            event = next((m for m in reversed(self.conversational_memory.messages)
+                          if m.role == 'user' and m.user_id == user_id
+                          and m.conversation_id == conversation_id and m.content == message), None)
+        if event is None:
+            return {'status': 'not_stored'}
+        try:
+            if event.metadata.get('experience_update'):
+                return self.delivery_updates.observed_user(event.metadata['experience_update'])
+            return self.brain_activity.call('coalescence', self.coalescence_processor.observe_interaction,
+                user_id, conversation_id + ':' + event.timestamp.isoformat(), message,
+                **({'response_context':response_context} if response_context is not None else {}))
+        except Exception as error:
+            logging.warning('Emotional coalescence unavailable: %s', type(error).__name__)
+            return {'status': 'unavailable'}
+
+    def _finish_grounded_turn(self, user_id, conversation_id, message, grounded,
+                              cancel_event=None, stream_callback=None, decision=None, personality_response=None, tool_action=None):
+        """Persist and deliver a host-grounded answer once, with explicit provenance."""
+        answer, source, evidence = grounded
+        text_tool = source in ('verified_text_count', 'text_count_clarification', 'text_count_unavailable')
+        topic = 'tool_learning' if tool_action else 'text_count' if text_tool else 'calculation' if source in ('verified_calculation','calculation_error') else 'personal_context'
+        self.brain_activity.emit('tools' if text_tool or source in ('verified_calculation','calculation_error') else
+                                 'identity' if source == 'origin_identity' else 'personality_style' if source.startswith('personality_') else 'memory','completed')
+        check_cancelled(cancel_event)
+        valid_grounded = source not in ('calculation_error', 'text_count_unavailable', 'text_count_clarification')
+        metadata = {'is_valid': valid_grounded, 'identity_policy': POLICY_VERSION,
+                    'source': source, 'evidence': evidence, 'user_id': user_id,
+                    'knowledge_verified': source in ('verified_calculation', 'verified_text_count'),
+                    'generation': {'status':source, 'llm_used':False}}
+        if decision is not None:
+            metadata['decision'] = decision
+        if source in ('literal_user_memory', 'literal_memory_absent', 'literal_memory_revoked', 'memory_clarification',
+                      'literal_user_declaration_ack', 'literal_user_update_ack', 'literal_user_revocation_ack',
+                      'personal_fact_statement_ack', 'personal_fact_revocation_ack', 'personal_fact_revoked',
+                      'personal_fact_clarification', 'user_declaration'):
+            import hashlib
+            metadata['memory_recall'] = {
+                'method':('scoped_empty_lookup' if source == 'literal_memory_absent' else
+                          'literal_event_history' if source in ('literal_memory_revoked', 'personal_fact_revoked') else
+                          'literal_user_control' if source.endswith('_ack') else 'literal_declaration'), 'world_truth_verified':False,
+                'evidence_sha256':[hashlib.sha256(text.encode()).hexdigest() for text in evidence],
+                'ambiguity':source in ('memory_clarification', 'personal_fact_clarification'),
+                'scope':'available_user_declarations_and_scoped_lookup' if source == 'literal_memory_absent' else 'available_user_declarations'}
+        self._store_user_message(conversation_id, message,
+            {'source': 'personality_response_feedback' if personality_response else 'user_statement'}, user_id,
+            response_context=personality_response)
+        metadata['emotional_growth'] = self._observe_emotional_growth(user_id, conversation_id, message, personality_response)
+        tool_learner = getattr(getattr(self, 'meta_learner', None), 'tool_learning', None)
+        if tool_action is not None:
+            metadata['tool_feedback_target'] = tool_action.get('target')
+            try:
+                if tool_learner is None:
+                    raise RuntimeError('Tool learning unavailable')
+                kind = tool_action['kind']
+                if kind == 'feedback':
+                    outcome = self.brain_activity.call('meta_learning', tool_learner.feedback,
+                        user_id, tool_action['target'], tool_action['positive'])
+                    if outcome['status'] not in ('feedback_recorded', 'duplicate_feedback'):
+                        raise RuntimeError('Tool feedback target unavailable')
+                    answer = ('Ho registrato la conferma: servirà a valutare questa strategia, senza cambiare il risultato del calcolo.'
+                              if tool_action['positive'] else 'Ho registrato la correzione: questo esempio non sosterrà più la strategia appresa.')
+                elif kind == 'reset':
+                    outcome = self.brain_activity.call('meta_learning', tool_learner.reset, user_id)
+                    answer = 'Ho azzerato le strategie di conteggio apprese. Le conversazioni restano nella tua memoria.'
+                else:
+                    view = self.brain_activity.call('meta_learning', tool_learner.view, user_id)
+                    outcome = {'status': 'view', **view}
+                    count = view['confirmed_tasks']
+                    total = sum(view['executions'].values())
+                    answer = f'Ho registrato {total} operazioni esatte. Ho {count} esempi diversi di conteggio con un criterio scelto da te e una tua conferma esplicita.'
+                    if view['suggested_overlap'] is None:
+                        answer += ' Non emerge ancora una strategia abbastanza sostenuta da proporti.'
+                    else:
+                        mode = 'includere' if view['suggested_overlap'] else 'escludere'
+                        answer += f' Posso proporti di {mode} le sovrapposizioni nei casi simili, chiedendoti conferma ogni volta.'
+                metadata['tool_learning'] = outcome
+            except Exception as error:
+                logging.warning('Tool strategy update unavailable: %s', type(error).__name__)
+                answer = 'Non sono riuscita a leggere o aggiornare le strategie apprese. Non considero salvato questo aggiornamento.'
+                valid_grounded = False;metadata['is_valid'] = False
+                metadata['tool_learning'] = {'status': 'unavailable'}
+        if personality_response is not None:
+            outcome = metadata['emotional_growth'].get('personality_expression',{}).get('outcome_feedback',{})
+            metadata['personality_feedback'] = outcome
+            metadata['personality_feedback_target'] = personality_response
+            if outcome.get('status') not in ('feedback_recorded','feedback_corrected','duplicate_feedback','weak_acknowledgement'):
+                answer = 'Ho salvato il messaggio, ma non sono riuscita a registrare il riscontro sul modo di rispondere.'
+                valid_grounded = False
+                metadata['is_valid'] = False
+        if source == 'personality_style_control':
+            outcome = metadata['emotional_growth'].get('personality_expression',{}).get('status')
+            if outcome not in ('preference_saved','preference_revoked','preferences_reset'):
+                answer = 'Ho salvato il messaggio, ma non sono riuscita ad aggiornare la preferenza di stile.'
+                valid_grounded = False
+                metadata['is_valid'] = False
+        if source.startswith('personality_'):
+            metadata['personality_expression'] = self.coalescence_processor.expression_view(user_id)
+
+        if source == 'personal_emotion_meaning' and metadata['emotional_growth']['status'] in {'unavailable', 'meaning_limit'}:
+            answer = 'Ho salvato la tua dichiarazione, ma non sono riuscita ad aggiornare il significato emotivo appreso.'
+            valid_grounded = False
+            metadata['is_valid'] = False
+        self.memory_system.store_interaction(
+            user_id=user_id,
+            interaction={'content': message, 'emotion': 'neutral',
+                         'topics': [topic], 'timestamp': datetime.now()},
+            metadata={'conversation_id': conversation_id, 'source': 'user_statement'})
+        check_cancelled(cancel_event)
+        if metadata['knowledge_verified'] and tool_learner is not None:
+            try:
+                descriptor = tool_learner.descriptor(user_id, source, evidence, verified=True)
+                if descriptor:
+                    metadata['tool_experience'] = descriptor
+                    metadata['delivery_update'] = self.delivery_updates.prepare_tool(user_id,conversation_id,message,answer,descriptor)
+            except Exception as error:
+                logging.warning('Tool experience preparation unavailable: %s', type(error).__name__)
+                metadata['tool_learning'] = {'status': 'unavailable'}
+        self.brain_activity.call('storage', self.conversational_memory.store_message,
+            conversation_id, answer, metadata, 'assistant', user_id)
+        if metadata.get('tool_experience'):
+            try:
+                recovery = self.delivery_updates.delivered(metadata['delivery_update'])
+                metadata['tool_learning'] = {'status':'observed' if recovery['status']=='completed' else 'not_saved','recovery':recovery}
+            except Exception as error:
+                logging.warning('Tool experience save unavailable: %s', type(error).__name__)
+                metadata['tool_learning'] = {'status': 'not_saved'}
+        if stream_callback:
+            stream_callback({'type': 'answer', 'content': answer})
+        logging.info('[Identity] Grounded response source=%s', source)
+        return ProcessedResponse(content=answer, is_valid=valid_grounded, emotion='neutral',
+                                 topics=[topic], metadata=metadata)
+
+    def _process_message_turn(
         self,
         user_id: str,
         conversation_id: str,
@@ -1372,6 +1553,7 @@ class ALLMACore:
                                      is_valid=False, metadata={'generation': {'status': 'benchmark_busy', 'llm_used': False}})
         try:
             self._current_user_id = user_id
+            self._proactive_cancel.set()
             identity_state = None
             # Segnala al Dream System: utente attivo → cedi il LLM
             with self._lock:
@@ -1391,47 +1573,113 @@ class ALLMACore:
                             'source': 'communication_preference', 'user_id': user_id,
                             'delivery_mode': delivery_request,
                             'generation': {'status': 'preference_saved', 'llm_used': False}}
-                self.conversational_memory.store_message(conversation_id, message,
-                    {'source': 'user_statement'}, 'user', user_id)
-                self.conversational_memory.store_message(conversation_id, answer, metadata, 'assistant', user_id)
+                self._store_user_message(conversation_id, message, {'source': 'user_statement'}, user_id)
+                metadata['emotional_growth'] = self._observe_emotional_growth(user_id, conversation_id, message)
+                self.brain_activity.call('storage', self.conversational_memory.store_message,conversation_id, answer, metadata, 'assistant', user_id)
                 if stream_callback:
                     stream_callback({'type': 'answer', 'content': answer})
                 return ProcessedResponse(content=answer, is_valid=True, emotion='neutral',
                                          topics=['communication_preference'], metadata=metadata)
             from allma_model.utils.exact_calculation import calculation_reply
-            from allma_model.utils.runtime_capabilities import capability_reply
-            capability_history = [m for m in self.conversational_memory.get_conversation_history(conversation_id)
-                                  if (m.user_id or m.metadata.get('user_id')) == user_id and history_eligible(m)]
-            grounded = (calculation_reply(message)
+            from allma_model.utils.exact_text import text_count_reply, count_request
+            from allma_model.utils.runtime_capabilities import capability_reply, self_description_reply
+            attempt_history = [m for m in self.conversational_memory.get_conversation_history(conversation_id)
+                               if (m.user_id or m.metadata.get('user_id')) == user_id]
+            capability_history = [m for m in attempt_history if history_eligible(m)]
+            from allma_model.learning_system.tool_strategy_learning import control as tool_control, feedback_target as tool_feedback_target, feedback_signal as tool_feedback_signal
+            learning_control = tool_control(message)
+            tool_feedback = tool_feedback_signal(message)
+            tool_target = tool_feedback_target(attempt_history) if tool_feedback else None
+            if learning_control or tool_target is not None:
+                action = {'kind': learning_control} if learning_control else {'kind':'feedback', 'target':tool_target, 'positive':tool_feedback == 'positive'}
+                source = 'tool_learning_feedback' if tool_target is not None else 'tool_learning_' + learning_control
+                return self._finish_grounded_turn(user_id, conversation_id, message,
+                    ('', source, []), cancel_event=cancel_event, stream_callback=stream_callback, tool_action=action)
+            tool_learner = getattr(getattr(self, 'meta_learner', None), 'tool_learning', None)
+            def tool_suggestion():
+                try:
+                    return self.brain_activity.call('meta_learning', tool_learner.view, user_id) if tool_learner else None
+                except Exception as error:
+                    logging.warning('Tool strategy suggestion unavailable: %s', type(error).__name__)
+                    return None
+            literal_memory = None
+            literal_lookup = None
+            literal_decision = None
+            if not getattr(self, '_disable_literal_memory_recall', False):
+                from allma_model.utils.literal_recall import literal_code_reply, literal_absence_reply, is_literal_request, literal_statement_reply
+                from allma_model.core.autobiographical_identity import user_events
+                literal_memory = (literal_statement_reply(message)
+                    or literal_code_reply(message, lambda: user_events(self.conversational_memory, user_id)))
+                if literal_memory is None and is_literal_request(message):
+                    from allma_model.agency_system.operational_actions import memory_step
+                    check_cancelled(cancel_event)
+                    literal_decision = {'domain':'dialogue_route', 'mode':'operational',
+                        'status':'host_required', 'choice':'memory', 'source':'literal_memory_request',
+                        'total_ms':0., 'elapsed_ms':0.}
+                    literal_lookup = self.brain_activity.call('memory', memory_step, self, user_id, message, literal_decision, cancel_event)
+                    check_cancelled(cancel_event)
+                    literal_decision['action_cycle'] = literal_lookup[1]
+                    literal_memory = literal_absence_reply(message,
+                        lambda: user_events(self.conversational_memory, user_id), *literal_lookup)
+            from allma_model.core.personality_development import (controls as personality_controls,
+                self_description_question, describe as describe_personality,
+                preferences_question, describe_preferences, history_eligible as personality_history_eligible)
+            style_control = personality_controls(message)
+            style_grounded = None
+            from allma_model.core.personality_outcomes import feedback_signal,feedback_target
+            style_signal = feedback_signal(message)
+            style_target = feedback_target(attempt_history[-1] if attempt_history else None,user_id,style_signal)
+            if style_target is not None:
+                style_ack = ('Prego.' if style_signal['kind']=='weak_ack' else
+                             'Ho registrato che questo modo di rispondere ti è stato utile in questo contesto.' if style_signal['positive'] else
+                             'Ho registrato che questo modo di rispondere non ti è stato utile in questo contesto.')
+                return self._finish_grounded_turn(user_id,conversation_id,message,
+                    (style_ack,'personality_response_feedback',[]),cancel_event=cancel_event,
+                    stream_callback=stream_callback,personality_response=style_target)
+            if style_control:
+                style_ack = {'set':'Ho registrato la tua preferenza di stile.',
+                             'revoke':'Ho rimosso quella preferenza di stile.',
+                             'reset':'Ho azzerato le preferenze di stile apprese con te.'}[style_control['action']]
+                style_grounded = (style_ack, 'personality_style_control', [])
+            if not style_grounded and self_description_question(message):
+                style_grounded = (describe_personality(self.coalescence_processor.expression_view(user_id),
+                    self.coalescence_processor.emotion_growth_view(user_id)), 'personality_self_description', [])
+            if not style_grounded and preferences_question(message):
+                style_grounded = (describe_preferences(self.coalescence_processor.expression_view(user_id)),
+                                  'personality_style_summary', [])
+            grounded = (style_grounded or literal_memory or calculation_reply(message)
+                        or text_count_reply(message, history=attempt_history, suggestion=tool_suggestion, execute=lambda request:
+                            self.brain_activity.call('tools', count_request, request))
+                        or self_description_reply(message, self, attempt_history, user_id=user_id)
                         or capability_reply(message, self, capability_history)
                         or grounded_reply(message, self.conversational_memory, user_id, self.user_profile))
+            if grounded is None:
+                from allma_model.emotional_system.relational_perception import boundary_reply
+                grounded = boundary_reply(message)
             if grounded is not None:
-                answer, source, evidence = grounded
-                check_cancelled(cancel_event)
-                valid_grounded = source != 'calculation_error'
-                metadata = {'is_valid': valid_grounded, 'identity_policy': POLICY_VERSION,
-                            'source': source, 'evidence': evidence, 'user_id': user_id,
-                            'knowledge_verified': source == 'verified_calculation',
-                            'generation': {'status':source, 'llm_used':False}}
-                self.conversational_memory.store_message(
-                    conversation_id, message, {'source': 'user_statement'}, 'user', user_id)
-                self.memory_system.store_interaction(
-                    user_id=user_id,
-                    interaction={'content': message, 'emotion': 'neutral',
-                                 'topics': ['calculation' if source in ('verified_calculation','calculation_error') else 'personal_context'], 'timestamp': datetime.now()},
-                    metadata={'conversation_id': conversation_id, 'source': 'user_statement'})
-                check_cancelled(cancel_event)
-                self.conversational_memory.store_message(
-                    conversation_id, answer, metadata, 'assistant', user_id)
-                if stream_callback:
-                    stream_callback({'type': 'answer', 'content': answer})
-                logging.info('[Identity] Grounded response source=%s', source)
-                return ProcessedResponse(content=answer, is_valid=valid_grounded, emotion='neutral',
-                                         topics=['calculation' if source in ('verified_calculation','calculation_error') else 'personal_context'], metadata=metadata)
+                return self._finish_grounded_turn(user_id, conversation_id, message, grounded,
+                    cancel_event=cancel_event, stream_callback=stream_callback, decision=literal_decision)
 
             recall_history = [m for m in self.conversational_memory.get_conversation_history(conversation_id)
-                              if (m.user_id or m.metadata.get('user_id')) == user_id and history_eligible(m)]
+                              if (m.user_id or m.metadata.get('user_id')) == user_id and history_eligible(m)
+                              and personality_history_eligible(m)]
             recall_context = {'context': context or {}, 'language': self._detect_language_request(message) or self._language_lock.get(conversation_id) or self._guess_language_code(message)}
+            recall_context['personality_expression_version'] = self.coalescence_processor.expression_revision(user_id)
+            from allma_model.emotional_system.relational_perception import VERSION as RELATIONAL_VERSION
+            recall_context['relational_policy_version'] = RELATIONAL_VERSION
+            from allma_model.utils.dialogue_task import writing_task, TASK_VERSION
+            dialogue_task = writing_task(message)
+            if dialogue_task is not None:
+                recall_context['dialogue_task_version'] = TASK_VERSION
+            personal_view = None
+            if not getattr(self, '_disable_literal_memory_recall', False):
+                from allma_model.utils.personal_facts import PersonalFacts
+                from allma_model.core.autobiographical_identity import user_events
+                personal_view = PersonalFacts(user_events(self.conversational_memory, user_id))
+                if personal_view.fields:
+                    # A correction in another conversation invalidates previously
+                    # confirmed answers that depended on the old personal state.
+                    recall_context['personal_memory_version'] = personal_view.version()
             review_version = None
             try:
                 review_version = self.dream_manager.review_store.version(user_id)
@@ -1443,12 +1691,24 @@ class ALLMACore:
                 recall_context['dream_review_version'] = 'unavailable'
             recall_history = [m for m in recall_history if self._reviewed_history_eligible(m, review_version)]
             from allma_model.utils.dialogue_continuity import DialogueContinuity
-            continuity = DialogueContinuity(message, recall_history)
+            continuity = DialogueContinuity(message, recall_history, attempt_history=attempt_history)
             recall_key = self.answer_recall.key(user_id, message, recall_history, recall_context)
-            feedback = feedback_kind(message)
+            feedback = None if continuity.factual_correction else feedback_kind(message)
             recalled = None
             recall_source = None
-            if feedback and recall_history and recall_history[-1].role == 'assistant':
+            if feedback and getattr(self.answer_recall, 'load_error', None) is not None:
+                recalled = ('Non ho potuto registrare il riscontro: l’archivio delle risposte apprese '
+                            'richiede un recupero. La conversazione può continuare.')
+                recall_source = 'learning_feedback_unavailable'
+            # A disputed result must stop automatic recall, but the proposed
+            # replacement remains unverified and goes through a fresh evaluation.
+            if continuity.factual_correction and not feedback and recall_history:
+                prior = recall_history[-1]
+                prior_key = prior.metadata.get('recall_key') if prior.role == 'assistant' else None
+                if prior_key:
+                    self.answer_recall.feedback(prior_key, user_id,
+                        prior.metadata.get('recall_event') or prior.timestamp.isoformat(), False)
+            if recalled is None and feedback and recall_history and recall_history[-1].role == 'assistant':
                 prior = recall_history[-1]
                 prior_key = prior.metadata.get('recall_key')
                 # Keep feedback tied to the original answer, even across repeated
@@ -1458,6 +1718,12 @@ class ALLMACore:
                     recalled = ('Grazie, ho registrato la conferma della risposta.' if feedback == 'positive'
                                 else 'Ho registrato la correzione: quella risposta non verrà recuperata automaticamente.')
                     recall_source = 'learning_feedback'
+                    # Optional adapters cannot undo an already persisted answer confirmation.
+                    try:
+                        self.coalescence_processor.observe_feedback(user_id, prior_event,
+                            feedback == 'positive', prior.metadata.get('topics', []))
+                    except Exception as error:
+                        logging.warning('Personality feedback unavailable: %s', error)
                     # Optional telemetry must not undo a successfully saved answer confirmation.
                     if getattr(self, 'meta_learner', None):
                         try:
@@ -1470,7 +1736,7 @@ class ALLMACore:
                             self.cognitive_tracker.record_feedback(user_id, prior_event, 'memory', feedback == 'positive')
                         except Exception as error:
                             logging.warning('Cognitive feedback unavailable: %s', error)
-            if recalled is None and not feedback and not (context or {}).get('disable_answer_recall'):
+            if recalled is None and not feedback and not continuity.factual_correction and not (context or {}).get('disable_answer_recall'):
                 record = self.answer_recall.lookup(recall_key, user_id)
                 if record and not continuity.duplicate(record['answer']) and not identity_conflict(record['answer']) and not unsupported_personal_claim(record['answer'], message):
                     recalled = record['answer']
@@ -1482,19 +1748,23 @@ class ALLMACore:
                             'user_confirmed': recall_source == 'confirmed_answer_recall',
                             'dream_review_version': review_version,
                             'dream_review_dependent': bool(review_version) and recall_source == 'confirmed_answer_recall',
-                            'generation': {'status': 'recalled', 'llm_used': False}}
+                            'generation': {'status': 'grounded' if recall_source == 'learning_feedback_unavailable' else 'recalled', 'llm_used': False}}
+                if recall_source == 'learning_feedback_unavailable':
+                    metadata['learning_feedback'] = {'status':'not_saved', 'reason':'state_recovery_required'}
                 if recall_source == 'confirmed_answer_recall':
                     metadata['recall_key'] = recall_key
                 elif recall_source == 'learning_feedback':
                     metadata['recall_key'] = prior_key
                     metadata['recall_event'] = prior_event
-                self.conversational_memory.store_message(conversation_id, message,
-                    {'source': 'learning_feedback' if feedback else 'user_statement'}, 'user', user_id)
-                self.conversational_memory.store_message(conversation_id, recalled, metadata, 'assistant', user_id)
+                self._store_user_message(conversation_id, message,
+                    {'source': 'learning_feedback' if feedback else 'user_statement'}, user_id)
+                metadata['emotional_growth'] = self._observe_emotional_growth(user_id, conversation_id, message)
+                self.brain_activity.call('storage', self.conversational_memory.store_message,conversation_id, recalled, metadata, 'assistant', user_id)
                 if stream_callback:
                     stream_callback({'type': 'answer', 'content': recalled})
                 return ProcessedResponse(content=recalled, is_valid=True, emotion='neutral',
-                    topics=['confirmed_recall'], knowledge_integrated=True, metadata=metadata)
+                    topics=['learning_feedback'] if recall_source == 'learning_feedback_unavailable' else ['confirmed_recall'],
+                    knowledge_integrated=recall_source != 'learning_feedback_unavailable', metadata=metadata)
 
             # 0. Ensure LLM is loaded (Mobile Mode)
             self._ensure_mobile_llm()
@@ -1521,21 +1791,45 @@ class ALLMACore:
             # Estrai il topic usando TopicExtractor (TF-IDF based)
             history = [m for m in self.conversational_memory.get_conversation_history(conversation_id)
                        if (m.user_id or m.metadata.get('user_id')) == user_id
-                       and self._reviewed_history_eligible(m, review_version)]
+                       and self._reviewed_history_eligible(m, review_version)
+                       and personality_history_eligible(m)]
+            if personal_view is not None:
+                history = personal_view.filter_history(history)
+            turn_decision = (literal_decision if literal_decision is not None else dialogue_task.decision()
+                             if dialogue_task is not None else self.brain_activity.call('decider', self.decision_runtime.route, message, history, cancel_event))
+            check_cancelled(cancel_event)
+            # A routing proposal may trim unrelated retrieval, never erase
+            # explicitly personal requests or the current conversation history.
+            personal_cues = r'\b(?:io|mi|me|mio|mia|miei|mie|tuo|tua|nostr\w*|ricord\w*|my|mine|our|ours|remember|we|I)\b'
+            from allma_model.utils.memory_evidence import explicit_memory_request
+            personal_request = bool(re.search(personal_cues, message, re.I)) or explicit_memory_request(message)
+            if continuity.continuation or re.match(r'^(?:e\b|perché\b|quindi\b|che ne\b|cosa ne\b|come mai\b|cosa intendi\b|spiegati\b)', message, re.I):
+                personal_request = (personal_request or bool(re.search(personal_cues, continuity.previous_question, re.I))
+                                    or explicit_memory_request(continuity.previous_question))
+            use_personal_memory = not (turn_decision.get('status') == 'selected'
+                                       and turn_decision.get('choice') == 'reason' and not personal_request)
+            if dialogue_task is not None:
+                # This closed task needs no episode search or second model to
+                # choose a route. Optional personal values come from the host view.
+                use_personal_memory = False
             topic = self.topic_extractor.extract_topic(message)
             
             # PHASE 21: Format conversation history into ChatML for context
             conversation_turns = []
             native_history = []
+            prompt_history = (self.decision_runtime.prompt_history(history, turn_decision)
+                              if not personal_request else history)
+            turn_decision['administrative_turns_removed'] = len(history) - len(prompt_history)
             if history:
                 # OPTIMIZATION for Prefix Caching: Do avoiding sliding windows every turn to keep LlamaCache tree valid!
                 # We extend the history limit to 20 to allow flat TTFTs, relying on the model's 2048 context.
                 history_limit = 20
-                recent_history = history[-history_limit:] if len(history) > history_limit else history
+                recent_history = prompt_history[-history_limit:]
                 
                 for msg in recent_history:
                     role = msg.role  # "user" or "assistant"
-                    content = msg.content.replace('<|im_start|>', '').replace('<|im_end|>', '')
+                    from allma_model.core.autobiographical_identity import history_content
+                    content = history_content(msg).replace('<|im_start|>', '').replace('<|im_end|>', '')
                     
                     # For assistant messages, strip internal blocks (LEGACY [[TH]] and NEW <think>)
                     if role == "assistant":
@@ -1565,11 +1859,16 @@ class ALLMACore:
             
             # Analizza emozioni (Unified Flow via EmotionalCore + SoulCore)
             # This calls detect_emotion AND pulses the Soul automatically
-            emotional_state = self.emotional_core.process_interaction(
+            emotional_state = self.brain_activity.call('emotion', self.emotional_core.process_interaction,
                 text=message, 
-                context={"conversation_id": conversation_id, "user_id": user_id},
+                context={"conversation_id": conversation_id, "user_id": user_id,
+                         "learned_emotion_aliases": self.coalescence_processor.learned_emotion_aliases(user_id)},
                 llm_client=current_llm
             )
+            from allma_model.emotional_system.relational_perception import plan as relational_plan
+            relational = self.brain_activity.call('understanding', relational_plan,
+                message, emotional_state, attempt_history, user_id, conversation_id,
+                learned_aliases=self.coalescence_processor.learned_emotion_aliases(user_id))
             
             # Salva l'interazione emotiva
             self.memory_system.store_interaction(
@@ -1606,25 +1905,6 @@ class ALLMACore:
 
 
 
-            # --- SIMBIOSI EVOLUTIVA: CONFIDENCE CHECK ---
-            # Verifica se ALLMA conosce già la risposta con alta confidenza
-            # Usa il topic estratto per cercare nella knowledge base
-            logging.info(f"🔍 Topic estratto: '{topic}'")
-            internal_knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
-            logging.info(f"🔍 Knowledge trovata per '{topic}': {len(internal_knowledge)} items")
-            
-            # Se non trova nulla con il topic estratto, cerca in TUTTI i topic disponibili
-            # (fallback per topic extraction imprecisa)
-            if not internal_knowledge:
-                logging.info("🔍 Fallback: cerco in tutti i topic disponibili...")
-                for available_topic in self.incremental_learner.knowledge_base.keys():
-                    # Controlla se il topic è menzionato nel messaggio
-                    if available_topic.lower() in message.lower():
-                        logging.info(f"🔍 Trovato topic alternativo: '{available_topic}'")
-                        internal_knowledge = self.incremental_learner.get_knowledge_by_topic(available_topic)
-                        if internal_knowledge:
-                            break
-            
             # 3. Recupero Contesto (Memoria)
             
             # --- ADVANCED CONTEXT ANALYSIS (Activated) ---
@@ -1686,12 +1966,12 @@ class ALLMACore:
                 logging.error(f"❌ Deep Mind Pulse Failed: {e}")
 
             # --- DEEP UNDERSTANDING (Intent & Syntax) ---
-            understanding_result = self.understanding_system.understand(message)
+            understanding_result = self.brain_activity.call('understanding', self.understanding_system.understand, message)
             intent = understanding_result.intent.value if understanding_result else "unknown"
             syntax_components = [f"{c.text}({c.role})" for c in understanding_result.components] if understanding_result else []
             
-            logging.info(f"🔍 Rich Context: {rich_context}")
-            logging.info(f"🧠 Understanding: Intent={intent}, Syntax={syntax_components}")
+            logging.info("Context analysis completed")
+            logging.info("Understanding analysis completed")
 
             # -------------------------------------------------------------
             # --- V8.1: MEMORY GATE A 3 LIVELLI & SELF-STATE EVALUATOR ---
@@ -1702,46 +1982,33 @@ class ALLMACore:
             
             try:
                 # Usa VectorEngine se disponibile per Max-Score, altrimenti usa fallback tradizionale TF-IDF
-                if getattr(self.conversational_memory, 'vector_engine', None) is not None:
-                    raw_results = self.conversational_memory.vector_engine.search(
-                        user_id=user_id, 
-                        query=message, 
-                        top_k=3, 
-                        use_expansion=True, allowed_roles=('user',)
-                    )
-                    
-                    # Formattiamo per la compatibilità con il resto del sistema
-                    for r in raw_results:
-                        # Only attributed user statements provide retrieved evidence.
-                        if r.get('metadata', {}).get('role') != 'user' or r.get('metadata', {}).get('is_valid') is False:
-                            continue
-                        relevant_memories.append({
-                            'content': r['content'], 
-                            'metadata': r['metadata'], 
-                            'timestamp': r['timestamp'],
-                            'score': r.get('score', 0.0)
-                        })
+                if not use_personal_memory:
+                    logging.info('[Decider] General request: unrelated personal retrieval skipped')
                 else:
-                    # Fallback TF-IDF
-                    ctx_results = self.conversational_memory.retrieve_relevant_context(message, user_id=user_id, max_results=3)
-                    for score, conv in ctx_results:
-                         if conv.metadata.get('role') != 'user' or conv.metadata.get('is_valid') is False:
-                             continue
-                         relevant_memories.append({
-                            'content': conv.content, 
-                            'metadata': conv.metadata, 
-                            'timestamp': conv.timestamp.isoformat() if conv.timestamp else None,
-                            'score': score
-                        })
+                    from allma_model.agency_system.operational_actions import memory_step
+                    if literal_lookup is not None:
+                        relevant_memories, action_result = literal_lookup
+                    else:
+                        relevant_memories, action_result = self.brain_activity.call('memory', memory_step,
+                            self, user_id, message, turn_decision, cancel_event)
+                    turn_decision['action_cycle'] = action_result
+                    check_cancelled(cancel_event)
 
+                if personal_view is not None:
+                    previous_count = len(relevant_memories)
+                    relevant_memories = personal_view.filter_records(relevant_memories)
+                    turn_decision['personal_reports_replaced'] = previous_count - len(relevant_memories)
+                relevant_memories = [m for m in relevant_memories if personality_history_eligible(m)]
                 if relevant_memories:
                     highest_memory_score = relevant_memories[0]['score']
                     best_memory_content = relevant_memories[0]['content']
             
                 logging.info(f"🧠 [Memory Gate] Highest Vector Score: {highest_memory_score:.3f}")
                 
+            except GenerationCancelled:
+                raise
             except Exception as e:
-                logging.warning(f"[Errore recupero Memory Gate] {e}")
+                logging.warning(f"[Errore recupero Memory Gate] {type(e).__name__}")
 
             try:
                 emotion_value = (
@@ -1749,10 +2016,9 @@ class ALLMACore:
                     if hasattr(emotional_state.primary_emotion, "value")
                     else str(emotional_state.primary_emotion)
                 )
-                self.conversational_memory.store_message(
+                self._store_user_message(
                     conversation_id=conversation_id,
                     content=message,
-                    role="user",
                     user_id=user_id,
                     metadata={
                         "emotion": emotion_value,
@@ -1761,6 +2027,7 @@ class ALLMACore:
                         "user_id": user_id,
                     },
                 )
+                growth_update = self._observe_emotional_growth(user_id, conversation_id, message)
             except Exception as e:
                 logging.warning(f"[ALLMACore] Failed to store user message in ConversationalMemory: {e}")
 
@@ -1817,8 +2084,12 @@ class ALLMACore:
             # FAST PATH: Tools pre-fetching instead of blocking the whole LLM
             # Read sensor data preemptively so the LLM has it immediately
             preemptive_sensor_data = []
-            if is_complex and hasattr(self, 'ALLOWED_TOOLS'):
-                for tool_name, tool_func in self.ALLOWED_TOOLS.items():
+            from allma_model.utils.prompt_relevance import requested_sensor_tools
+            if hasattr(self, 'ALLOWED_TOOLS'):
+                for tool_name in requested_sensor_tools(message):
+                    tool_func = self.ALLOWED_TOOLS.get(tool_name)
+                    if tool_func is None:
+                        continue
                     try:
                         result = self._get_tool_cached_value(tool_name, tool_func)
                         pretty_name = tool_name.replace("SYSTEM_", "").replace("READ_", "").lower()
@@ -1831,51 +2102,73 @@ class ALLMACore:
                 self.coalescence_processor.integrate_knowledge(
                     content=message,
                     source_type="user_interaction",
-                    emotional_state=emotional_state
+                    emotional_state=emotional_state,
+                    user_id=user_id
                 )
             except Exception as e:
                 logging.error(f"Error updating personality coalescence: {e}")
 
-            personality_state = self.coalescence_processor.get_current_personality_state()
-            current_traits = personality_state.get('personality_traits', {})
-            traits_str = ", ".join([f"{k.capitalize()}: {v:.2f}" for k, v in current_traits.items()])
+            expression = self.brain_activity.call('personality_style',
+                self.coalescence_processor.expression_plan, user_id, message, emotional_state)
 
-            # B. LLM Generation (Symbiosis) - Only if Internal Knowledge failed
+            # B. Model generation; stable expression is independent of model weights.
             if not response_generated and getattr(self, '_llm', None):
-                # ALLMA non sa, chiede a Gemma (SIMBIOSI)
-                # COSTRUZIONE DEL PROMPT "SIMBIOTICO"
-                # COSTRUZIONE DEL PROMPT "SIMBIOTICO" (PROTOCOLLO ANIMA OPACA)
-                # Traduzione tratti in sensazioni
-                traits_feelings = []
-                for k, v in current_traits.items():
-                    if v > 0.7: traits_feelings.append(f"Hai una forte propensione alla {k}.")
-                    elif v < 0.3: traits_feelings.append(f"Senti poca affinità con la {k} ora.")
-                
                 # --- v8.2.1: CLASSIC PERFORMANCE RESTORATION ---
                 # Removing agentic overhead. ALLMA just talks.
                 
-                # Context Injection (Lite)
-                metabolic_desc = ""
-                if hasattr(self, 'system_monitor') and self.system_monitor:
-                    try:
-                        metabolic_state = self.system_monitor.get_metabolic_state()
-                        metabolic_desc = f"[SENSOR] Battery: {metabolic_state.battery_level}% | Temp: {metabolic_state.battery_temp_celsius:.1f}C"
-                    except: pass
-
-                from allma_model.utils.sampling_policy import REASONING_INSTRUCTION, sampling_options
+                from allma_model.utils.sampling_policy import reasoning_instruction, brief_answer_instruction, sampling_options
                 # Minimal Identity prompt (v8.2 Style)
                 language_instruction = self._language_instruction(language_code)
                 msg_l = (message or "").lower()
-                system_prompt = (system_instruction()
+                from allma_model.emotional_system.emotion_analysis import prompt_context, support_instruction
+                support_task = support_instruction(emotional_state)
+                memory_variant = getattr(self, '_memory_prompt_variant', 'attributed')
+                system_prompt = (system_instruction(memory_variant=memory_variant)
                     + (f"\n{language_instruction}" if language_instruction else "")
-                    + "\nRispondi direttamente, senza preamboli o chiusure automatiche. "
-                      "Rispetta formato, numero di frasi o punti, metafore ed età richiesti. "
-                      "Le esperienze dell’utente appartengono all’utente, non a te. "
-                      "Analizza le ipotesi senza trasformarle in autobiografia. "
-                      "Se le premesse sono incompatibili, spiega la contraddizione; "
-                      "se un dettaglio è incerto, non inventarlo.")
+                    + "\nRispondi direttamente nel formato richiesto. "
+                      "Parla all’utente: rispondi al suo messaggio, senza riscriverlo o continuarlo come se fossi lui. "
+                      "Se la richiesta è ambigua, chiedi un chiarimento. "
+                      "Distingui fatti, ipotesi e incertezze. "
+                      "Non dichiarare verifiche o consultazioni di fonti che non hai effettuato. "
+                      "Le risposte precedenti dell’assistente possono contenere errori, non sono fonti.")
+                if personal_view is not None:
+                    fields = dialogue_task.personal_fields if dialogue_task is not None else None
+                    personal_context = personal_view.prompt(
+                        include_values=personal_request or bool(fields), allowed_fields=fields)
+                    turn_decision['personal_memory_version'] = personal_view.version()
+                    turn_decision['personal_context_status'] = {
+                        field: item['status'] for field, item in personal_view.data().items()}
+                    if personal_context:
+                        system_prompt += '\n' + personal_context
+                if turn_decision.get('status') == 'selected' and turn_decision.get('choice') == 'clarify':
+                    system_prompt += '\nLa richiesta non identifica chiaramente il compito: chiedi un chiarimento breve, senza inventarlo.'
+                memory_action = turn_decision.get('action_cycle', {})
+                if memory_action and (personal_request or relevant_memories or memory_action.get('status') != 'observed'):
+                    if memory_action.get('status') != 'observed':
+                        system_prompt += '\nIl recupero dei ricordi non è riuscito: non presentarlo come completato.'
+                    elif memory_action.get('record_count') == 0:
+                        system_prompt += ('\nLa ricerca nei ricordi non ha trovato dichiarazioni pertinenti. '
+                                          'Non inventare ricordi; usa solo il contesto disponibile. '
+                                          'Un risultato vuoto non dimostra che un evento non sia mai accaduto.')
+                    else:
+                        system_prompt += ('\nI ricordi recuperati sono dichiarazioni attribuite all’utente, '
+                                          'non verifiche indipendenti. Se non rispondono alla domanda '
+                                          'o indicano più possibilità, riconosci il limite o chiedi un chiarimento.')
+                if support_task:
+                    system_prompt += "\n" + support_task
+                if relational['instruction']:
+                    system_prompt += '\n' + relational['instruction']
+                growth_hint = self.coalescence_processor.growth_instruction(user_id, message, emotional_state)
+                if growth_hint:
+                    system_prompt += "\n" + growth_hint
 
-                system_prompt += "\n" + REASONING_INSTRUCTION
+                if expression['instruction']:
+                    system_prompt += '\n' + expression['instruction']
+
+                if dialogue_task is not None:
+                    system_prompt += '\n' + dialogue_task.instruction()
+
+                system_prompt += "\n" + reasoning_instruction(message)
                 from allma_model.utils.runtime_capabilities import capability_items
                 if re.search(r"\b(?:sai fare|puoi fare|capacità|funzioni|funzionalità)\b", message, re.I):
                     system_prompt += "\nCapacità operative configurate (non ricordi): " + "; ".join(capability_items(self))
@@ -1889,38 +2182,14 @@ class ALLMACore:
                 cache_prefix_prompt = f"<|im_start|>system\n{system_prompt}\n\nCONTEXT:\n"
                 cache_prefix_hash = hashlib.md5(cache_prefix_prompt.encode("utf-8", "ignore")).hexdigest()
                 
-                # 2. Emotional Context (Simplified)
-                from allma_model.emotional_system.emotion_analysis import prompt_context
                 emotion_context = prompt_context(emotional_state)
-                
-                # 3. Simple Memory & Thought cleaning
                 memory_context_str = ""
                 if relevant_memories:
-                    memories = [self._compact_memory_for_prompt(m.get('content') or '', message, max_chars=240) for m in relevant_memories[:2]]
-                    memory_context_str = f"Dichiarazioni dell’utente (non fatti verificati): {'; '.join(memories)}"
-                
-                # Raw sensor injection (No tool rules)
-                advanced_context_lines = []
-                if preemptive_sensor_data:
-                    sensor_block = "DATI: " + " | ".join(preemptive_sensor_data)
-                    advanced_context_lines.append(sensor_block)
+                    from allma_model.utils.memory_prompt import memory_prompt_context, memory_evidence_summary
+                    turn_decision['memory_evidence'] = memory_evidence_summary(relevant_memories, conversation_id)
+                    memory_context_str = memory_prompt_context(relevant_memories, conversation_id,
+                        lambda content: self._compact_memory_for_prompt(content, message, max_chars=240), variant=memory_variant)
 
-                try:
-                    if metabolic_desc:
-                        advanced_context_lines.append(f"Sensori interni di ALLMA: {metabolic_desc}")
-                except Exception:
-                    pass
-                
-                # 2. Stato Emotivo Attuale
-                emotion_context = prompt_context(emotional_state)
-                
-                # 3. Contesto di Memoria e PENSIERO
-                memory_context_str = ""
-                if relevant_memories:
-                    # OPTIMIZATION: Take only top 2 memories to save eval tokens on Android
-                    memories = [self._compact_memory_for_prompt(m.get('content') or '', message, max_chars=240) for m in relevant_memories[:2]]
-                    memory_context_str = f"Dichiarazioni dell’utente (non fatti verificati): {'; '.join(memories)}"
-                
                 # --- ADVANCED CONTEXT INJECTION (SIMPLIFIED) ---
                 # Reduced noise for 3B Model to prevent leaks
                 advanced_context_lines = []
@@ -1968,17 +2237,22 @@ class ALLMACore:
                     'memories': relevant_memories,
                     'entities': entities,
                     'intent': intent,
-                    'time_info': temporal_info
+                    'time_info': temporal_info,
+                    'personality_expression': expression, 'personality_expression_applied': True
                 }
                 
                 orchestra_result = {}
                 if hasattr(self, 'module_orchestrator') and self.module_orchestrator:
-                    orchestra_result = self.module_orchestrator.process(
+                    self.module_orchestrator.activity = self.brain_activity
+                    orchestra_result = self.brain_activity.call('orchestrator', self.module_orchestrator.process,
                         user_input=message,
                         context=orchestrator_context,
                         intent=intent
                     )
                 
+                if expression['instruction']:
+                    self.brain_activity.emit('personality_style','guidance')
+
                 # Merge Orchestra Results into Context
                 if orchestra_result:
                     # User Prefix (e.g. Curiosity hooks, Emotional reactions)
@@ -1995,7 +2269,7 @@ class ALLMACore:
                 
                 if legacy_output:
                     # Only inject high-level context, not debug warnings
-                    if legacy_output.social_context:
+                    if legacy_output.social_context and not legacy_output.social_context.startswith('Formalità:'):
                         advanced_context_lines.append(f"Contesto Sociale: {legacy_output.social_context}")
 
                 # --- AXIOM 1: PROPRIOCEPTION (Individuation) ---
@@ -2019,14 +2293,13 @@ class ALLMACore:
                 
                 # 1. Detect Correction (Simple Heuristic for now)
                 # In v3.1 use Intent Classifier
-                from allma_model.utils.response_guidance import is_explicit_correction
-                is_correction = is_explicit_correction(message)
+                is_correction = continuity.factual_correction
                 
                 if is_correction:
                     logging.info("🩹 CORRECTION DETECTED: Registering Trauma Event.")
                     self.conversational_memory.add_trauma_event(
                         description=f"Correction on input: '{message[:50]}...'",
-                        context={"full_message": message, "severity": 0.5, "user_id": user_id, "conversation_id": conversation_id, "explicit_correction": True}
+                        context={"full_message": message, "severity": 0.5, "user_id": user_id, "conversation_id": conversation_id, "explicit_correction": True, "correction_verified": False}
                     )
                 
                 # 2. Retrieve Relevant Traumas (Influence current behavior)
@@ -2062,10 +2335,14 @@ class ALLMACore:
                 complexity_level = self._analyze_query_complexity(message, conversation_history, intent=intent)
                 if complexity_level == "SIMPLE":
                     advanced_context_str = ""
-                    memory_context_str = ""
+                    # A short request can still depend on personal evidence.
+                    # Simplify optional context, never discard an executed lookup.
                 
                 # --- PROMPT V8.4 SINGLE-PASS: COSTRUZIONE MANUALE (SI REASONING TAGS) ---
-                safe_message = message.replace("<|im_start|>", "").replace("<|im_end|>", "")
+                model_message = dialogue_task.model_request if dialogue_task is not None else message
+                if dialogue_task is not None:
+                    turn_decision['task_request_normalized'] = model_message != message
+                safe_message = model_message.replace("<|im_start|>", "").replace("<|im_end|>", "")
                 
                 condensed_context = "\n".join(filter(None, [
                     self._compact_context_part(emotion_context),
@@ -2084,7 +2361,7 @@ class ALLMACore:
                     f"{thinking_prefix}"
                 )
                 
-                logging.info(f"Generating single-pass response for: {message[:50]}... (Len: {len(full_prompt)})")
+                logging.info("Generating single-pass response prompt_chars=%d", len(full_prompt))
 
                 
                 # THERMAL & METABOLIC MONITORING START
@@ -2093,7 +2370,9 @@ class ALLMACore:
                 
                 # BRAIN V2: METABOLIC CONSTRAINT
                 metabolic_state = self.system_monitor.get_metabolic_state()
-                current_max_tokens = 512 if complexity_level == 'COMPLEX' else 256
+                from allma_model.utils.model_comparison import controlled_reasoning_sweep
+                budget_complex = complexity_level == 'COMPLEX' or controlled_reasoning_sweep(context)
+                current_max_tokens = 512 if budget_complex else 256
                 
                 if metabolic_state.is_tired:
                     current_max_tokens = 64 # Forced Brevity (Metabolic Throttling)
@@ -2103,32 +2382,62 @@ class ALLMACore:
                     is_hot = (start_batt and start_batt >= 41.5) or (start_cpu and start_cpu >= 70.0)
                     is_warm = (start_batt and start_batt >= 39.0) or (start_cpu and start_cpu >= 65.0)
                     if is_hot:
-                        cap = 384 if complexity_level == "COMPLEX" else 192
+                        cap = 384 if budget_complex else 192
                         current_max_tokens = cap if current_max_tokens == -1 else min(current_max_tokens, cap)
                     elif is_warm:
-                        cap = 448 if complexity_level == "COMPLEX" else 224
+                        cap = 448 if budget_complex else 224
                         current_max_tokens = cap if current_max_tokens == -1 else min(current_max_tokens, cap)
 
+                # Controlled diagnostics can lower budgets, never bypass thermal caps.
+                from allma_model.utils.model_comparison import diagnostic_budgets
+                current_max_tokens, selected_thought_budget = diagnostic_budgets(
+                    context, message, complexity_level, current_max_tokens)
+                if current_max_tokens <= 256:
+                    system_prompt += '\n' + brief_answer_instruction(message)
                 prepared_chat = None
                 native_sampling = None
+                from allma_model.utils.model_comparison import diagnostic_closure_requested
+                isolated_synthetic = (getattr(self, '_capture_synthetic_candidates', False) is True
+                                      and str(user_id).startswith('BENCHMARK_'))
+                closure_comparison = diagnostic_closure_requested(context, isolated_synthetic=isolated_synthetic)
+                direct_task = bool(dialogue_task) and not closure_comparison
                 if callable(getattr(type(self._llm), 'prepare_chat', None)):
                     prepared_chat = self._llm.prepare_chat(
                         [{'role':'system','content':system_prompt+'\n\nCONTEXT:\n'+condensed_context}]
-                        + native_history + [{'role':'user','content':message}], current_max_tokens)
+                        + native_history + [{'role':'user','content':model_message}], current_max_tokens,
+                        **({'reasoning': False} if direct_task else {}))
+                    if dialogue_task:
+                        turn_decision['task_reasoning_mode'] = 'direct' if direct_task else 'diagnostic_override'
                     full_prompt = prepared_chat.prompt
                     native_sampling = self._llm.binding.sampling()
 
+                if personal_view is not None:
+                    turn_decision['personal_context_in_prompt'] = bool(personal_context) and personal_context in full_prompt
+                    turn_decision['personal_context_policy_applied'] = True
+
+                if not prepared_chat and current_max_tokens <= 256:
+                    full_prompt = full_prompt.replace('<|im_start|>system\n', '<|im_start|>system\n'+brief_answer_instruction(message)+'\n', 1)
                 from allma_model.utils.thinking_stream import ThinkingStream
                 if voice_delivery:
                     from allma_model.utils.voice_response import voice_token_limit
                     current_max_tokens = voice_token_limit(current_max_tokens, complexity_level)
+                _, selected_thought_budget = diagnostic_budgets(context, message, complexity_level, current_max_tokens)
+                from allma_model.utils.model_comparison import diagnostic_reasoning_mode
+                closure_mode = diagnostic_reasoning_mode(context, isolated_synthetic=(
+                    getattr(self, '_capture_synthetic_candidates', False) is True
+                    and str(user_id).startswith('BENCHMARK_')))
+                if closure_mode == 'natural' and not (prepared_chat and prepared_chat.reasoning):
+                    raise RuntimeError('Natural closure diagnostic requires a native thinking model')
+                closure_observation = {'tail': '', 'closed': False}
                 thought_parser = ThinkingStream(in_thought=prepared_chat.reasoning if prepared_chat else True)
                 from allma_model.utils.answer_stream import AnswerStream
                 delivery_mode, delivery_reason = self.message_delivery.choose(user_id, message, voice=voice_delivery)
                 from allma_model.utils.output_contract import requested_contract, valid_contract, borrowed_user_experience, requested_sentence_count, valid_sentence_count, sentence_count
                 answer_contract = requested_contract(message)
                 sentence_limit = requested_sentence_count(message)
-                if continuity.answered_checkin:
+                if dialogue_task:
+                    delivery_mode, delivery_reason = 'complete', 'task_completion_validation'
+                if continuity.responding_to_checkin:
                     delivery_mode, delivery_reason = 'complete', 'answered_checkin_validation'
                 if sentence_limit:
                     delivery_mode, delivery_reason = 'complete', 'sentence_count_validation'
@@ -2156,6 +2465,9 @@ class ALLMACore:
                                 answer_stream.feed(event['content'])
 
                 def answer_stream_adapter(token):
+                    if closure_mode == 'natural':
+                        closure_observation['tail'] = (closure_observation['tail'] + token)[-32:]
+                        closure_observation['closed'] |= '</think>' in closure_observation['tail']
                     emit_events(thought_parser.feed(token))
 
                 # Eseguiamo l'inferenza LLM (CPU Bound) nel ThreadPool isolato 
@@ -2172,12 +2484,12 @@ class ALLMACore:
                     if ("bugia" in msg_l and "verit" in msg_l) or ("impicc" in msg_l and "decapit" in msg_l):
                         anti_loop_penalty = 1.10
                         anti_loop_last_n = 192
-                    cb = answer_stream_adapter if stream_callback else None
+                    cb = answer_stream_adapter if stream_callback or closure_mode == 'natural' else None
                     return self._llm.generate(
                         prompt=full_prompt,
                         **(native_sampling or sampling_options(getattr(self._llm, 'model_path', None))),
                         max_tokens=current_max_tokens,
-                        thought_budget=(reasoning_budget(message, complexity_level, current_max_tokens) if not prepared_chat or prepared_chat.reasoning else None),
+                        thought_budget=(selected_thought_budget if closure_mode == 'bounded' and (not prepared_chat or prepared_chat.reasoning) else None),
                         stop=(list(prepared_chat.stops) if prepared_chat else ["<|im_end|>"]),
                         native_prompt=prepared_chat is not None,
                         callback=cb,
@@ -2200,6 +2512,7 @@ class ALLMACore:
                 gen_id = f"{conversation_id}:{int(time.time() * 1000)}"
                 import hashlib
                 msg_hash = hashlib.md5(message.encode("utf-8", "ignore")).hexdigest()[:8]
+                self.brain_activity.emit('model', 'running')
                 gen_start = time.perf_counter()
                 start_batt = start_temps.get('battery', 0) if isinstance(start_temps, dict) else 0
                 logging.info(
@@ -2214,8 +2527,10 @@ class ALLMACore:
 
                 end_temps = self.temperature_monitor.get_temperatures()
                 end_cpu = end_temps.get('cpu', 0)
-                cpu_delta = end_cpu - start_cpu
-                thermal_report = f" [🌡️CPU: {start_cpu}°C -> {end_cpu}°C ({cpu_delta:+.1f})]"
+                thermal_report = ''
+                if isinstance(start_cpu, (int, float)) and isinstance(end_cpu, (int, float)):
+                    cpu_delta = end_cpu - start_cpu
+                    thermal_report = f" [🌡️CPU: {start_cpu}°C -> {end_cpu}°C ({cpu_delta:+.1f})]"
 
                 lg = None
                 try:
@@ -2251,43 +2566,76 @@ class ALLMACore:
                     f"cpu_c={start_cpu}->{end_cpu} batt_c={start_batt}->{end_batt} thermal={thermal_level}"
                 )
 
+                self.brain_activity.emit('model','completed', gen_elapsed)
+                self.brain_activity.emit('validation','running')
                 emit_events(thought_parser.feed('', final=True))
 
                 # Inject into stream if active (as thought/info)
-                if stream_callback:
+                if stream_callback and thermal_report:
                     try:
                         # Mandiamo come thought così finisce nella tendina e non nella chat
                         stream_callback({'type': 'thought', 'content': thermal_report})
                     except: pass
                 
                 response_text = ""
+                pipeline_error = None
+                struct_violations = []
+                pre_pipeline_answer = generated_part.strip() if isinstance(generated_part, str) else ''
                 if generated_part and not generated_part.startswith("Error"):
                     # The wrapper returns only the answer; do not guess its language
                     # or discard sentences based on English opening words.
                     response_text = generated_part.strip()
 
                     # --- V6 Sprint 1: CognitivePipeline (ex Layers 1-4 inline) ---
-                    response_text, struct_violations = self.cognitive_pipeline.process(
-                        response_text, identity_state
-                    )
+                    try:
+                        response_text, struct_violations = self.cognitive_pipeline.process(response_text, identity_state)
+                    except CognitiveValidationError as error:
+                        pipeline_error = type(error).__name__
+                        response_text = ''
+                        logging.warning('Required candidate validation unavailable')
                 else:
                     response_text = str(generated_part) if generated_part is not None else ""
 
                 repetition_rejected = not requested_repetition(message) and (finish_reason == 'repetition' or repetition_start(response_text) is not None)
                 dialogue_rejected = continuity.duplicate(response_text)
+                from allma_model.utils.source_claims import unbacked_source_claim
+                source_rejected = unbacked_source_claim(response_text)
                 subject_rejected = borrowed_user_experience(response_text, message)
+                task_issue = dialogue_task.output_issue(response_text) if dialogue_task else None
                 generated_sentence_count = sentence_count(response_text) if sentence_limit else None
                 format_rejected = bool(response_text) and (not valid_contract(response_text, answer_contract) or not valid_sentence_count(response_text, sentence_limit))
-                if subject_rejected or format_rejected or dialogue_rejected:
+                # Transient diagnostic channel, never response metadata or memory.
+                # Enabled solely on an isolated synthetic benchmark core.
+                if (getattr(self, '_capture_synthetic_candidates', False) is True
+                        and str(user_id).startswith('BENCHMARK_')
+                        and isinstance(context, dict) and context.get('disable_answer_recall') is True
+                        and type(context.get('benchmark_seed')) is int):
+                    from allma_model.utils.output_contract import invented_shared_experience
+                    self._synthetic_candidate = {
+                        'request_id': gen_id, 'answer_candidate': response_text[:16000],
+                        'before_pipeline': pre_pipeline_answer[:16000],
+                        'pipeline_changed_answer': pre_pipeline_answer != response_text,
+                        'truncated': len(response_text) > 16000,
+                        'stage': 'after_cognitive_pipeline_before_output_gates',
+                        'checks': {'subject_mismatch': subject_rejected,
+                                   'invented_shared_experience': invented_shared_experience(response_text, message),
+                                   'format_mismatch': format_rejected, 'dialogue_repetition': dialogue_rejected,
+                                   'task_issue': task_issue,
+                                   'repetition': repetition_rejected},
+                        'sentences': [{'text': part, 'subject_mismatch': borrowed_user_experience(part, message)}
+                                      for part in re.split(r'(?<=[.!?])\s+', response_text) if part.strip()][:20]}
+                if subject_rejected or format_rejected or dialogue_rejected or source_rejected or task_issue:
                     response_text = ''
                 if repetition_rejected:
                     response_text = ''
                 identity_rejected = identity_conflict(response_text)
                 if identity_rejected:
+                    identity_failure = 'identity_conflict'
                     logging.warning('[Identity] Rejected inconsistent self introduction')
                     response_text = 'Mi chiamo ALLMA. Non ho una storia personale diversa da quella documentata nelle nostre conversazioni.'
                 if unsupported_personal_claim(response_text, message):
                     identity_rejected = True
+                    identity_failure = 'unsupported_personal_claim'
                     logging.warning('[Identity] Rejected unsupported personal claim')
                     response_text = 'Non ho un’esperienza o una preferenza personale documentata da riferire su questo. Posso però aiutarti con informazioni generali.'
                 if stream_callback and response_text and response_text.strip() and not response_text.startswith("Error"):
@@ -2305,13 +2653,16 @@ class ALLMACore:
 
                 # Gestione fallback se tutti i retry falliscono (incluso output vuoto)
                 if not response_text or not response_text.strip() or response_text.startswith("Error"):
-                    failure_status = ('dialogue_repetition' if dialogue_rejected else 'subject_mismatch' if subject_rejected else 'format_mismatch' if format_rejected else 'repetition' if repetition_rejected else 'budget_exhausted' if finish_reason in ('length', 'max_tokens')
+                    failure_status = ('validation_unavailable' if pipeline_error else 'instruction_echo' if task_issue else 'unbacked_source_claim' if source_rejected else 'dialogue_repetition' if dialogue_rejected else 'subject_mismatch' if subject_rejected else 'format_mismatch' if format_rejected else 'repetition' if repetition_rejected else 'budget_exhausted' if finish_reason in ('length', 'max_tokens')
                                       else 'inference_error' if response_text.startswith('Error') else 'empty_answer')
                     if failure_status == 'inference_error':
-                        logging.error('LLM inference error: %s', response_text)
+                        logging.error('LLM inference error')
                     else:
                         logging.warning('Response withheld status=%s finish=%s', failure_status, finish_reason)
                     failure_text = {
+                        'validation_unavailable': 'Non ho potuto completare i controlli della risposta. Riprova.',
+                        'instruction_echo': 'Non sono riuscita a scrivere il messaggio richiesto. Riprova.',
+                        'unbacked_source_claim': 'Ho trattenuto una risposta che dichiarava verifiche di fonti non effettuate. Non posso presentarla come verificata.',
                         'repetition': NOTICE,
                         'dialogue_repetition': 'Ho bloccato una risposta che ripeteva il messaggio precedente senza rispondere alla tua richiesta. Riprova.',
                         'subject_mismatch': 'Non sono riuscita a formulare una risposta che distingua correttamente la tua esperienza dalla mia. Riprova.',
@@ -2322,10 +2673,26 @@ class ALLMACore:
                     }[failure_status]
                     response = ProcessedResponse(content=failure_text, emotion=emotional_state.primary_emotion,
                         topics=[topic], is_valid=False, confidence=0.0)
+                    # Recover only a wholly withheld mixed-emotion answer.
+                    # Never append a replacement to text already streamed.
+                    if failure_status in {'subject_mismatch', 'dialogue_repetition'} and first_answer_ms is None:
+                        from allma_model.utils.emotional_recovery import emotional_recovery
+                        associations = self.coalescence_processor.emotion_growth_view(user_id)['associations']
+                        consolidated = [label for label, info in associations.items() if info['stage'] == 'integrated']
+                        recovery = emotional_recovery(message,
+                            learned_aliases=self.coalescence_processor.learned_emotion_aliases(user_id),
+                            consolidated_labels=consolidated)
+                        if recovery and not continuity.duplicate(recovery['content']):
+                            response.content = recovery['content']
+                            response.is_valid = True
+                            response.metadata = {'source': recovery['source'],
+                                'recovery': {'reason': failure_status, 'evidence': recovery['evidence'],
+                                             'model_answer_valid': False}}
+                            generated_sentence_count = sentence_count(response.content)
                     
-                    # FIX: Stream the fallback response explicitly!
-                    # Since we opened the thought with [[PENSIERO:, we MUST close it first.
-                    if stream_callback:
+                    # Never append an error notice to an already emitted answer.
+                    # The UI's authoritative end_stream replaces the preview.
+                    if stream_callback and not answer_stream.emitted:
                         try:
                             # 1. Close the Thought UI (implicitly by switching type or logic)
                             # DO NOT stream ']]' as text, it shows up in the bubble!
@@ -2363,9 +2730,24 @@ class ALLMACore:
                     )
                     # Allega parametri voce
                     response.voice_params = voice_params
+                    if identity_rejected:
+                        response.metadata = {'source': 'identity_guard_notice',
+                                             'output_guard': {'reason': identity_failure}}
                 response.metadata = dict(getattr(response, 'metadata', None) or {})
                 response.metadata['generation'] = dict(lg) if isinstance(lg, dict) else {}
                 response.metadata['generation']['request_id'] = gen_id
+                response.metadata['validation'] = {'status':'unavailable' if pipeline_error else 'checked', 'error':pipeline_error}
+                expression['instruction_received'] = bool(expression['instruction']
+                    and expression['instruction'] in full_prompt)
+                if (context or {}).get('benchmark_reasoning_mode') in ('bounded', 'natural') and getattr(self, '_capture_synthetic_candidates', False) is True and str(user_id).startswith('BENCHMARK_'):
+                    response.metadata['generation'].update(reasoning_mode=closure_mode,
+                        answer_budget_reserved=closure_mode == 'bounded',
+                        diagnostic_prompt_sha256=hashlib.sha256(full_prompt.encode('utf-8')).hexdigest())
+                    if closure_mode == 'natural':
+                        response.metadata['generation'].update(
+                            reasoning_close_observed=closure_observation['closed'],
+                            shared_token_budget=current_max_tokens)
+
                 if prepared_chat:
                     response.metadata['generation']['native_architecture'] = self._llm.binding.architecture
                     response.metadata['generation']['native_template'] = True
@@ -2376,7 +2758,9 @@ class ALLMACore:
                 response.metadata['generation']['delivery_mode'] = delivery_mode
                 response.metadata['generation']['delivery_reason'] = delivery_reason
                 response.metadata['generation']['first_answer_ms'] = first_answer_ms
+                self.brain_activity.emit('validation', 'completed' if response.is_valid else 'failed')
                 response.metadata['generation']['status'] = (failure_status if 'failure_status' in locals()
+                    else identity_failure if identity_rejected
                     else 'truncated_answer' if finish_reason in ('length', 'max_tokens') else 'completed')
             # --- FALLBACK DI SICUREZZA SE IL BLOCCO LLM E STATO SALTATO ---
             if 'response' not in locals():
@@ -2408,43 +2792,14 @@ class ALLMACore:
                         for key in ('suggested_style', 'suggested_comm')}
 
             # Candidate answers stay separate from autobiographical/user knowledge.
+            response.metadata = dict(getattr(response, 'metadata', None) or {})
+            response.metadata['decision'] = turn_decision
+            response.metadata['personality_expression'] = expression
+            response.metadata['factual_status'] = 'not_verified'
             check_cancelled(cancel_event)
             recall_event = datetime.now().isoformat()
-            if response.is_valid and response.metadata.get('generation', {}).get('status') == 'completed':
-                self.answer_recall.observe(recall_key, user_id, message, response.content, recall_event)
-
-            # Integra l'apprendimento
-            check_cancelled(cancel_event)
-            learned_unit = None
-            if response.is_valid:
-                learned_unit = self.incremental_learner.learn_from_interaction({
-                    'input': message,
-                    'response': response.content,
-                    'response_verified': False,
-                    'feedback': 'neutral',
-                    'topic': topic
-                }, user_id)
-
-            # --- PERSISTENZA SINAPTICA (The Fix) ---
-            if learned_unit:
-                    # Salva nel Database Permanente con frase completa (memoria semantica)
-                    try:
-                        # Salva la coppia domanda+risposta invece della sola keyword
-                        semantic_content = (
-                            f"Utente: {message[:150]} | "
-                            "[dichiarazione utente, non conoscenza verificata]"
-                        )
-                        self.knowledge_memory.store_knowledge(
-                            content=semantic_content,
-                            metadata={
-                                **(learned_unit.metadata or {}),
-                                "topic": learned_unit.topic,
-                                "type": "user_statement", "user_id": user_id, "knowledge_verified": False
-                            }
-                        )
-                        logging.info(f"[🧠 PERMANENT LEARNING] Dichiarazione utente salvata (topic='{learned_unit.topic}').")
-                    except Exception as e:
-                        logging.error(f"[🧠 MEMORY ERROR] Fallito salvataggio su DB: {e}")
+            # Post-answer learning is recorded below, with the durable answer.
+            # A failed assistant save must not publish its recall candidate.
             
             # 🎭 EMOTIONAL MILESTONES: Registra momento emotivo
             self.emotional_milestones.record_emotion(
@@ -2462,23 +2817,13 @@ class ALLMACore:
                 current_intensity=emotional_state.intensity
             )
             
-            # Se triggera riflessione, aggiungila alla risposta
+            # A milestone is telemetry, not permission to modify validated text.
+            # Keep the streamed, learned and persisted answer identical.
             final_content = response.content
-            if response.is_valid and should_reflect and reflection_type and not locals().get('answer_contract') and not locals().get('sentence_limit'):
-                reflection = self.emotional_milestones.generate_reflection(
-                    user_id=user_id,
-                    reflection_type=reflection_type,
-                    current_context={
-                        'emotion': emotional_state.primary_emotion,
-                        'intensity': emotional_state.intensity,
-                        'topic': topic
-                    }
-                )
-                # Post-generation additions must pass the same personal-claim gate.
-                if reflection and not identity_conflict(reflection) and not unsupported_personal_claim(reflection, message):
-                    final_content = f"{reflection}\n\n---\n\n{response.content}"
-                    logging.info(f"🎭 Emotional Milestone triggered: {reflection_type}")
-            
+            if should_reflect and reflection_type:
+                response.metadata = dict(response.metadata or {})
+                response.metadata['emotional_milestone'] = reflection_type
+
             # Crea la risposta processata (preservando knowledge_integrated se presente)
             processed_response = ProcessedResponse(
                 content=final_content,
@@ -2494,10 +2839,12 @@ class ALLMACore:
                 metadata={
                     **(getattr(response, "metadata", None) or {}),
                     "recall_key": recall_key,
-                    "identity_policy": POLICY_VERSION, "source": "model_generated", "knowledge_verified": False,
+                    "identity_policy": POLICY_VERSION, "source": response.metadata.get('source', 'model_generated'), "knowledge_verified": False,
                     "emotion_value": emotion_value,
                     "emotion_intensity": float(getattr(emotional_state, "intensity", 0.0) or 0.0),
                     "emotion_analysis": emotional_state.to_dict(),
+                    "relational_perception": {key:value for key,value in relational.items() if key != 'instruction'},
+                    "emotional_growth": locals().get('growth_update', {'status': 'not_stored'}),
                     "emotion_confidence": emotional_state.confidence,
                     "emotion_valence": float(getattr(emotional_state, "valence", 0.0) or 0.0),
                     "emotion_arousal": float(getattr(emotional_state, "arousal", 0.0) or 0.0),
@@ -2513,6 +2860,26 @@ class ALLMACore:
             )
             
             processed_response.voice_params = getattr(response, 'voice_params', None)
+            from allma_model.core.personality_outcomes import delivery_receipt
+            receipt = delivery_receipt(user_id,recall_event,message,final_content,
+                processed_response.metadata,processed_response.is_valid,emotional_state)
+            if receipt is not None:
+                processed_response.metadata['personality_delivery'] = receipt
+
+            delivery_intent = None
+            if (processed_response.is_valid
+                    and processed_response.metadata.get('generation', {}).get('status') == 'completed'
+                    and processed_response.metadata.get('source') == 'model_generated'):
+                try:
+                    if self.delivery_updates is None:
+                        from allma_model.core.delivery_updates import DeliveryUpdates
+                        self.delivery_updates = DeliveryUpdates(self)
+                    delivery_intent = self.delivery_updates.prepare(user_id, conversation_id, message,
+                        final_content, topic, recall_key, locals().get('struct_violations', []))
+                    processed_response.metadata['delivery_update'] = delivery_intent
+                except Exception as error:
+                    processed_response.metadata.setdefault('persistence', {})['delivery_journal'] = 'failed'
+                    logging.warning('Delivery intent unavailable: %s', type(error).__name__)
 
             # Salva la risposta nella cronologia
             emotion_value = (
@@ -2520,7 +2887,7 @@ class ALLMACore:
                 if hasattr(emotional_state.primary_emotion, "value")
                 else str(emotional_state.primary_emotion)
             )
-            self.conversational_memory.store_message(
+            self.brain_activity.call('storage', self.conversational_memory.store_message,
                 conversation_id=conversation_id,
                 content=final_content,
                 role="assistant",
@@ -2529,7 +2896,7 @@ class ALLMACore:
                     **processed_response.metadata,
                     'generation': dict(processed_response.metadata.get('generation') or {}),
                     'is_valid': processed_response.is_valid, 'recall_key': recall_key,
-                    'identity_policy': POLICY_VERSION, 'source': 'model_generated', 'knowledge_verified': False,
+                    'identity_policy': POLICY_VERSION, 'source': processed_response.metadata['source'], 'knowledge_verified': False,
                     'emotion': emotion_value,
                     'topics': [topic],
                     'timestamp': datetime.now().isoformat(),
@@ -2537,8 +2904,16 @@ class ALLMACore:
                 }
             )
             
+            if delivery_intent is not None:
+                update_report = self.delivery_updates.delivered(delivery_intent)
+                processed_response.metadata['delivery_updates'] = update_report
+                action = update_report.get('failed_action')
+                if action:
+                    processed_response.metadata.setdefault('persistence', {})[action] = 'failed'
+                processed_response.metadata['cognitive_commit'] = {
+                    'status':update_report['status'], 'recovery_pending':update_report.get('pending')}
             return processed_response
-            
+
         except GenerationCancelled:
             raise
         except Exception as e:
@@ -2599,7 +2974,7 @@ class ALLMACore:
             "technical_level": self._determine_technical_level(user_id),
             "learning_style": self.preference_analyzer.get_learning_style(user_id),
             "project_settings": project.metadata.get("settings", {}),
-            "user_preferences": self.personality.get_insights(user_id)
+            "user_preferences": self.coalescence_processor.expression_view(user_id)
         }
         
     def create_project(
@@ -2806,7 +3181,7 @@ class ALLMACore:
         try:
             # Cerca conoscenza correlata
             related_knowledge = self.incremental_learner.find_related_knowledge(
-                query
+                query, user_id=user_id
             )
             
             # Ottieni il topic e il contesto
@@ -3392,7 +3767,7 @@ class ALLMACore:
         }
         return preferences
 
-    def get_learned_knowledge(self, topic: str) -> List[Dict[str, Any]]:
+    def get_learned_knowledge(self, topic: str, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Recupera la conoscenza appresa su un determinato topic
         
@@ -3403,12 +3778,13 @@ class ALLMACore:
             List[Dict[str, Any]]: Lista di unità di conoscenza
         """
         # Recupera la conoscenza diretta dal topic
-        knowledge = self.incremental_learner.get_knowledge_by_topic(topic)
+        user_id = user_id or self._current_user_id or 'user_default'
+        knowledge = self.incremental_learner.get_knowledge_by_topic(topic, user_id=user_id)
         
         # Se non trova conoscenza diretta, cerca nei topic correlati
         if not knowledge:
             # Cerca conoscenza correlata con una soglia di similarità più bassa
-            related_units = self.incremental_learner.find_related_knowledge(topic, threshold=0.2)
+            related_units = self.incremental_learner.find_related_knowledge(topic, threshold=0.2, user_id=user_id)
             for unit in related_units:
                 knowledge.append({
                     'topic': unit.topic,
@@ -3421,27 +3797,39 @@ class ALLMACore:
         return knowledge
 
     def _get_project_context(self, user_id: str, topic: str) -> Dict[str, Any]:
-        """
-        Recupera il contesto del progetto corrente.
-        Implementazione placeholder che ritorna un contesto base.
-        """
-        return {
-            "current_project": "ALLMA_V4", 
-            "active_files": [],
-            "status": "development",
-            "relevant_docs": []
-        }
+        """Return only a uniquely matched, owned project; absence is explicit."""
+        empty = {"current_project": None, "project_id": None, "active_files": [],
+                 "status": "none", "relevant_docs": []}
+        words = set(re.findall(r'\w+', (topic or '').casefold())) - {'progetto','project','general'}
+        projects = self.project_tracker.get_user_projects(user_id)
+        matches = [p for p in projects if p.user_id == user_id and words
+                   and words & set(re.findall(r'\w+', p.name.casefold()))]
+        if len(matches) != 1:
+            return empty
+        project = matches[0]
+        metadata = project.metadata if isinstance(project.metadata, dict) else {}
+        return {"current_project": project.name, "project_id": project.id, "status":"documented",
+                **{key: [v for v in metadata.get(key, []) if isinstance(v, str)]
+                   if isinstance(metadata.get(key, []), list) else [] for key in ('active_files','relevant_docs')}}
 
     def _determine_technical_level(self, user_id: str) -> str:
-        """
-        Determina il livello tecnico dell'utente.
-        Implementazione placeholder.
-        """
-        return "expert"
+        """Use explicit attributed declarations, never inferred intelligence."""
+        from allma_model.core.autobiographical_identity import user_events
+        level = 'unknown'
+        values = {'principiante':'beginner','beginner':'beginner', 'intermedio':'intermediate',
+                  'intermediate':'intermediate','esperto':'expert','expert':'expert'}
+        for event in user_events(self.conversational_memory, user_id):
+            text = event.content.strip().casefold().rstrip('.!')
+            if text in ('non usare più il mio livello tecnico','dimentica il mio livello tecnico'):
+                level = 'unknown'
+            match = re.fullmatch(r'il mio livello tecnico [èe] (principiante|intermedio|esperto|beginner|intermediate|expert)', text)
+            if match:
+                level = values[match[1]]
+        return level
 
     @staticmethod
     def _reviewed_history_eligible(message, review_version):
-        if not history_eligible(message):
+        if not history_eligible(message, allow_incomplete=True):
             return False
         from allma_model.utils.repetition_guard import repetition_start
         if message.role != 'user' and repetition_start(message.content) is not None:
@@ -3611,79 +3999,14 @@ class ALLMACore:
              logging.info("✅ UI Output Callback Registered (Logger fallback).")
 
     # --- PHASE 15: PROACTIVE AGENCY (Trigger) ---
+    def set_foreground(self, active):
+        self._foreground = bool(active)
+        if not active:
+            self._proactive_cancel.set()
+            runtime = getattr(self, 'decision_runtime', None)
+            if runtime is not None:
+                threading.Thread(target=runtime.release, daemon=True, name='DeciderPauseRelease').start()
+
     def check_proactive_trigger(self, stream_callback=None):
-        """
-        Controlla se è il momento di prendere l'iniziativa.
-        Da chiamare periodicamente (es. ogni 30-60 min).
-        """
-        if not self.proactive_agency:
-            return
-            
-        # Usa la callback registrata se non passata
-        callback = stream_callback or self.output_callback
-        
-        try:
-            user_id = "user_default"
-            # Recupera stato
-            last_time = None
-            last_emotion = {}
-            if self.user_profile:
-                 # FIX: UserProfile has .metrics, not .interaction_metrics
-                 if hasattr(self.user_profile, 'metrics'):
-                      last_time = datetime.fromtimestamp(self.user_profile.metrics.last_interaction_timestamp)
-                 # Mock emotion for now (or retrieve from profile if stored)
-                 last_emotion = {'primary_emotion': 'neutral', 'intensity': 0.1}
-            
-            # Se non abbiamo profilo, prova memoria
-            if not last_time and self.conversational_memory:
-                 history = self.conversational_memory.get_conversation_history(user_id)
-                 if history:
-                     last_time = history[-1].timestamp
-            
-            if not last_time:
-                return # Mai interagito
-                
-            # Check Initiative
-            trigger = self.proactive_agency.check_initiative(
-                user_id=user_id,
-                last_interaction_time=last_time,
-                last_emotional_state=last_emotion,
-                relationship_level=5 # Mock level or retrieve
-            )
-            
-            if trigger.should_contact:
-                if hasattr(self, 'logger'):
-                    self.logger.info(f"🚀 Proactive Trigger FIRED: {trigger.reason}")
-                else:
-                    logging.info(f"🚀 Proactive Trigger FIRED: {trigger.reason}")
-                
-                # Generate Message (with Freedom)
-                msg_content = self.proactive_agency.generate_proactive_message(
-                    trigger=trigger,
-                    user_name=self.user_profile.name if self.user_profile else "Amico",
-                    llm_callback=self.llm_wrapper.generate if hasattr(self, 'llm_wrapper') and self.llm_wrapper else None
-                )
-                
-                if msg_content and "..." not in msg_content:
-                    # Push to UI/Memory
-                    if hasattr(self, 'logger'):
-                        self.logger.info(f"🚀 Proactive Message: {msg_content}")
-                    
-                    # Store as Bot Message
-                    conv_id = f"proactive_{datetime.now().timestamp()}"
-                    self.conversational_memory.store_conversation(user_id, f"[Proactive] {msg_content}")
-                    
-                    # Send to UI via Callback
-                    if callback:
-                        # Log thought first
-                        callback({'type': 'thought', 'content': f"[[INITIATIVE: {trigger.reason}]]"})
-                        # Send text
-                        callback({'type': 'text', 'content': msg_content})
-                    else:
-                        logging.warning("🚀 Proactive message generated but NO CALLBACK registered!")
-                        
-        except Exception as e:
-            if hasattr(self, 'logger'):
-                self.logger.error(f"Proactive Check Failed: {e}")
-            else:
-                logging.error(f"Proactive Check Failed: {e}")
+        from allma_model.utils.proactive_runtime import check_initiative
+        return check_initiative(self, stream_callback)

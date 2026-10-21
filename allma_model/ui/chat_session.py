@@ -32,10 +32,15 @@ class ChatSession:
             self._active = ChatTurn(self._next_id, self.conversation_id)
             return self._active
 
-    def cancel(self):
+    def cancel(self, expected_request_id=None):
         with self._lock:
-            if self._active is not None:
-                self._active.cancelled.set()
+            if expected_request_id is not None and (type(expected_request_id) is not int
+                    or self._active is None or self._active.request_id != expected_request_id):
+                return False
+            if self._active is None or self._active.cancelled.is_set():
+                return False
+            self._active.cancelled.set()
+            return True
 
     def new_conversation(self):
         with self._lock:

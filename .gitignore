@@ -69,6 +69,7 @@ ENV/
 
 # Logs
 *.log
+/test-results/
 
 # Local tooling / caches
 .kivy/
@@ -95,3 +96,20 @@ visual_memory/
 /tmp_llama_check/
 /beta_test_conversations.json
 /personality_state.json
+/models/decider-0.8b/
+
+# Personal runtime archives and diagnostic logs (keep local, never publish)
+/allma_log*.txt
+/allma_memory.json
+/allma_diary.json
+/allma_model/allma_diary.json
+/allma_settings.json
+/allma_modules.db*
+/cognitive_state.json
+/notifications.json
+/model_binding.json
+/answer_recall.json
+/message_delivery.json
+/incremental_cache/
+/allma_state/
+/allma_state_backups/

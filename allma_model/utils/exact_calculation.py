@@ -2,15 +2,19 @@
 import ast
 from fractions import Fraction
 import re
+from .exact_request import split_exact_request
 
 
 def calculation_reply(message):
+    envelope = split_exact_request(message)
+    if envelope is None:
+        return None
+    body, output = envelope
+    if output == 'yes_no':
+        return None
     match = re.fullmatch(
         r'\s*(?:quanto fa|calcola|qual [èe] il risultato di)\s+'
-        r'([\d\s,.()+*/^×÷−-]+?)\s*\??\s*'
-        r'(?:[.]?\s*(?:rispondi|scrivi)\s+(?:solo|soltanto|esclusivamente)\s+'
-        r'(?:con\s+)?(?:un\s+|il\s+)?(?:numero|risultato numerico)\s*)?[.!]?\s*',
-        message or '', re.I)
+        r'([\d\s,.()+*/^×÷−-]+?)\s*[?.!]?\s*', body, re.I)
     if not match:
         return None
     expression = match[1].strip().replace('×','*').replace('÷','/').replace('−','-').replace('^','**').replace(',','.')
@@ -52,8 +56,10 @@ def calculation_reply(message):
         scaled=abs(value.numerator)*(10**places)//value.denominator
         digits=str(scaled).zfill(places+1)
         text=digits if places==0 else (digits[:-places]+'.'+digits[-places:]).rstrip('0').rstrip('.')
-        return (('-' if value<0 else '')+text,'verified_calculation',[])
+        text = ('-' if value<0 else '')+text
+        return ('{"risultato":'+text+'}' if output == 'json' else text,'verified_calculation',[])
     except ZeroDivisionError:
-        return ('La divisione per zero non è definita.','calculation_error',[])
+        text = 'La divisione per zero non è definita.'
+        return ('{"errore":"'+text+'"}' if output == 'json' else text,'calculation_error',[])
     except (SyntaxError,ValueError,OverflowError,TypeError):
         return None

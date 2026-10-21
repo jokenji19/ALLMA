@@ -91,12 +91,22 @@ class AllmaInternalApp(MDApp):
     def on_pause(self):
         """Called when the app is about to be paused (backgrounded)."""
         print("[AllmaInternalApp] Pausing... Saving state.")
+        bridge = getattr(getattr(self, 'chat_screen', None), 'bridge', None)
+        if bridge and hasattr(bridge, 'pause'):
+            bridge.pause()
+        already_paused = getattr(self, '_paused', False)
+        self._paused = True
+        intro = getattr(getattr(getattr(self, 'sm', None), 'current_screen', None), 'intro', None)
+        if intro:
+            intro.stop()
         try:
             if hasattr(self, 'chat_screen') and hasattr(self.chat_screen, 'core'):
                 core = self.chat_screen.core
                 if core is None:
                     self.chat_screen.intro.stop()
                     return True
+                if hasattr(core, 'set_foreground'):
+                    core.set_foreground(False)
                 stt = getattr(self.chat_screen, 'stt', None)
                 if not (stt and stt.permission_pending) and hasattr(self.chat_screen, 'suspend_voice'):
                     try:
@@ -105,7 +115,7 @@ class AllmaInternalApp(MDApp):
                         print(f"[AllmaInternalApp] Voice cleanup failed: {error}")
                 if hasattr(self.chat_screen, 'chat_session'):
                     self.chat_screen.chat_session.cancel()
-                if not getattr(self, "_paused", False):
+                if not already_paused:
                     self._dream_before_pause = core.dream_enabled
                 self._paused = True
                 core.set_dream_mode(False, persist=False)
@@ -130,18 +140,30 @@ class AllmaInternalApp(MDApp):
     def on_resume(self):
         """Called when the app resumes."""
         print("[AllmaInternalApp] Resumed.")
+        self._paused = False
+        intro = getattr(getattr(getattr(self, 'sm', None), 'current_screen', None), 'intro', None)
+        if intro and not getattr(getattr(self, 'chat_screen', None), 'is_initialized', False):
+            intro.resume()
+        bridge = getattr(getattr(self, 'chat_screen', None), 'bridge', None)
+        if bridge and hasattr(bridge, 'resume'):
+            bridge.resume()
         try:
             if hasattr(self, 'chat_screen') and hasattr(self.chat_screen, 'core'):
                 if self.chat_screen.core is None:
                     self.chat_screen.intro.progress_bar.indeterminate = self.chat_screen.intro.busy
                     return
-                self.chat_screen.core.set_dream_mode(getattr(self, "_dream_before_pause", False), persist=False)
+                self.chat_screen.core.set_dream_mode(getattr(self, "_dream_before_pause", self.chat_screen.core.dream_enabled), persist=False)
+                if hasattr(self.chat_screen.core, 'set_foreground'):
+                    self.chat_screen.core.set_foreground(True)
                 self._paused = False
         except Exception as e:
                 print(f"[AllmaInternalApp] Error in on_resume: {e}")
     def on_stop(self):
         self.on_pause()
         chat = getattr(self, 'chat_screen', None)
+        bridge = getattr(chat, 'bridge', None)
+        if bridge and hasattr(bridge, 'close'):
+            bridge.close()
         if chat and hasattr(chat, 'cancel_startup'):
             chat.cancel_startup()
         if chat and chat.core:
@@ -152,6 +174,9 @@ class AllmaInternalApp(MDApp):
             event = getattr(chat, "_learning_status_event", None)
             if event:
                 event.cancel()
+            proactive_event = getattr(chat, '_proactive_event', None)
+            if proactive_event:
+                proactive_event.cancel()
             # Closing can wait for a native inference call; keep the UI responsive.
             from threading import Thread
             Thread(target=chat.core.close, name="allma-shutdown", daemon=True).start()

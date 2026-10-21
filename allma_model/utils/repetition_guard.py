@@ -6,8 +6,17 @@ NOTICE = 'Ho interrotto la risposta perché stava diventando ripetitiva. Puoi ri
 
 
 def requested_repetition(request):
-    return bool(re.search(r'\b(ripeti|ripetere|repeat)\b', request, re.I)
-                and re.search(r'\b\d+\s+(volte|times)\b', request, re.I))
+    if not isinstance(request, str):
+        return False
+    # Only an affirmative instruction outside quoted/code examples grants it.
+    plain = re.sub(r'```.*?(?:```|$)|`[^`]*`|"[^"\n]*"|«[^»]*»', ' ', request, flags=re.S)
+    for clause in re.split(r'[.!?;\n]', plain):
+        if re.search(r"\b(non|mai|evita|evitare|senza|not|never|avoid|don['’]t)\b", clause, re.I):
+            continue
+        if (re.search(r'\b(ripeti|ripetere|repeat)\b', clause, re.I)
+                and re.search(r'\b\d+\s+(volte|times)\b', clause, re.I)):
+            return True
+    return False
 
 
 def repetition_start(text):

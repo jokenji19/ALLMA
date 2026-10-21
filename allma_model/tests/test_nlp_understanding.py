@@ -4,9 +4,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime
 from typing import Dict, List, Any
-from core.nlp_processor import NLPProcessor
-from core.language_understanding import LanguageUnderstanding
-from core.personalization_integration import PersonalizationIntegration
+from allma_model.core.nlp_processor import NLPProcessor
+from allma_model.core.language_understanding import LanguageUnderstanding
+from allma_model.core.personalization_integration import PersonalizationIntegration
 
 def print_separator(title: str = ""):
     """Stampa un separatore con titolo opzionale"""

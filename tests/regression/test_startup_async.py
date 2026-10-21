@@ -27,16 +27,18 @@ def test_model_initialization_does_not_block_ui_and_handoff_is_scheduled():
         ids.append(get_ident());entered.set();assert release.wait(2)
         return core
     ns,queued=methods(factory)
-    view=SimpleNamespace(_startup_cancelled=Event(),_accept_core=Mock(_llm_ready=True))
+    view=SimpleNamespace(_startup_cancelled=Event(),_accept_core=Mock(_llm_ready=True),intro=Mock())
     worker=Thread(target=ns['_load_core'],args=(view,'db','models',True))
     try:
         worker.start();assert entered.wait(2)
         assert worker.is_alive() and ids[0]!=get_ident()
         view._accept_core.assert_not_called()
         release.set();worker.join(2)
-        assert len(queued)==1
+        assert len(queued)==2
         view._accept_core.assert_not_called()
         queued[0](0)
+        view.intro.set_progress.assert_called_once_with(60)
+        queued[1](0)
         view._accept_core.assert_called_once_with(core,None)
     finally:
         release.set();worker.join(2)
@@ -66,7 +68,8 @@ def test_cancel_between_worker_and_ui_handoff_discards_result():
     stop=Event();view=SimpleNamespace(_startup_cancelled=stop,intro=Mock())
     view._accept_core=MethodType(ns['_accept_core'],view)
     ns['_load_core'](view,'db','models',True)
-    stop.set();queued[0](0)
+    stop.set()
+    for callback in queued:callback(0)
     assert closed.wait(2)
     view.intro.set_stage.assert_not_called()
     assert not hasattr(view,'core')
@@ -109,6 +112,6 @@ def test_native_model_load_failure_never_reports_ready_and_closes_core():
     ns['_load_core'](view,'db','models',True)
     core._ensure_mobile_llm.assert_called_once()
     core.close.assert_called_once()
-    queued[0](0)
+    queued[-1](0)
     assert view._accept_core.call_args.args[0] is None
     assert 'caricare il modello' in view._accept_core.call_args.args[1]

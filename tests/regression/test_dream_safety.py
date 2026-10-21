@@ -16,6 +16,14 @@ def manager(tmp_path):
                         llm_wrapper=Mock(), journal_path=str(tmp_path / 'dreams.json'))
 
 
+def test_dream_hypothesis_cannot_claim_unperformed_source_verification(tmp_path):
+    m=manager(tmp_path)
+    m.current_user_id='u'
+    result=m._consolidate_insights(['Le informazioni sono confermate da fonti storiche.'])
+    assert result==[]
+    assert m.review_store.pending_count('u')==0
+
+
 def test_failed_or_cancelled_generation_never_echoes_memory_as_insight():
     llm = Mock()
     llm.generate.return_value = ''

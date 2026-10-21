@@ -19,6 +19,10 @@ import re
 from typing import Optional, Any, Tuple
 
 
+class CognitiveValidationError(RuntimeError):
+    """A required check failed or could not admit the candidate."""
+
+
 class CognitivePipeline:
     """
     Catena di post-elaborazione del testo LLM.
@@ -43,11 +47,13 @@ class CognitivePipeline:
         neuroplasticity_v5: Optional[Any] = None,
         identity_engine_v5: Optional[Any] = None,
         volition_v5: Optional[Any] = None,
+        require_structural: bool = False,
     ):
         self.structural_core = structural_core
         self.neuroplasticity_v5 = neuroplasticity_v5
         self.identity_engine_v5 = identity_engine_v5
         self.volition_v5 = volition_v5
+        self.require_structural = require_structural
 
     def process(
         self,
@@ -73,42 +79,54 @@ class CognitivePipeline:
                 active_rules = self.neuroplasticity_v5.get_active_rules()
                 self.structural_core.update_rules(active_rules)
             except Exception as e:
-                logging.warning(f"[CognitivePipeline] Neuroplasticity sync failed: {e}")
+                raise CognitiveValidationError('Structural rules unavailable') from e
 
+        if self.require_structural and self.structural_core is None:
+            raise CognitiveValidationError('Structural validator unavailable')
         if self.structural_core:
             try:
                 text, is_valid, struct_violations = self.structural_core.validate(text)
                 if not is_valid:
-                    logging.warning(f"[CognitivePipeline] StructuralCore corrected: {struct_violations}")
+                    raise CognitiveValidationError('Structural constraints not satisfied')
             except Exception as e:
-                logging.error(f"[CognitivePipeline] StructuralCore validate failed: {e}")
-
-        # --- LAYER 4: NEUROPLASTICITY (Rinforzo Plastico) ---
-        if self.neuroplasticity_v5:
-            try:
-                self.neuroplasticity_v5.analyze(struct_violations)
-            except Exception as e:
-                logging.warning(f"[CognitivePipeline] Neuroplasticity analyze failed: {e}")
-
-        # --- LAYER 2: IDENTITY STATE UPDATE ---
-        if self.identity_engine_v5:
-            try:
-                self.identity_engine_v5.update_state(
-                    validated_text=text,
-                    violations=struct_violations,
-                )
-            except Exception as e:
-                logging.warning(f"[CognitivePipeline] IdentityState update failed: {e}")
+                raise CognitiveValidationError('Structural validation failed') from e
 
         # --- LAYER 3: VOLITION MODULATOR (Corteccia Espressiva) ---
         if self.volition_v5 and identity_state:
             try:
                 text = self.volition_v5.apply(text, identity_state)
             except Exception as e:
-                logging.warning(f"[CognitivePipeline] Volition apply failed: {e}")
+                logging.warning('[CognitivePipeline] Optional expression unavailable: %s', type(e).__name__)
+            if self.structural_core:
+                try:
+                    text, valid, extra = self.structural_core.validate(text)
+                    if not valid:
+                        raise CognitiveValidationError('Expression violates structural constraints')
+                    struct_violations = list(dict.fromkeys(struct_violations + extra))
+                except Exception as e:
+                    raise CognitiveValidationError('Expression validation failed') from e
 
-        logging.info(f"[CognitivePipeline] ✅ Processed: {text[:60]}...")
+        # Admission and durable delivery happen in the host, after all gates.
+        # Neither a rejected candidate nor a truncated preview changes state.
+        logging.info('[CognitivePipeline] Candidate structurally checked')
         return text, struct_violations
+
+    def commit(self, text, violations):
+        """Observe only an admitted, completed, durably stored answer."""
+        outcomes = {}
+        for name, component, method, args in (
+            ('neuroplasticity', self.neuroplasticity_v5, 'analyze', (violations,)),
+            ('identity_state', self.identity_engine_v5, 'update_state', (text, violations)),
+        ):
+            if component is None:
+                continue
+            try:
+                getattr(component, method)(*args)
+                outcomes[name] = 'saved'
+            except Exception as error:
+                outcomes[name] = 'failed'
+                logging.warning('[CognitivePipeline] %s commit failed: %s', name, type(error).__name__)
+        return outcomes
 
     def attach_modules(
         self,

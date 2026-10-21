@@ -78,8 +78,16 @@ class InformationExtractor:
         
     def extract_from_document(self, document_path: str) -> Dict[str, Any]:
         """Estrae informazioni da un documento"""
-        # TODO: Implementare l'estrazione da documenti
-        raise NotImplementedError("L'estrazione da documenti non è ancora implementata")
+        # Use the existing document processor; document data is not an instruction.
+        from .document_processor import DocumentProcessor
+        processor = DocumentProcessor()
+        document = processor.process_document(document_path)
+        if 'error' in document:
+            raise ValueError('Impossibile estrarre il documento')
+        text = processor.text_from_result(document)
+        extracted = self.extract_from_text(text)
+        extracted.update(document=document, text=text, source_kind='document_content')
+        return extracted
         
     def _extract_patterns(self, text: str) -> Dict[str, List[str]]:
         """Estrae pattern comuni dal testo usando regex"""

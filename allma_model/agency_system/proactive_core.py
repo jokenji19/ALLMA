@@ -33,35 +33,41 @@ class ProactiveAgency:
     WEIGHT_EMOTION = 2.0     # Invariato
     WEIGHT_RELATION = 0.5    # Invariato
     
-    def __init__(self, memory_system=None, reasoning_engine=None):
+    def __init__(self, memory_system=None, reasoning_engine=None, review_store=None):
+        self.review_store = review_store
         self.memory_system = memory_system
         self.reasoning_engine = reasoning_engine
         self.logger = logging.getLogger(__name__)
         
     def _get_latest_dream_insight(self, user_id: str) -> Optional[str]:
         """Recupera l'ultimo insight sognato non ancora 'consumato'."""
-        if not self.memory_system:
+        self._latest_dream_record = None
+        if not user_id or self.review_store is None:
             return None
-            
         try:
-            # Cerca tra le conversazioni recenti
-            history = self.memory_system.get_conversation_history(user_id, limit=50) # Look back further
-            
-            # Cerca l'ultimo insight (memoria di tipo 'dream_insight')
-            # Nota: ConversationalMemory salva i messaggi, ma qui cerchiamo un 'fatto' o un 'pensiero'
-            # Se store_insight salva come messaggio con metadata type='dream_insight'
-            
-            for msg in reversed(history):
-                # Check metadata safely
-                meta = getattr(msg, 'metadata', {}) or {}
-                if meta.get('type') == 'dream_insight':
-                    timestamp = msg.timestamp
-                    # Se è 'fresco' (< 24 ore)
-                    if (datetime.now() - timestamp).total_seconds() < 86400:
-                        return msg.content.replace("INSIGHT: ", "")
+            records = self.review_store.list(user_id, limit=200)
+            accepted = [record for record in records
+                        if record['status'] in ('user_confirmed', 'user_corrected')]
+            consumed = set()
+            if self.memory_system is not None and hasattr(self.memory_system, 'messages'):
+                with self.memory_system.lock:
+                    for message in self.memory_system.messages:
+                        if (message.user_id or message.metadata.get('user_id')) != user_id:
+                            continue
+                        if message.metadata.get('source') == 'proactive':
+                            consumed.add((message.metadata.get('proactive_dream_id'),
+                                          message.metadata.get('proactive_dream_revision')))
+            accepted = [record for record in accepted if (record['id'], record['revision']) not in consumed]
+            accepted.sort(key=lambda record: record.get('reviewed_at') or record['created_at'], reverse=True)
+            for record in accepted:
+                timestamp = datetime.fromisoformat(record.get('reviewed_at') or record['created_at'])
+                age = (datetime.now(timestamp.tzinfo) - timestamp).total_seconds()
+                if 0 <= age < 86400:
+                    self._latest_dream_record = {'id': record['id'], 'revision': record['revision']}
+                    return record['text']
             return None
-        except Exception as e:
-            self.logger.error(f"Error fetching insights: {e}")
+        except Exception as error:
+            self.logger.error('Error fetching reviewed dream insights: %s', error)
             return None
 
     def check_initiative(
@@ -144,6 +150,7 @@ class ProactiveAgency:
             context={
                 'hours_passed': hours_passed,
                 'last_emotion': last_emotion,
+                'dream_record': getattr(self, '_latest_dream_record', None),
                 'insight': latest_insight, # Passa l'insight
                 'trigger_type': 'insight_share' if has_insight else 'emotional_checkup'
             }

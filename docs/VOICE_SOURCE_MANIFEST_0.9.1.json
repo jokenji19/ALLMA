@@ -1,0 +1,110 @@
+{
+  "sherpa_onnx": "1.12.20",
+  "sources": [
+    {
+      "filename": "asio-asio-1-24-0.tar.gz",
+      "url": "https://codeload.github.com/chriskohlhoff/asio/tar.gz/refs/tags/asio-1-24-0",
+      "recipe": "cmake/asio.cmake",
+      "sha256": "cbcaaba0f66722787b1a7c33afe1befb3a012b5af3ad7da7ff0f6b8c9b7a8a5b",
+      "bytes": 2902485
+    },
+    {
+      "filename": "cargs-v1.0.3.tar.gz",
+      "url": "https://codeload.github.com/likle/cargs/tar.gz/refs/tags/v1.0.3",
+      "recipe": "cmake/cargs.cmake",
+      "sha256": "ddba25bd35e9c6c75bc706c126001b8ce8e084d40ef37050e6aa6963e836eb8b",
+      "bytes": 41253
+    },
+    {
+      "filename": "eigen-eigen-3.4.0.tar.gz",
+      "url": "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz",
+      "recipe": "cmake/eigen.cmake",
+      "sha256": "8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72",
+      "bytes": 2705005
+    },
+    {
+      "filename": "espeak_ng-f6fed6c58b5e0998b8e68c6610125e2d07d595a7.zip",
+      "url": "https://codeload.github.com/csukuangfj/espeak-ng/zip/f6fed6c58b5e0998b8e68c6610125e2d07d595a7",
+      "recipe": "cmake/espeak-ng-for-piper.cmake",
+      "sha256": "70cbf4050e7a014aae19140b05e57249da4720f56128459fbe3a93beaf971ae6",
+      "bytes": 18011637
+    },
+    {
+      "filename": "googletest-v1.13.0.tar.gz",
+      "url": "https://codeload.github.com/google/googletest/tar.gz/refs/tags/v1.13.0",
+      "recipe": "cmake/googletest.cmake",
+      "sha256": "ad7fdba11ea011c1d925b3289cf4af2c66a352e18d4c7264392fead75e919363",
+      "bytes": 862871
+    },
+    {
+      "filename": "hclust_cpp-2024-09-29.tar.gz",
+      "url": "https://codeload.github.com/csukuangfj/hclust-cpp/tar.gz/refs/tags/2024-09-29",
+      "recipe": "cmake/hclust-cpp.cmake",
+      "sha256": "abab51448a3cb54272aae07522970306e0b2cc6479d59d7b19e7aee4d6cedd33",
+      "bytes": 22519
+    },
+    {
+      "filename": "kaldi_decoder-v0.2.10.tar.gz",
+      "url": "https://codeload.github.com/k2-fsa/kaldi-decoder/tar.gz/refs/tags/v0.2.10",
+      "recipe": "cmake/kaldi-decoder.cmake",
+      "sha256": "a3d602edc1f422acfe663153faf3f0a716305ec1f95b8fcf9d28d301d6827309",
+      "bytes": 51908
+    },
+    {
+      "filename": "kaldi_native_fbank-v1.22.3.tar.gz",
+      "url": "https://codeload.github.com/csukuangfj/kaldi-native-fbank/tar.gz/refs/tags/v1.22.3",
+      "recipe": "cmake/kaldi-native-fbank.cmake",
+      "sha256": "9176cc66fc7ce1edf85cf355b06e320c57db6297df74277f575183468893cf61",
+      "bytes": 71144
+    },
+    {
+      "filename": "kaldifst-v1.7.17.tar.gz",
+      "url": "https://codeload.github.com/k2-fsa/kaldifst/tar.gz/refs/tags/v1.7.17",
+      "recipe": "cmake/kaldifst.cmake",
+      "sha256": "c4b701a23a400bda8032586b02c7e0d5e813a765832df60c23e6df9e62b010f4",
+      "bytes": 171684
+    },
+    {
+      "filename": "onnxruntime-v1.17.1.tar.gz",
+      "url": "https://codeload.github.com/microsoft/onnxruntime/tar.gz/refs/tags/v1.17.1",
+      "recipe": "build-android-arm64-v8a.sh",
+      "sha256": "88335a1ccbccccb35d5d3aaadee090a9745cf90d97ca87c4a3ac5c4b694b7b17",
+      "bytes": 232993225
+    },
+    {
+      "filename": "openfst-sherpa-onnx-2024-06-19.tar.gz",
+      "url": "https://codeload.github.com/csukuangfj/openfst/tar.gz/refs/tags/sherpa-onnx-2024-06-19",
+      "recipe": "cmake/openfst.cmake",
+      "sha256": "5c98e82cc509c5618502dde4860b8ea04d843850ed57e6d6b590b644b268853d",
+      "bytes": 1244216
+    },
+    {
+      "filename": "piper_phonemize-78a788e0b719013401572d70fef372e77bff8e43.zip",
+      "url": "https://codeload.github.com/csukuangfj/piper-phonemize/zip/78a788e0b719013401572d70fef372e77bff8e43",
+      "recipe": "cmake/piper-phonemize.cmake",
+      "sha256": "89641a46489a4898754643ce57bda9c9b54b4ca46485fdc02bf0dc84b866645d",
+      "bytes": 9805951
+    },
+    {
+      "filename": "pybind11-v3.0.0.tar.gz",
+      "url": "https://codeload.github.com/pybind/pybind11/tar.gz/refs/tags/v3.0.0",
+      "recipe": "cmake/pybind11.cmake",
+      "sha256": "453b1a3e2b266c3ae9da872411cadb6d693ac18063bd73226d96cfb7015a200c",
+      "bytes": 915234
+    },
+    {
+      "filename": "sherpa-onnx-v1.12.20.tar.gz",
+      "url": "https://codeload.github.com/k2-fsa/sherpa-onnx/tar.gz/refs/tags/v1.12.20",
+      "sha256": "1fdd05cd2552875a2d9dae13e415447ef422d939778b89be0bc4ed83ea2b9aef",
+      "bytes": 9006286
+    },
+    {
+      "filename": "websocketpp-b9aeec6eaf3d5610503439b4fae3581d9aff08e8.zip",
+      "url": "https://codeload.github.com/zaphoyd/websocketpp/zip/b9aeec6eaf3d5610503439b4fae3581d9aff08e8",
+      "recipe": "cmake/websocketpp.cmake",
+      "sha256": "1385135ede8191a7fbef9ec8099e3c5a673d48df0c143958216cd1690567f583",
+      "bytes": 996004
+    }
+  ],
+  "scope": "Pinned upstream source snapshots and original build recipes. No user data or model weights."
+}

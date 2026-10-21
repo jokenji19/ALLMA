@@ -8,6 +8,14 @@ from allma_model.llm.model_binding import ModelBinding, NativeCompletion, legacy
 TEMPLATE = '{{ bos_token }}{% for m in messages %}[{{ m.role }}]{{ m.content }}{{ eos_token }}{% endfor %}[assistant]'
 
 
+def test_qwen35_native_binding_keeps_reasoning_independent_of_filename():
+    b = binding('qwen35')
+    assert b.reasoning
+    messages = [{'role':'system','content':'Mi chiamo ALLMA.'}, {'role':'user','content':'Ciao'}]
+    assert b.prepare(messages, lambda d:d.split(), 64).prompt.endswith('<think>\n')
+    assert b.prepare(messages, lambda d:d.split(), 64, reasoning=False).prompt.endswith('</think>\n\n')
+
+
 def binding(arch='llama', **kwargs):
     return ModelBinding({'general.architecture':arch,'tokenizer.chat_template':TEMPLATE},'<B>','<E>',**kwargs)
 

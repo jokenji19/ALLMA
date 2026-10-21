@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <include domain="file" path="allma_state/allma.db" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/allma_memory.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/allma_settings.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/allma_modules.db" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/answer_recall.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/incremental_cache/knowledge_states.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/data/dream_journal.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/data/dream_journal.json.pending.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/data/dream_journal.json.processed.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/message_delivery.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/data/dream_journal.json.reviews.db" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/cognitive_state.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/allma_diary.json" requireFlags="clientSideEncryption" />
+    <include domain="file" path="allma_state/legacy_coalescence.db" requireFlags="clientSideEncryption" />
+</full-backup-content>

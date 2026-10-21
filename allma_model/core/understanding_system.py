@@ -463,11 +463,9 @@ class SyntaxAnalyzer:
         """Raffina i ruoli basandosi sul contesto della frase."""
         # Se c'è un verbo "essere" o "chiamarsi", il componente successivo è un nome
         for i, comp in enumerate(components):
-            print(f"Raffinamento ruolo per: {comp.text} -> ruolo attuale: {comp.role}")
             
             # Non modificare il ruolo se è già "nome"
             if comp.role == "nome":
-                print(f"Nuovo ruolo: {comp.role}")
                 continue
                 
             # Regole di raffinamento
@@ -482,7 +480,6 @@ class SyntaxAnalyzer:
                 else:
                     comp.role = "soggetto"
             
-            print(f"Nuovo ruolo: {comp.role}")
 
 class ContextResolver:
     def resolve(self, components: List[SentenceComponent], 

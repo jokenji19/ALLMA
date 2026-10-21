@@ -161,7 +161,9 @@ class ModuleOrchestrator:
                     handler = getattr(module.instance, 'analyze', None)
                 if not callable(handler):
                     raise TypeError('Module has no callable process/analyze method')
-                result = handler(user_input, dict(turn_context))
+                activity = getattr(self, 'activity', None)
+                result = (activity.call(module.name, handler, user_input, dict(turn_context))
+                          if activity is not None else handler(user_input, dict(turn_context)))
                 if result is None:
                     result = {}
                 # A malformed adapter must not crash coalescence or the whole chat.
@@ -182,11 +184,19 @@ class ModuleOrchestrator:
 
         for name, outcome in outcomes.items():
             self.modules[name].last_status = outcome['status']
+            activity = getattr(self, 'activity', None)
+            if activity is not None:
+                activity.emit(name, outcome['status'], outcome.get('duration_ms'))
         merged = self.coalescence(results)
         for name, result in results.items():
             contribution = self.coalescence({name: result})
             outcomes[name]['output_role'] = ('guidance' if contribution['system_instruction'] or contribution['user_prefix']
                                              else 'observational' if result else 'none')
+        activity = getattr(self, 'activity', None)
+        if activity is not None:
+            for name, outcome in outcomes.items():
+                if outcome.get('output_role') in ('guidance', 'observational'):
+                    activity.emit(name, 'guidance' if outcome['output_role']=='guidance' else 'observed')
         total_time_ms = (time.perf_counter() - start_time) * 1000
         report = {
             'timestamp': time.time(), 'executed': len(results),

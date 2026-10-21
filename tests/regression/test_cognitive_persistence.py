@@ -16,6 +16,7 @@ from allma_model.core.identity_system import IdentityManager
 from allma_model.core.personality_coalescence import CoalescenceProcessor, EmotionalResponse, EmotionalState
 from allma_model.utils.background_work import BackgroundCancellation, power_allows_background
 from allma_model.utils.generation_control import GenerationCancelled
+from allma_model.utils.persistence import StateRecoveryRequired
 
 
 @pytest.fixture(autouse=True)
@@ -25,30 +26,39 @@ def isolated_working_directory(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize('data', [[], None, {'version': 1, 'records': []},
                                    {'version': 1, 'records': {'k': {'answer': 'x'}}}])
-def test_bad_recall_preserves_original_and_accepts_new_learning(tmp_path, data):
+def test_bad_recall_preserves_original_and_blocks_new_learning_until_recovery(tmp_path, data):
     path = tmp_path / 'answers.json'
     original = json.dumps(data)
     path.write_text(original)
     recall = AnswerRecall(path)
     assert recall.lookup('k', 'u') is None
-    recall.observe('new', 'u', 'Una domanda completa', 'Risposta', 'event')
+    with pytest.raises(StateRecoveryRequired):
+        recall.observe('new', 'u', 'Una domanda completa', 'Risposta', 'event')
     assert path.with_name(path.name + '.invalid.bak').read_text() == original
-    assert AnswerRecall(path).records['new']['answer'] == 'Risposta'
+    assert path.read_text() == original
+    assert not AnswerRecall(path).records
 
 
-def test_mixed_recall_keeps_only_valid_confirmed_answer(tmp_path):
+def test_mixed_recall_suspends_partial_snapshot_until_valid_repair(tmp_path):
     path = tmp_path / 'answers.json'
     recall = AnswerRecall(path)
     recall.observe('good', 'u', 'Una domanda completa', 'Risposta corretta', 'e')
     recall.feedback('good', 'u', 'one', True)
     recall.feedback('good', 'u', 'two', True)
-    data = json.loads(path.read_text())
+    healthy = path.read_text()
+    data = json.loads(healthy)
     data['records']['bad'] = {'confirmations': ['one', 'one'], 'user': 'u'}
     path.write_text(json.dumps(data))
     restored = AnswerRecall(path)
-    assert restored.lookup('good', 'u')['answer'] == 'Risposta corretta'
+    assert restored.lookup('good', 'u') is None
     assert restored.lookup('good', 'other') is None
     assert restored.lookup('bad', 'u') is None
+    assert not restored.feedback('good', 'u', 'third', True)
+    assert path.with_name(path.name + '.invalid.bak').read_text() == json.dumps(data)
+    # Recovery publishes a complete repaired snapshot, never a guessed subset.
+    path.write_text(healthy)
+    assert restored.load_state() is True
+    assert restored.lookup('good', 'u')['answer'] == 'Risposta corretta'
 
 
 def test_identity_integrity_and_rules_survive_restart_without_cross_db_leak(tmp_path):

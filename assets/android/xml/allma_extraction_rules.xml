@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <include domain="file" path="allma_state/allma.db" />
+        <include domain="file" path="allma_state/allma_memory.json" />
+        <include domain="file" path="allma_state/allma_settings.json" />
+        <include domain="file" path="allma_state/allma_modules.db" />
+        <include domain="file" path="allma_state/answer_recall.json" />
+        <include domain="file" path="allma_state/incremental_cache/knowledge_states.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json.pending.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json.processed.json" />
+        <include domain="file" path="allma_state/message_delivery.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json.reviews.db" />
+        <include domain="file" path="allma_state/cognitive_state.json" />
+        <include domain="file" path="allma_state/allma_diary.json" />
+        <include domain="file" path="allma_state/legacy_coalescence.db" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="allma_state/allma.db" />
+        <include domain="file" path="allma_state/allma_memory.json" />
+        <include domain="file" path="allma_state/allma_settings.json" />
+        <include domain="file" path="allma_state/allma_modules.db" />
+        <include domain="file" path="allma_state/answer_recall.json" />
+        <include domain="file" path="allma_state/incremental_cache/knowledge_states.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json.pending.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json.processed.json" />
+        <include domain="file" path="allma_state/message_delivery.json" />
+        <include domain="file" path="allma_state/data/dream_journal.json.reviews.db" />
+        <include domain="file" path="allma_state/cognitive_state.json" />
+        <include domain="file" path="allma_state/allma_diary.json" />
+        <include domain="file" path="allma_state/legacy_coalescence.db" />
+    </device-transfer>
+</data-extraction-rules>

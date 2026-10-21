@@ -17,6 +17,7 @@ from typing import List, Dict, Optional, Deque
 from collections import deque
 from datetime import datetime
 import math
+import copy
 from allma_model.utils.cognitive_state import CognitiveStateStore, unit_number
 
 @dataclass
@@ -89,11 +90,18 @@ class IdentityStateEngine:
     def __init__(self, db_path: str = "allma_v5.db"):
         self.logger = logging.getLogger(__name__)
         self.entropy_tracker = EntropyTracker()
+        self._last_entropy = 1.0
         
         self._store = CognitiveStateStore(db_path)
         saved = self._store.get('identity_state')
+        self.delivery_checkpoint = saved.get('delivery_checkpoint', 0)
+        if type(self.delivery_checkpoint) is not int or not 0 <= self.delivery_checkpoint < 2**53:
+            raise ValueError('Invalid identity delivery checkpoint; recovery required')
         self._maturity = unit_number(saved.get('maturity'), 0.5)
         self._base_stability = unit_number(saved.get('stability'), 0.9)
+        self.accepted_turns = saved.get('accepted_turns', 0)
+        if type(self.accepted_turns) is not int or self.accepted_turns < 0:
+            self.accepted_turns = 0
         # Entropy history and current duress remain transient.
         
     def compute_state(self, context_metrics: Dict[str, float]) -> IdentityState:
@@ -107,7 +115,7 @@ class IdentityStateEngine:
         
         # Calcola Entropy Index basato sullo storico recente (senza l'input attuale ovviamente)
         # Usiamo l'ultimo valore calcolato o un default alto
-        current_entropy = 1.0 # Default ottimistico pre-generazione
+        current_entropy = self._last_entropy
         
         # Calcola Drift (Spinta alla novità vs coerenza)
         # Se entropia bassa, drift deve alzarsi per forzare novità
@@ -129,27 +137,35 @@ class IdentityStateEngine:
         self.logger.debug(f"🧠 IdentityState Computed: M={state.maturity:.2f} S={state.stability:.2f} E={state.entropy_index:.2f}")
         return state
 
-    def update_state(self, validated_text: str, violations: List[str]):
+    def update_state(self, validated_text: str, violations: List[str], *, delivery_sequence=None):
         """
         [PHASE D] Update State (Post-Generation).
         L'organismo impara dal risultato delle proprie azioni (Testo Validato).
         """
-        # 1. Aggiorna Entropia con il testo appena prodotto
-        new_entropy = self.entropy_tracker.update(validated_text)
+        if delivery_sequence is not None and delivery_sequence <= self.delivery_checkpoint:
+            return
+        tracker = copy.deepcopy(self.entropy_tracker)
+        new_entropy = tracker.update(validated_text)
         
         # 2. Aggiorna Stabilità in base alle violazioni strutturali
         # Se il midollo ha dovuto correggere, la stabilità mentale cala
         penalty = len(violations) * 0.1
-        self._base_stability = max(0.1, self._base_stability - penalty)
+        stability = max(0.1, self._base_stability - penalty)
         
         # Recupero lento della stabilità (Resilienza)
         if not violations:
-             self._base_stability = min(1.0, self._base_stability + 0.01)
+             stability = min(1.0, stability + 0.01)
              
-        # 3. Maturità: Cresce linearmente con l'esperienza (simulato)
-        # In produzione, questo dipenderebbe dalla qualità del feedback utente
-        self._maturity = min(1.0, self._maturity + 0.0001)
-        self._store.put('identity_state', {'maturity': self._maturity, 'stability': self._base_stability})
+        # Activity is a counter, not evidence of intelligence or personal growth.
+        # Keep the legacy maturity coefficient stable; canonical learning uses
+        # attributed experiences and utility feedback in coalescence.
+        turns = self.accepted_turns + 1
+        self._store.put('identity_state', {'maturity': self._maturity, 'stability': stability,
+            'accepted_turns': turns, 'delivery_checkpoint': delivery_sequence if delivery_sequence is not None else self.delivery_checkpoint})
+        self.entropy_tracker, self._last_entropy = tracker, new_entropy
+        self._base_stability, self.accepted_turns = stability, turns
+        if delivery_sequence is not None:
+            self.delivery_checkpoint = delivery_sequence
         
         self.logger.info(
             f"🧠 State Update: Entropy={new_entropy:.2f}, Stability={self._base_stability:.2f} (Violations: {len(violations)})"

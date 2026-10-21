@@ -15,7 +15,7 @@ from allma_model.core.emotional_adaptation_system import EmotionalAdaptationSyst
     ('Ti ringrazio di cuore', 'joy', 'gratitude'), ('Ti voglio bene', 'joy', 'love'),
     ('Mi sento sollevato', 'joy', 'relief'), ('Sono triste', 'sadness', 'sadness'),
     ('Mi sento sola', 'sadness', 'loneliness'), ('Nessuno mi ascolta', 'sadness', 'loneliness'),
-    ('Mi manca mio padre', 'sadness', 'grief'), ('Provo nostalgia', 'sadness', 'nostalgia'),
+    ('Mi manca mio padre', 'sadness', 'nostalgia'), ('Provo nostalgia', 'sadness', 'nostalgia'),
     ('Sono delusa', 'sadness', 'disappointment'), ('Mi sento impotente', 'sadness', 'helplessness'),
     ('Mi sento in colpa', 'sadness', 'guilt'), ('Mi vergogno', 'sadness', 'shame'),
     ('Sono imbarazzata', 'sadness', 'shame'), ('Sono furiosa', 'anger', 'anger'),
@@ -182,7 +182,7 @@ def test_uncertain_emotion_does_not_change_personality_style():
     from allma_model.core.personality_adapter import PersonalityAdapterLite
     adapter = PersonalityAdapterLite()
     before = dict(vars(adapter.style))
-    adapter._adapt_from_emotion(EmotionalCore().detect_emotion('Forse sono triste'))
+    adapter.process('Forse sono triste', {'user_id':'u', 'emotional_state':EmotionalCore().detect_emotion('Forse sono triste')})
     assert vars(adapter.style) == before
 
 
@@ -195,3 +195,58 @@ def test_voice_replies_to_fear_and_anger_calmly():
         params = voice.get_voice_parameters(family, .9)
         assert params['rate'] <= 1.
         assert .9 <= params['pitch'] <= 1.1
+
+
+def test_emotion_prompt_has_italian_labels_and_concrete_balanced_support():
+    from allma_model.emotional_system.emotion_analysis import NUANCE_NAMES_IT, LEXICON, support_instruction
+    state=EmotionalCore().detect_emotion('Sono felice ma anche preoccupata')
+    text=prompt_context(state)
+    assert 'joy (gioia)' in text and 'anxiety (ansia)' in text
+    task=support_instruction(state)
+    assert 'situazione descritta' in task and 'formato richiesto' in task
+    assert 'ipotesi' in text and 'Non attribuirtele' in task
+    assert 'tuoi sentimenti o partecipazioni' in task
+    assert set(LEXICON) <= set(NUANCE_NAMES_IT)
+
+
+def test_emotion_context_separates_other_people_and_negation_from_user():
+    from allma_model.emotional_system.emotion_analysis import support_instruction
+    state=EmotionalCore().detect_emotion('Mia sorella è triste, io non sono triste: sono sollevata.')
+    data=prompt_context(state)
+    assert 'relief (sollievo)' in data
+    assert 'Altre persone: tristezza.' in data
+    assert 'Negate dall’utente: tristezza.' in data
+    assert 'Supporto:' not in data
+    assert support_instruction(EmotionalCore().detect_emotion('Quanto fa 12 + 8?')) == ''
+
+
+def test_mixed_tone_does_not_prioritize_only_negative_primary_emotion():
+    state=EmotionalCore().detect_emotion('Sono molto preoccupata ma felice')
+    result=EmotionalAdaptationSystem().process('Sono molto preoccupata ma felice',{'emotional_state':state})
+    assert any('riconosci ciascuna emozione espressa' in s for s in result['system_instruction'])
+    assert result['metadata']['adapted']
+
+
+def test_positive_primary_with_negative_secondary_does_not_increase_humor():
+    from allma_model.core.personality_adapter import PersonalityAdapterLite
+    adapter=PersonalityAdapterLite()
+    state=EmotionalCore().detect_emotion('Sono molto felice ma triste')
+    before=adapter.style.humor
+    result=adapter.process('Sono molto felice ma triste', {'user_id':'u','emotional_state':state})
+    assert adapter.style.humor <= before
+    assert 'umorismo' not in result['style_hint']
+
+
+def test_default_style_does_not_add_empty_generic_prompt_directive():
+    from allma_model.core.personality_adapter import PersonalityAdapterLite
+    assert PersonalityAdapterLite().process('', {'user_id':'u'})['style_hint'] == ''
+
+
+@pytest.mark.parametrize('text,family', [
+    ('Non ho paura: mi sento serena','trust'),
+    ('Io non sono felice: sono triste','sadness'),
+    ('Mio fratello è arrabbiato: io sono sollevato','joy'),
+    ('Non sono: triste','neutral'),
+])
+def test_new_self_statement_after_colon_has_its_own_negation_scope(text,family):
+    assert analyze(text)['primary_emotion'] == family

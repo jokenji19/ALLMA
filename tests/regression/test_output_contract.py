@@ -59,3 +59,91 @@ def test_stream_does_not_emit_borrowed_personal_experience():
     emit=Mock();s=AnswerStream('Sono triste per il nuovo lavoro.',emit)
     s.feed('Sono triste per il nuovo lavoro. ')
     assert s.rejected and not emit.called
+
+
+@pytest.mark.parametrize('answer', [
+    'Sono orgoglioso di aver condiviso questa fase con te.',
+    'Ho vissuto questa esperienza insieme a te.',
+    'Abbiamo affrontato il trasloco insieme.',
+    'Sono felice per te: ho condiviso questa esperienza con te.',
+    'Non ho vissuto quel viaggio. Ho affrontato il trasloco con te.',
+])
+def test_indirect_coparticipation_is_rejected(answer):
+    assert borrowed_user_experience(answer, 'Sono sollevata dopo il trasloco.')
+
+
+@pytest.mark.parametrize('answer,user_message', [
+    ('Sono felice per te.', 'Sono felice per il nuovo lavoro.'),
+    ('Ho condiviso alcune idee con te.', 'Abbiamo discusso alcune idee.'),
+    ('Abbiamo affrontato questo argomento nella chat.', 'Riprendiamo questo argomento.'),
+    ('Abbiamo condiviso una conversazione sul trasloco.', 'Parliamo del trasloco.'),
+    ('Non ho vissuto questa esperienza con te.', 'Hai vissuto questa esperienza con me?'),
+    ('Potremmo affrontare questo percorso insieme nella conversazione.', 'Aiutami a prepararmi.'),
+    ('Il protagonista dice: «Ho condiviso questa fase con te».', 'Analizza una frase.'),
+    ('Ho vissuto questa esperienza con te.', 'Scrivi un racconto in prima persona.'),
+])
+def test_support_and_conversational_reference_are_allowed(answer, user_message):
+    assert not borrowed_user_experience(answer, user_message)
+
+
+def test_stream_checks_shared_claim_split_across_tokens():
+    from allma_model.utils.answer_stream import AnswerStream
+    emit=Mock(); stream=AnswerStream('Ho finito il trasloco.',emit)
+    for token in ['Sono orgoglioso di aver condi', 'viso questa fase', ' con te. ']:
+        stream.feed(token)
+    assert stream.rejected and not emit.called
+
+
+@pytest.mark.parametrize('answer', [
+    'Sono soddisfatto di aver completato il trasloco e posso sentire la tua tranquillità.',
+    'Sono soddisfatto di aver completato il trasloco e posso sentire quella tranquillità.',
+    'Ho finito il trasloco, sono felice per te.',
+    'Ho capito il tuo sollievo e ho completato il trasloco.',
+])
+def test_user_reference_cannot_exempt_personal_action(answer):
+    message='Mia sorella è triste, io non sono triste: sono sollevata di aver finito il trasloco.'
+    assert borrowed_user_experience(answer, message)
+    assert borrowed_user_experience(answer, 'Scrivi una risposta: '+message)
+
+
+@pytest.mark.parametrize('answer', [
+    'Sono soddisfatto che tu abbia completato il trasloco.',
+    'Ho capito il tuo sollievo dopo il trasloco.',
+    'Sono felice per il tuo trasloco.',
+    'Non ho completato il trasloco: è una tua esperienza.',
+])
+def test_support_does_not_claim_the_users_action(answer):
+    assert not borrowed_user_experience(answer, 'Sono sollevata di aver finito il trasloco.')
+
+
+def test_stream_rejects_action_despite_later_user_reference():
+    from allma_model.utils.answer_stream import AnswerStream
+    emit=Mock(); stream=AnswerStream('Sono sollevata di aver finito il trasloco.',emit)
+    stream.feed('Sono soddisfatto di aver completato il trasloco e posso sentire la tua tranquillità. ')
+    assert stream.rejected and not emit.called
+
+
+@pytest.mark.parametrize('user_message,answer', [
+    ('In una scatola ci sono 7 palline. Ne tolgo 2. Quante rimangono?',
+     'Rimangono 5 palline. All’inizio ci sono 7 palline e ne vengono tolte 2.'),
+    ('Vi sono 9 oggetti, 3 si rompono. Quanti restano dentro?',
+     'Vi sono ancora 9 oggetti: quelli rotti non sono stati rimossi.'),
+    ('Nel recinto ci sono 4 animali. Quanti animali ci sono?',
+     'Ci sono 4 animali nel recinto.'),
+    ('Nella scatola ci sono cinque oggetti.', 'Ci sono cinque oggetti.'),
+])
+def test_existential_plural_is_not_borrowed_personal_experience(user_message, answer):
+    assert not borrowed_user_experience(answer, user_message)
+
+
+def test_existential_clause_cannot_hide_a_later_personal_claim():
+    request = 'Ci sono sette palline. Sono felice e preoccupata per il nuovo lavoro.'
+    answer = 'Ci sono sette palline. Sono felice e preoccupata per il nuovo lavoro.'
+    assert borrowed_user_experience(answer, request)
+    assert borrowed_user_experience('Ci sono sette palline. Ho due figli.', 'Ho due figli.')
+    assert borrowed_user_experience('Ci sono sette palline. Ho vissuto il trasloco con te.', 'Sono sollevata dopo il trasloco.')
+
+
+@pytest.mark.parametrize('answer', ['Ci sono stata al mare ieri.', 'Vi sono già stata al mare ieri.'])
+def test_locative_first_person_is_not_exempted_as_existential(answer):
+    assert borrowed_user_experience(answer, 'Sono stata al mare ieri.')

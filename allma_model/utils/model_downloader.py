@@ -13,25 +13,16 @@ from kivy.utils import platform
 class ModelDownloader:
     _locks = {}
     _locks_guard = threading.Lock()
+    _session_verified = {}
 
     def __init__(self, models_dir=None):
         self.logger = logging.getLogger(__name__)
         self.models_dir = models_dir or self._get_models_dir()
         self.max_retries = 5
         self.retry_delay = 2
-        self._verified = {}
-        # Official LFS metadata, verified on 2026-09-29:
-        # https://huggingface.co/api/models/Qwen/Qwen3-1.7B-GGUF?blobs=true
-        self.models = {
-            'gemma': {
-                'url': 'https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/'
-                       '90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf?download=true',
-                'filename': 'qwen3-1.7b-q8_0.gguf',
-                'size_bytes': 1834426016,
-                'sha256': '061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a',
-                'size_mb': 1834426016 / (1024 * 1024),
-            }
-        }
+        self._verified = self._session_verified
+        from allma_model.llm.model_catalog import catalog
+        self.models = catalog()
 
     def _get_models_dir(self):
         if platform == 'android':
@@ -39,13 +30,31 @@ class ModelDownloader:
             return os.path.join(app_storage_path(), 'models')
         return os.path.join(os.getcwd(), 'models')
 
-    def _valid(self, path, info):
-        """Cache a successful hash only while the file's identity and metadata match."""
+    @staticmethod
+    def _fingerprint(path, info):
+        stat = os.stat(path)
+        if stat.st_size != info['size_bytes']:
+            return None
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
+                stat.st_ctime_ns, info['sha256'])
+
+    def local_status(self, path, info):
+        """Metadata-only inventory: presence is not a successful integrity check."""
+        path = os.path.abspath(path)
         try:
-            stat = os.stat(path)
-            fingerprint = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns,
-                           info['sha256'])
-            if stat.st_size != info['size_bytes']:
+            fingerprint = self._fingerprint(path, info)
+            present = fingerprint is not None and os.path.isfile(path)
+            return {'available': present,
+                    'verified': bool(present and self._verified.get(path) == fingerprint)}
+        except (OSError, KeyError):
+            return {'available': False, 'verified': False}
+
+    def _valid(self, path, info):
+        """Reuse verified bytes across instances, only within this app process."""
+        path = os.path.abspath(path)
+        try:
+            fingerprint = self._fingerprint(path, info)
+            if fingerprint is None:
                 return False
             if self._verified.get(path) == fingerprint:
                 return True
@@ -56,8 +65,7 @@ class ModelDownloader:
             if digest.hexdigest() != info['sha256']:
                 return False
             # Do not certify a file changed while hashing.
-            after = os.stat(path)
-            if (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != fingerprint[:4]:
+            if self._fingerprint(path, info) != fingerprint:
                 return False
             self._verified[path] = fingerprint
             return True
@@ -67,6 +75,7 @@ class ModelDownloader:
     def check_models_missing(self):
         # This method is deliberately read-only, including unknown/custom models.
         return [key for key, info in self.models.items()
+                if info.get('required', True)
                 if not self._valid(os.path.join(self.models_dir, info['filename']), info)]
 
     def cleanup_old_models(self):

@@ -26,6 +26,7 @@ class Project:
         Returns:
             Istanza di Project
         """
+        data = dict(data)
         if isinstance(data['created_at'], str):
             data['created_at'] = datetime.fromisoformat(data['created_at'])
         return cls(**data)

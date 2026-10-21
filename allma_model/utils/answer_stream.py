@@ -3,6 +3,8 @@ import re
 from allma_model.utils.repetition_guard import repetition_start, requested_repetition
 from allma_model.core.autobiographical_identity import identity_conflict, unsupported_personal_claim
 from .output_contract import borrowed_user_experience
+from .dialogue_continuity import wellbeing_question
+from .source_claims import unbacked_source_claim
 
 
 class AnswerStream:
@@ -19,12 +21,24 @@ class AnswerStream:
         if self.rejected:
             return
         self.observed += text
+        if unbacked_source_claim(self.observed):
+            self.rejected = True
+            self.pending = ''
+            return
+        if self.continuity and self.continuity.answered_checkin and wellbeing_question(self.observed):
+            self.rejected = True
+            self.pending = ''
+            return
         if not requested_repetition(self.request) and repetition_start(self.observed) is not None:
             self.rejected = True
             self.pending = ''
             return
         self.pending += text
         if self.continuity:
+            if self.continuity.repeated_continuation_prefix(self.observed):
+                self.rejected = True
+                self.pending = ''
+                return
             if final and self.continuity.duplicate(self.observed):
                 self.rejected = True
                 self.pending = ''

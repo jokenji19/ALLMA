@@ -21,12 +21,16 @@ let newChatPending = false;
 let activeRequestId = null;
 let lastRequestId = 0;
 let drainTimer = null;
+let cancelPressRequestId = null;
+let cancelIssuedRequestId = null;
 
 const emptyChatMarkup = chatContainer.innerHTML;
 function updateComposer() {
     document.getElementById('send-btn').disabled = chatBusy || !messageInput.value.trim();
     document.getElementById('send-btn').hidden = chatBusy;
     document.getElementById('voice-mode-btn').hidden = chatBusy;
+    messageInput.style.height = 'auto';
+    messageInput.style.height = Math.min(140, Math.max(46, messageInput.scrollHeight)) + 'px';
 }
 messageInput.addEventListener('input', updateComposer);
 function prepareConversation() {
@@ -36,14 +40,15 @@ function prepareConversation() {
 
 function setChatBusy(busy) {
     chatBusy = busy;
+    if (window.brainView) window.brainView.setBusy(busy);
     messageInput.disabled = busy;
-    document.getElementById('chat-status').textContent = busy ? (newChatPending ? 'Nuova conversazione…' : 'Sto rispondendo…') : 'Parliamone insieme';
+    document.getElementById('chat-status').textContent = busy ? (newChatPending ? 'Nuova conversazione…' : 'Sto rispondendo…') : '';
     updateComposer();
     const stop = document.getElementById('cancel-generation-btn');
     if (stop) {
         stop.hidden = !busy;
-        stop.disabled = newChatPending;
-        stop.textContent = 'Interrompi';
+        stop.disabled = newChatPending || activeRequestId === null || cancelIssuedRequestId === activeRequestId;
+        stop.textContent = cancelIssuedRequestId !== null && cancelIssuedRequestId === activeRequestId ? 'Interruzione…' : 'Interrompi';
     }
 }
 
@@ -58,15 +63,29 @@ window.turnFinished = function (requestId) {
     setChatBusy(newChatPending || currentStreamBubble !== null);
 };
 
-window.cancelGeneration = function () {
-    if (!chatBusy) return;
+// Pointer activation must begin on Stop for this exact backend request.
+// A gesture started on Send cannot be retargeted to its replacement.
+window.armCancelGeneration = function () {
+    cancelPressRequestId = !newChatPending && chatBusy ? activeRequestId : null;
+};
+window.disarmCancelGeneration = function () { cancelPressRequestId = null; };
+window.cancelGeneration = function (event) {
+    const requestId = activeRequestId;
+    const armed = cancelPressRequestId;
+    cancelPressRequestId = null;
+    if (!chatBusy || newChatPending || requestId === null || cancelIssuedRequestId === requestId) return;
+    // Keyboard and accessibility activation use detail=0, without a pointer.
+    if (event && event.detail > 0 && armed !== requestId) return;
+    cancelIssuedRequestId = requestId;
     const stop = document.getElementById('cancel-generation-btn');
     if (stop) { stop.disabled = true; stop.textContent = 'Interruzione…'; }
-    window.pyBridge.postMessage(JSON.stringify({type: 'action', action: 'cancel_generation'}));
+    window.pyBridge.postMessage(JSON.stringify({type: 'action', action: 'cancel_generation', request_id:requestId}));
 };
 
 window.newChatReady = function () {
     backendBusy = false;
+    cancelPressRequestId = null;
+    cancelIssuedRequestId = null;
     responseBuffer = '';
     thoughtBuffer = '';
     finishStreamUI();
@@ -145,6 +164,79 @@ function renderSafeMarkdown(target, text) {
     target.replaceChildren(template.content);
 }
 
+// Copy only the message body; reasoning and interface labels are excluded.
+const pendingCopies = new Map();
+let copySequence = 0;
+window.messageCopyResult = function (id, success) {
+    const pending = pendingCopies.get(id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pendingCopies.delete(id);
+    success ? pending.resolve() : pending.reject(new Error('Clipboard unavailable'));
+};
+async function writeMessageClipboard(text) {
+    if (window.allmaNativeClipboard) {
+        return new Promise((resolve, reject) => {
+            const id = 'copy-' + (++copySequence);
+            const timer = setTimeout(() => window.messageCopyResult(id, false), 5000);
+            pendingCopies.set(id, {resolve, reject, timer});
+            try {
+                window.pyBridge.postMessage(JSON.stringify({type:'action', action:'copy_message', id, text}));
+            } catch (_) { window.messageCopyResult(id, false); }
+        });
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+        try { await navigator.clipboard.writeText(text); return; } catch (_) { /* Browser fallback below. */ }
+    }
+    const focused = document.activeElement;
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.readOnly = true;
+    area.style.cssText = 'position:fixed;left:-9999px;top:0;font-size:16px';
+    document.body.appendChild(area);
+    try {
+        area.select();
+        if (!document.execCommand('copy')) throw new Error('Clipboard unavailable');
+    } finally {
+        area.remove();
+        if (focused && focused.isConnected) focused.focus({preventScroll:true});
+    }
+}
+function attachMessageCopy(wrapper, text = null) {
+    wrapper.copyText = typeof text === 'string' ? text : '';
+    let button = wrapper.querySelector('.message-copy');
+    if (!button) {
+        const row = document.createElement('div');
+        row.className = 'message-actions';
+        button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'message-copy';
+        button.title = 'Copia messaggio';
+        button.setAttribute('aria-label', 'Copia messaggio');
+        button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg><span aria-live="polite">Copia</span>';
+        button.addEventListener('click', async () => {
+            if (!wrapper.copyText || button.disabled) return;
+            button.disabled = true;
+            const label = button.querySelector('span');
+            try {
+                await writeMessageClipboard(wrapper.copyText);
+                label.textContent = 'Copiato';
+                button.classList.add('copied');
+            } catch (_) { label.textContent = 'Riprova'; }
+            finally {
+                button.disabled = false;
+                clearTimeout(button.copyReset);
+                button.copyReset = setTimeout(() => {
+                    label.textContent = 'Copia'; button.classList.remove('copied');
+                }, 2000);
+            }
+        });
+        row.appendChild(button);
+        wrapper.appendChild(row);
+    }
+    button.hidden = !wrapper.copyText.trim();
+}
+
 function addMessage(text, sender, thoughtText) {
     if (sender === 'bot') window.updateVoiceAnswer(text);
     const template = document.getElementById(sender === 'user' ? 'tmpl-user' : 'tmpl-bot');
@@ -167,6 +259,7 @@ function addMessage(text, sender, thoughtText) {
     }
 
     const wrapper = clone.querySelector('.message-wrapper');
+    attachMessageCopy(wrapper, text);
     prepareConversation();
     chatContainer.appendChild(wrapper);
     scrollToBottom();
@@ -190,7 +283,7 @@ messageInput.addEventListener('focus', () => {
 
 // Explicit Key Handler (better for mobile)
 window.handleInputKey = function (e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
         e.preventDefault();
         sendMessage();
     }
@@ -326,6 +419,9 @@ function finishStreamUI() {
         const textSpan = currentStreamBubble.timer.querySelector('.timer-text');
         if (textSpan) textSpan.textContent = duration.toFixed(2) + "s (UI Finish)";
     }
+    if (currentStreamBubble) {
+        attachMessageCopy(currentStreamBubble.content.closest('.message-wrapper'), currentStreamBubble.rawFullText || '');
+    }
     currentStreamBubble = null;
     streamStartTime = 0;
     activeRequestId = null;
@@ -339,11 +435,14 @@ function toggleSidebar() {
     const backdrop = document.getElementById('sidebar-backdrop');
 
     sidebar.classList.toggle('active');
+    sidebar.inert = !sidebar.classList.contains('active');
+    sidebar.setAttribute('aria-hidden', String(sidebar.inert));
     backdrop.classList.toggle('active');
 }
 
 function startNewChat() {
     if (newChatPending) return;
+    if (window.appNav) window.appNav.go('chat', {reset:true});
     newChatPending = true;
     setChatBusy(true);
     if (document.getElementById('sidebar').classList.contains('active')) toggleSidebar();
@@ -876,7 +975,7 @@ const VoiceFX = (() => {
     return { activate, deactivate, setState, bump, isActive, getState, setMicRequested, getMicRequested, setInternalState };
 })();
 
-window.openVoiceMode = function () {
+window.enterVoiceScreen = function () {
     console.log("Opening Voice Mode");
     const overlay = document.getElementById('voice-overlay');
     if (overlay) {
@@ -899,7 +998,7 @@ window.openVoiceMode = function () {
     }
 };
 
-window.closeVoiceMode = function () {
+window.leaveVoiceScreen = function () {
     console.log("Closing Voice Mode");
     const overlay = document.getElementById('voice-overlay');
     if (overlay) {
@@ -960,59 +1059,11 @@ window.toggleMic = function () {
 
 // --- PANEL MANAGEMENT ---
 
-// Close any open panel
-window.closePanel = function (panelName) {
-    const panel = document.getElementById(`panel-${panelName}`);
-    if (panel) {
-        panel.classList.add('hidden');
-    }
-
-    // Stop temperature monitoring when closing settings
-    if (panelName === 'settings') {
-        stopTemperatureMonitoring();
-    }
-};
-
-// Open panel (enhanced version)
-window.openPanel = function (panelName) {
-    console.log("Opening panel: " + panelName);
-    toggleSidebar();
-
-    if (panelName === 'voice') {
-        openVoiceMode();
-    } else if (panelName === 'settings') {
-        const panel = document.getElementById('panel-settings');
-        if (panel) {
-            panel.classList.remove('hidden');
-            startTemperatureMonitoring();
-        }
-    } else if (panelName === 'memory') {
-        const panel = document.getElementById('panel-memory');
-        if (panel) {
-            panel.classList.remove('hidden');
-            if (window.pyBridge) {
-                window.pyBridge.postMessage("__REQUEST_MEMORY_UPDATE__");
-            } else if (window.msgQueue) {
-                window.msgQueue.push("__REQUEST_MEMORY_UPDATE__");
-            }
-        }
-    } else if (panelName === 'dream') {
-        const panel = document.getElementById('panel-dream');
-        if (panel) {
-            panel.classList.remove('hidden');
-            if (window.pyBridge) {
-                window.pyBridge.postMessage("__REQUEST_DREAM_HISTORY__");
-            } else if (window.msgQueue) {
-                window.msgQueue.push("__REQUEST_DREAM_HISTORY__");
-            }
-        }
-
-    } else {
-        // Fallback generico per pannelli futuri
-        const panel = document.getElementById(`panel-${panelName}`);
-        if (panel) panel.classList.remove('hidden');
-    }
-};
+// Compatibility entry points: every sidebar destination uses internal navigation.
+window.closePanel = function () { if (window.appNav) window.appNav.back(); };
+window.openPanel = function (name) { if (window.appNav) window.appNav.go(name); };
+window.openVoiceMode = function () { if (window.appNav) window.appNav.go('voice'); };
+window.closeVoiceMode = function () { if (window.appNav && window.appNav.current === 'voice') window.appNav.back(); };
 
 // --- TEMPERATURE MONITORING SYSTEM ---
 
@@ -1043,7 +1094,7 @@ function startTemperatureMonitoring() {
 
 window.updateMemory = function (dataStr) {
     try {
-        console.log("updateMemory called with data:", dataStr);
+        console.log("Memory view updated");
         let data = dataStr;
         if (typeof data === 'string') {
             data = JSON.parse(data);
@@ -1267,8 +1318,12 @@ function toggleTheme() {
 function updateThemeUI(isDark) {
     const icon = document.getElementById('theme-icon');
     const text = document.getElementById('theme-text');
-    if (icon) icon.textContent = isDark ? '☀️' : '🌙';
-    if (text) text.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+    if (icon) icon.innerHTML = isDark
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 13A8 8 0 0 1 11 4a8 8 0 1 0 9 9Z"/></svg>';
+    if (text) text.textContent = 'Aspetto';
+    document.querySelectorAll('[data-appearance]').forEach(button =>
+        button.setAttribute('aria-pressed', String(button.dataset.appearance === (isDark ? 'dark' : 'light'))));
     if (window.pyBridge) window.pyBridge.postMessage(JSON.stringify({type:'action', action:'set_theme', dark:isDark}));
 }
 
@@ -1276,48 +1331,20 @@ function updateThemeUI(isDark) {
 (function initTheme() {
     let savedTheme = null;
     try { savedTheme = localStorage.getItem('theme'); } catch (_) { /* Native offline document may restrict storage. */ }
-    const isDark = savedTheme !== 'light';
+    const isDark = savedTheme === 'dark';
     document.body.classList.toggle('dark-mode', isDark);
     updateThemeUI(isDark);
 })();
 
-// 2. User Profile Logic
-function openUserModal() {
-    // 1. CONFIRM EXECUTION
-    // alert("DEBUG: Modal Clicked!"); 
-    console.log("EXEC: openUserModal() called");
-
-    let name = '';
-    let age = '';
-
-    // 2. SAFE STORAGE ACCESS
+// Profile fields live on an internal page; no dialog or focus trap.
+window.prepareProfileFields = function () {
     try {
-        name = localStorage.getItem('allma_username') || '';
-        age = localStorage.getItem('allma_userage') || '';
-    } catch (e) {
-        console.error("Storage Error:", e);
-        // alert("Storage Error: " + e.message);
-    }
-
-    const nameInput = document.getElementById('input-name');
-    const ageInput = document.getElementById('input-age');
-
-    if (nameInput) nameInput.value = name;
-    if (ageInput) ageInput.value = age;
-
-    const modal = document.getElementById('user-modal');
-    if (modal) {
-        modal.classList.add('active');
-        console.log("Modal opened.");
-    } else {
-        alert("CRITICAL: Modal ID not found!");
-    }
-}
-
-function closeUserModal() {
-    const modal = document.getElementById('user-modal');
-    if (modal) modal.classList.remove('active');
-}
+        document.getElementById('input-name').value = localStorage.getItem('allma_username') || '';
+        document.getElementById('input-age').value = localStorage.getItem('allma_userage') || '';
+    } catch (_) { /* Native profile synchronization still remains available. */ }
+};
+function openUserModal() { if (window.appNav) window.appNav.go('profile'); }
+function closeUserModal() { if (window.appNav) window.appNav.back(); }
 
 function saveUserProfile() {
     const name = document.getElementById('input-name').value.trim();
@@ -1334,7 +1361,7 @@ function saveUserProfile() {
 
         updateUserUI(name);
         closeUserModal();
-        console.log(`User Profile Saved: ${name}, ${age}`);
+        console.log("User profile saved");
 
         // Sync with Python Core
         try {
@@ -1346,7 +1373,7 @@ function saveUserProfile() {
                     age: age
                 });
                 window.pyBridge.postMessage(payload);
-                console.log("Sent profile update to Core:", payload);
+                console.log("Profile update sent to core");
             } else {
                 console.warn("pyBridge not found");
             }
@@ -1372,6 +1399,7 @@ function updateUserUI(name) {
 }
 
 window.updateVoiceStackStatus = function (status) {
+    window.voiceControls?.render(status);
     const stt = document.getElementById('status-stt');
     const tts = document.getElementById('status-tts');
     const llm = document.getElementById('status-llm');
@@ -1419,13 +1447,6 @@ function flushAllmaQueue() {
 document.addEventListener("DOMContentLoaded", () => {
     try {
         document.body.classList.add('pro-mode');
-        const splash = document.getElementById('boot-splash');
-        if (splash) {
-            requestAnimationFrame(() => {
-                document.body.classList.remove('boot-loading');
-                splash.classList.add('hidden');
-            });
-        }
         const savedName = localStorage.getItem('allma_username');
         const savedAge = localStorage.getItem('allma_userage');
         if (savedName) {
@@ -1455,6 +1476,8 @@ window.startStream = function (requestId = null) {
         if (requestId <= lastRequestId) return;
         if (activeRequestId !== null && activeRequestId !== requestId) return;
         backendBusy = true;
+        cancelPressRequestId = null;
+        cancelIssuedRequestId = null;
         activeRequestId = requestId;
         lastRequestId = requestId;
     }
@@ -1463,7 +1486,8 @@ window.startStream = function (requestId = null) {
         VoiceFX.setState('thinking');
         VoiceFX.bump(0.35);
     }
-    // Se c'è già una bolla attiva (creata da sendMessage), non duplicare
+    document.querySelectorAll('.message-continue').forEach(button => button.hidden = true);
+    // Bind the optimistic bubble to its real request before subsequent events.
     if (currentStreamBubble) return;
     const template = document.getElementById('tmpl-bot');
     const clone = template.content.cloneNode(true);
@@ -1559,9 +1583,26 @@ window.streamChunk = function (text, isThought, requestId = null) {
     }
 };
 
-window.endStream = function (finalContent, requestId = null) {
+function attachCompletionAction(wrapper, requestId) {
+    if (!wrapper.querySelector('.message-completion')) {
+        const notice = document.createElement('div'); notice.className = 'message-completion';
+        const label = document.createElement('span'); label.textContent = 'Risposta interrotta al limite di elaborazione.';
+        const button = document.createElement('button'); button.type = 'button';
+        button.className = 'message-continue'; button.textContent = 'Continua';
+        button.addEventListener('click', () => {
+            if (chatBusy || newChatPending || (requestId !== null && requestId !== lastRequestId)) return;
+            if (messageInput.value.trim()) { window.chatNotice('Conserva o invia prima il messaggio che stai scrivendo.'); return; }
+            messageInput.value = 'Completa la risposta precedente dal punto in cui si è interrotta, senza ripetere la parte già scritta.';
+            sendMessage();
+        });
+        notice.append(label, button); wrapper.appendChild(notice);
+    }
+}
+
+window.endStream = function (finalContent, requestId = null, status = null) {
     if (requestId !== null && requestId !== activeRequestId) return;
     window.updateVoiceAnswer(finalContent);
+    if (window.brainView) window.brainView.answer(finalContent);
     if (currentStreamBubble && thoughtBuffer) {
         currentStreamBubble.reasoning.textContent += thoughtBuffer;
         thoughtBuffer = '';
@@ -1571,6 +1612,9 @@ window.endStream = function (finalContent, requestId = null) {
         currentStreamBubble.rawFullText = finalContent;
         // Final text is authoritative even if the token stream was revised.
         renderSafeMarkdown(currentStreamBubble.content, finalContent);
+    }
+    if (status === 'truncated_answer' && currentStreamBubble && finalContent && finalContent.trim()) {
+        attachCompletionAction(currentStreamBubble.content.closest('.message-wrapper'), requestId);
     }
     isBackendFinished = true;
     if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
@@ -1602,13 +1646,14 @@ window.updateAllmaStatus = function (percentage, statusText) {
     const text = document.getElementById('synergy-percent');
 
     if (circle) {
+        if (!Number.isFinite(percentage)) circle.setAttribute('stroke-dasharray', '0, 100');
         // Stroke dasharray: 100.
         // percentage maps directly to dasharray value (0-100)
-        circle.setAttribute('stroke-dasharray', `${percentage}, 100`);
+        if (Number.isFinite(percentage)) circle.setAttribute('stroke-dasharray', `${percentage}, 100`);
     }
 
     if (text) {
-        text.textContent = `${percentage}%`;
+        text.textContent = Number.isFinite(percentage) ? `${percentage}%` : statusText;
     }
 };
 
@@ -1975,7 +2020,6 @@ function setSoulBar(type, value0to1) {
 }
 
 
-// --- VIEW MANAGEMENT (v0.57) ---
 // --- DIAGNOSTICS LOGIC (v2 - Debug Enhanced) ---
 let diagInterval = null;
 
@@ -1989,7 +2033,7 @@ function setDiagStatus(msg, color) {
 
 function startDiagnostics() {
     console.log("Diagnostics: Starting loop...");
-    setDiagStatus("Starting...", "orange");
+    setDiagStatus("Verifico lo stato…", "var(--text-secondary)");
 
     if (diagInterval) clearInterval(diagInterval);
 
@@ -2002,7 +2046,7 @@ function startDiagnostics() {
 
 function stopDiagnostics() {
     console.log("Diagnostics: Stopping loop.");
-    setDiagStatus("Stopped", "gray");
+    setDiagStatus("Monitoraggio in pausa", "var(--text-secondary)");
     if (diagInterval) {
         clearInterval(diagInterval);
         diagInterval = null;
@@ -2014,21 +2058,21 @@ function requestDiagnostics() {
         // Set a small delay before showing "Requesting" to avoid flicker on fast responses
         if (window._diagPending) clearTimeout(window._diagPending);
         window._diagPending = setTimeout(() => {
-            setDiagStatus("Requesting...", "yellow");
+            setDiagStatus("Aggiornamento in corso…", "var(--text-secondary)");
         }, 150);
         window.pyBridge.postMessage("__REQUEST_DIAGNOSTICS_UPDATE__");
     } else {
         console.warn("Diagnostics: No pyBridge found!");
-        setDiagStatus("No Bridge!", "red");
+        setDiagStatus("Collegamento non disponibile", "var(--primary-color)");
         window.updateDiagnostics({resources: {cpu: null, ram: null, temp: null}, logs: []});
-        setDiagStatus('Non collegato', 'gray');
+        setDiagStatus('Non collegato', 'var(--text-secondary)');
     }
 }
 
 // Global exposure for Bridge
 window.updateDiagnostics = function (input) {
     if (window._diagPending) clearTimeout(window._diagPending);
-    setDiagStatus("Connected", "#10B981");
+    setDiagStatus("Dati aggiornati", "var(--text-secondary)");
 
     try {
         let stats = input;
@@ -2098,49 +2142,8 @@ window.updateDiagnostics = function (input) {
     }
 };
 
-// --- VIEW MANAGEMENT (v0.58 Hardened) ---
-window.switchView = function (viewName) {
-    console.log("Switching view to:", viewName);
-
-    // Safety: ensure elements exist
-    const viewChat = document.getElementById('view-chat');
-    const viewDiag = document.getElementById('view-diagnostics');
-    const topHeader = document.getElementById('top-header');
-
-    // FORCE DISPLAY MODES
-    if (viewName === 'diagnostics') {
-        if (viewChat) {
-            viewChat.classList.remove('active');
-            viewChat.classList.add('hidden');
-            viewChat.style.display = 'none'; // HARD FORCE
-        }
-        if (viewDiag) {
-            viewDiag.classList.add('active');
-            viewDiag.classList.remove('hidden');
-            viewDiag.style.display = 'flex'; // HARD FORCE
-        }
-        if (topHeader) topHeader.style.display = 'none';
-
-        startDiagnostics();
-    }
-    else {
-        // Chat Mode
-        if (viewDiag) {
-            viewDiag.classList.remove('active');
-            viewDiag.classList.add('hidden');
-            viewDiag.style.display = 'none'; // HARD FORCE
-        }
-        if (viewChat) {
-            viewChat.classList.add('active');
-            viewChat.classList.remove('hidden');
-            viewChat.style.display = 'flex'; // HARD FORCE
-        }
-        if (topHeader) topHeader.style.display = 'flex';
-
-        stopDiagnostics();
-    }
-};
-
+// Public alias retained for native callbacks and older diagnostic entry points.
+window.switchView = function (viewName) { if (window.appNav) window.appNav.go(viewName); };
 
 window.updateVoiceState = function(payload) {
     if (!VoiceFX.isActive()) return;
@@ -2162,9 +2165,8 @@ window.updateVoiceState = function(payload) {
 };
 window.updateVoiceLevel = function(level) { if (VoiceFX.isActive()) VoiceFX.bump(Math.max(0, Math.min(1, Number(level)))); };
 window.hideVoiceMode = function() {
-    const overlay = document.getElementById('voice-overlay');
-    if (overlay) overlay.classList.remove('active');
-    VoiceFX.deactivate();
+    if (window.appNav && window.appNav.current === 'voice') window.appNav.back();
+    else VoiceFX.deactivate();
 };
 
 function syncAmbientMotion() {
@@ -2175,11 +2177,178 @@ syncAmbientMotion();
 
 // One benchmark configuration shared by settings and diagnostics.
 window.openBenchmarkSettings = function () {
-    switchView('chat');
-    const panel = document.getElementById('panel-settings');
-    if (!panel) return;
-    panel.classList.remove('hidden');
-    startTemperatureMonitoring();
-    const section = document.getElementById('benchmark-settings');
-    if (section) section.scrollIntoView({block: 'start'});
+    if (window.appNav) window.appNav.go('diagnostics');
+};
+
+// The native model is replaceable; personal history belongs to ALLMA.
+window.modelUI = {
+    models: [], busy: false,
+    refresh() {
+        if (!this.busy) window.pyBridge.postMessage(JSON.stringify({type:'action',action:'list_models'}));
+    },
+    select() {
+        const key = document.getElementById('model-choice').value;
+        const model = this.models.find(m => m.key === key);
+        const button = document.getElementById('model-apply');
+        button.disabled = this.busy || !model || model.active;
+        button.textContent = !model ? 'Verifico i modelli…' : model.active ? 'Modello in uso' : model.available ? 'Verifica e usa' : 'Scarica e usa';
+        if (!this.busy && model) document.getElementById('model-status').textContent =
+            `${model.active ? 'In uso' : model.available ? (model.verified ? 'Verificato' : 'Installato · verifica prima dell’uso') : 'Da scaricare'} · ${(model.size_bytes/1e9).toFixed(2)} GB · ${model.quantization} · ragionamento disponibile`;
+    },
+    apply() {
+        if (this.busy) return;
+        const key = document.getElementById('model-choice').value;
+        if (!this.models.some(m => m.key === key && !m.active)) return;
+        this.busy = true;
+        document.getElementById('model-choice').disabled = true;
+        this.select();
+        document.getElementById('model-status').textContent = 'Preparo il modello. Mantieni ALLMA aperta.';
+        window.pyBridge.postMessage(JSON.stringify({type:'action', action:'apply_model', key}));
+    },
+    update(data) {
+        const choice = document.getElementById('model-choice');
+        const status = document.getElementById('model-status');
+        const progress = document.getElementById('model-progress');
+        if (!choice) return;
+        if (data.phase === 'ready') {
+            const previous = choice.value;
+            const previousActive = (this.models.find(m => m.active) || {}).key;
+            this.models = data.models || [];
+            this.busy = !!data.busy;
+            choice.replaceChildren(...this.models.map(model => {
+                const option = document.createElement('option');
+                option.value = model.key;
+                option.textContent = model.name + (model.active ? ' · in uso' : '');
+                return option;
+            }));
+            const active = this.models.find(m => m.active);
+            const modelLabel = document.getElementById('composer-model-name');
+            if (modelLabel) modelLabel.textContent = active ? active.name : 'Modello locale';
+            choice.value = this.models.some(m => m.key === previous) && (!active || active.key === previousActive) ? previous : (active || this.models[0] || {}).key || '';
+            choice.disabled = this.busy;
+            progress.hidden = true;
+            this.select();
+        } else if (data.phase === 'error') {
+            this.busy = false;
+            choice.disabled = false;
+            progress.hidden = true;
+            this.select();
+            status.textContent = data.error || 'Cambio non riuscito. Riprova.';
+        } else {
+            this.busy = true;
+            choice.disabled = true;
+            this.select();
+            progress.hidden = false;
+            if (data.phase === 'loading' || data.phase === 'verifying') {
+                progress.removeAttribute('value');
+                status.textContent = data.phase === 'verifying' ? 'Verifico il file prima di usarlo…' : 'Collego il nuovo modello ad ALLMA…';
+            } else {
+                progress.value = Math.max(0, Math.min(1, data.progress || 0));
+                status.textContent = `Download e verifica · ${Math.round(progress.value*100)}%`;
+            }
+        }
+    }
+};
+
+// Populate the composer immediately; inventory never hashes GGUF files.
+window.modelUI.refresh();
+
+window.deciderUI = {
+    refresh() { window.pyBridge.postMessage(JSON.stringify({type:'action',action:'decider_status'})); },
+    configure(enabled) {
+        document.getElementById('decider-toggle').disabled = true;
+        window.pyBridge.postMessage(JSON.stringify({type:'action',action:'set_decider',enabled}));
+    },
+    update(data) {
+        const toggle = document.getElementById('decider-toggle');
+        toggle.disabled = false;
+        if (typeof data.enabled === 'boolean') toggle.checked = data.enabled;
+        if (data.error) { document.getElementById('decider-status').textContent = data.error; return; }
+        toggle.checked = !!data.enabled;
+        document.getElementById('decider-status').textContent = !data.enabled ? 'Disattivato. ALLMA usa il percorso ordinario.'
+            : !data.available ? 'Modello assente: installalo con «Prova del decisore» in Diagnostica.'
+            : data.last_status === 'thermal_pause' ? 'In pausa per temperatura. ALLMA continua con il percorso ordinario.'
+            : data.loaded ? 'Operativo · modello caricato. Le decisioni incerte restano ad ALLMA.'
+            : 'Abilitato · viene caricato quando serve. Può aggiungere attesa e consumo.';
+    }
+};
+
+window.notificationUI = {
+    refresh() { window.pyBridge.postMessage(JSON.stringify({type:'action',action:'notification_status'})); },
+    setEnabled(enabled) {
+        document.getElementById('notification-toggle').disabled = true;
+        document.getElementById('notification-status').textContent = enabled ? 'Attendo la tua scelta su Android…' : 'Disattivo le notifiche…';
+        window.pyBridge.postMessage(JSON.stringify({type:'action',action:'set_notifications',enabled}));
+    },
+    test() { window.pyBridge.postMessage(JSON.stringify({type:'action',action:'test_notification'})); },
+    openSettings() { window.pyBridge.postMessage(JSON.stringify({type:'action',action:'notification_settings'})); },
+    update(data) {
+        const toggle = document.getElementById('notification-toggle');
+        const status = document.getElementById('notification-status');
+        toggle.disabled = data.supported === false;
+        if (data.error) { status.textContent = data.error; return; }
+        toggle.checked = !!data.enabled;
+        document.getElementById('notification-test').disabled = !data.active;
+        document.getElementById('notification-system-settings').hidden = !data.supported || data.allowed;
+        status.textContent = data.test_sent === true ? 'Prova inviata: controlla le notifiche del telefono.'
+            : data.test_sent === false ? 'Prova non inviata. Controlla il consenso e le impostazioni Android.'
+            : !data.supported ? 'Le notifiche di sistema sono disponibili nell’app Android.'
+            : data.active ? 'Attive. Puoi disattivarle in qualsiasi momento.'
+            : data.enabled ? 'Bloccate da Android. Controlla le impostazioni del telefono.'
+            : 'Disattivate. ALLMA non invia notifiche.';
+    }
+};
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && window.appNav?.current === 'settings/notifications') window.notificationUI.refresh();
+});
+
+// The explorer submits through the same admission, conversation and cancel path.
+window.submitBrainQuestion = function(text) {
+    if (chatBusy || newChatPending || !String(text || '').trim()) return false;
+    messageInput.value = String(text);
+    sendMessage();
+    return true;
+};
+window.brainChatBusy = () => chatBusy;
+
+window.brainCanCancel = () => chatBusy && !newChatPending && activeRequestId !== null && cancelIssuedRequestId !== activeRequestId;
+
+// Backup passwords live only in the pending native action; never in storage.
+window.backupUI = {
+    send(action, fields = {}) {
+        window.pyBridge.postMessage(JSON.stringify({type:'action',action,...fields}));
+    },
+    refresh() { this.send('backup_status'); },
+    configure(enabled) { this.send('backup_configure',{enabled}); },
+    transfer(action) {
+        const input=document.getElementById('backup-password');
+        const password=input.value; input.value='';
+        if (password.length<12) {
+            document.getElementById('backup-message').textContent='Usa almeno 12 caratteri e conserva la password.';
+            return;
+        }
+        this.send(action,{password});
+    },
+    update(data) {
+        const busy=!!data.busy || !!this.restartRequired;
+        document.querySelectorAll('[data-backup-action]').forEach(button=>button.disabled=busy);
+        const toggle=document.getElementById('backup-auto');
+        toggle.disabled=busy || data.available===false;
+        if (typeof data.enabled==='boolean') toggle.checked=data.enabled;
+        const latest=data.latest;
+        document.getElementById('backup-status').textContent=latest
+            ? 'Copie private: '+data.count+' · ultima '+new Date(latest.created).toLocaleString('it-IT')
+            : 'Nessuna copia privata verificata disponibile.';
+        if(data.error || data.message) document.getElementById('backup-message').textContent=data.error || data.message;
+        if(Object.prototype.hasOwnProperty.call(data,'preview')) {
+            document.getElementById('backup-preview').hidden=!data.preview;
+            if(data.preview) document.getElementById('backup-preview-text').textContent=
+                'Copia del '+new Date(data.preview.created).toLocaleString('it-IT')+' · '+data.preview.files+' archivi verificati.';
+        }
+        if(data.restart_required) {
+            this.restartRequired=true;
+            document.getElementById('backup-preview').hidden=true;
+            document.querySelectorAll('[data-backup-action]').forEach(button=>button.disabled=true);
+        }
+    }
 };

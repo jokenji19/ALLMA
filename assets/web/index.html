@@ -10,8 +10,10 @@
     <!-- Use v24 assets -->
     <link rel="stylesheet" href="style_v24.css?v=62">
     <link rel="stylesheet" href="settings_ui.css">
+    <link rel="stylesheet" href="brain_view.css">
 
     <link rel="stylesheet" href="sky.css?v=62">
+    <link rel="stylesheet" href="screens.css">
 
     <style>
         /* CRITICAL VIEW SYSTEM STYLES (Inlined for reliability) */
@@ -30,32 +32,7 @@
             gap: 12px;
             z-index: 10000;
             opacity: 0;
-            transition: opacity 0.4s ease;
-        }
-
-        #boot-splash .boot-title {
-            font-size: 22px;
-            font-weight: 700;
-            color: #E8EEF9;
-            letter-spacing: 2px;
-        }
-
-        #boot-splash .boot-sub {
-            font-size: 12px;
-            color: rgba(232, 238, 249, 0.7);
-        }
-
-        #boot-splash .boot-spinner {
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            border: 3px solid rgba(232, 238, 249, 0.15);
-            border-top-color: #4C8DFF;
-            animation: bootSpin 1s linear infinite;
-        }
-
-        @keyframes bootSpin {
-            to { transform: rotate(360deg); }
+            transition: opacity .85s cubic-bezier(.22,.61,.36,1);
         }
 
         .app-view {
@@ -83,7 +60,7 @@
 
         /* --- DIAGNOSTICS PANEL CSS --- */
         #view-diagnostics {
-            background: #F3F4F6;
+            background: var(--paper);
             overflow-y: auto;
             position: absolute;
             /* Force overlay on top if needed, though view system should handle it */
@@ -96,7 +73,7 @@
         }
 
         body.dark-mode #view-diagnostics {
-            background: #0F172A;
+            background: var(--paper);
         }
 
         .diagnostics-header {
@@ -331,14 +308,17 @@
     </style>
 </head>
 
-<body class="boot-loading dark-mode">
+<body class="boot-loading">
 
     <div id="boot-splash">
         <div class="boot-card">
             <div class="boot-title">ALLMA</div>
+            <img class="boot-art" src="images/startup-connection.png" alt="Una mano umana e una robotica si avvicinano" width="300" height="230">
             <h1>Uno spazio per<br>pensare insieme.</h1>
-            <p>Le tue parole, la nostra storia.</p>
-            <div class="boot-spinner" aria-hidden="true"></div>
+            <div class="boot-progress" role="progressbar" aria-label="Fasi di avvio completate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="90" style="--boot-progress:.9">
+                <svg viewBox="0 0 56 56" aria-hidden="true"><circle class="boot-track" cx="28" cy="28" r="22"/><circle class="boot-fill" cx="28" cy="28" r="22"/></svg>
+            </div>
+            <div class="boot-percent" aria-hidden="true">90%</div>
             <div class="boot-sub" role="status">Apro la chat…</div>
         </div>
     </div>
@@ -347,10 +327,10 @@
     <div id="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
     <!-- Status Indicators (Dream Mode) -->
-    <div id="dream-indicator" class="status-icon hidden" title="Sognando...">🌙</div>
+    <div id="dream-indicator" class="status-icon hidden" title="Sognando…" aria-label="ALLMA sta riflettendo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 13A8 8 0 0 1 11 4a8 8 0 1 0 9 9Z"/></svg></div>
 
     <!-- Sidebar Drawer -->
-    <aside id="sidebar">
+    <aside id="sidebar" inert aria-hidden="true">
         <div class="sidebar-header">
             <div class="brand">
                 <span class="logo-text">ALLMA</span>
@@ -363,7 +343,7 @@
             <div class="nav-section">
                 <div class="nav-label">CONVERSAZIONI</div>
                 <button class="nav-item primary-action" onclick="startNewChat()">
-                    <span class="icon">✨</span>
+                    <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
                     <span class="nav-text">Nuova chat</span>
                 </button>
                 <div class="history-list" id="history-list">
@@ -376,17 +356,17 @@
                 <div class="nav-label">ESPLORA</div>
 
                 <button class="nav-item" onclick="openPanel('memory')">
-                    <span class="icon icon-purple">🧠</span>
+                    <span class="icon icon-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h11v16H8a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z"/><path d="M8 4v16M11 9h5M11 13h5"/></svg></span>
                     <span class="nav-text">Memoria</span>
                 </button>
 
                 <button class="nav-item" id="dream-journal-btn" onclick="openPanel('dream')">
-                    <span class="icon icon-indigo">🌙</span>
+                    <span class="icon icon-indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13A8 8 0 0 1 11 4a8 8 0 1 0 9 9Z"/></svg></span>
                     <span class="nav-text">Diario Sogni</span>
                 </button>
 
                 <button class="nav-item" onclick="openPanel('voice')">
-                    <span class="icon icon-rose">🎙️</span>
+                    <span class="icon icon-rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1M12 18v3M9 21h6"/></svg></span>
                     <span class="nav-text">Voce</span>
                 </button>
             </div>
@@ -396,45 +376,44 @@
                 <div class="nav-label">PREFERENZE</div>
 
                 <button class="nav-item" onclick="openPanel('settings')">
-                    <span class="icon icon-slate">⚙️</span>
+                    <span class="icon icon-slate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg></span>
                     <span class="nav-text">Impostazioni</span>
                 </button>
 
                 <details class="advanced-section sidebar-advanced">
                     <summary>Strumenti avanzati</summary>
-                <button class="nav-item" onclick="toggleSidebar(); switchView('diagnostics')">
-                    <span class="icon icon-rose">🧪</span>
+                <button class="nav-item" onclick="appNav.go('diagnostics')">
+                    <span class="icon icon-rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>
                     <span class="nav-text">Diagnostica</span>
                 </button>
 
                 </details>
 
-                <button class="nav-item" onclick="toggleTheme()">
-                    <span class="icon icon-blue" id="theme-icon">🌙</span>
-                    <span class="nav-text" id="theme-text">Dark Mode</span>
+                <button class="nav-item" onclick="appNav.go('settings/chat')">
+                    <span class="icon icon-blue" id="theme-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13A8 8 0 0 1 11 4a8 8 0 1 0 9 9Z"/></svg></span>
+                    <span class="nav-text" id="theme-text">Aspetto</span>
                 </button>
             </div>
         </div>
 
-        <div class="sidebar-footer" onclick="openUserModal(); console.log('Footer clicked')">
+        <button type="button" class="sidebar-footer" aria-label="Apri il tuo profilo" onclick="openUserModal()">
             <div class="user-profile">
                 <!-- Add onclick here too for redundancy -->
-                <div class="avatar" id="user-avatar" onclick="openUserModal(); event.stopPropagation()">?</div>
-                <div class="user-info" onclick="openUserModal(); event.stopPropagation()">
+                <div class="avatar" id="user-avatar">?</div>
+                <div class="user-info">
                     <div class="username" id="user-name-display">Ospite</div>
                     <div class="status" id="user-time-display">--:--</div>
                 </div>
             </div>
-        </div>
+        </button>
     </aside>
 
     <!-- 5b. Dream Journal Panel -->
-    <div id="panel-dream" class="sidebar-panel hidden">
-        <div class="panel-header">
-            <h3>🌙 Diario dei Sogni</h3>
-            <button class="close-panel-btn" aria-label="Chiudi Diario Sogni" onclick="closePanel('dream')">×</button>
-        </div>
-        <div class="panel-body dream-journal-body">
+    <main id="panel-dream" class="app-view screen hidden" data-screen="dream" aria-labelledby="panel-dream-title"><header class="screen-header">
+            <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
+            <h1 id="panel-dream-title" tabindex="-1" data-screen-heading>Diario dei sogni</h1><span class="screen-header-space" aria-hidden="true"></span>
+        </header>
+        <div class="screen-content dream-journal-body">
             <div class="dream-journal-meta" id="dream-journal-meta">
                 <span id="dream-status-badge" class="dream-badge dream-badge--idle">In attesa...</span>
 
@@ -463,21 +442,20 @@
             </div>
             </details>
         </div>
-    </div>
+    </main>
 
-    <!-- 6. Memory Panel (Overlay Modal) -->
+    <!-- Memory screen -->
 
-    <div id="panel-memory" class="sidebar-panel hidden">
-        <div class="panel-header">
-            <h3>Memoria</h3>
-            <button class="close-panel-btn" onclick="closePanel('memory')">×</button>
-        </div>
-        <div class="panel-body memory-layout">
+    <main id="panel-memory" class="app-view screen hidden" data-screen="memory" aria-labelledby="panel-memory-title"><header class="screen-header">
+            <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
+            <h1 id="panel-memory-title" tabindex="-1" data-screen-heading>Memoria</h1><span class="screen-header-space" aria-hidden="true"></span>
+        </header>
+        <div class="screen-content memory-layout">
 
             <div class="memory-flex-container">
                 <!-- User Profile Facts -->
                 <div class="memory-section facts-section">
-                    <h4>👤 Profilo Utente</h4>
+                    <h4>Profilo Utente</h4>
                     <p class="section-desc">Informazioni e preferenze che hai condiviso</p>
                     <div id="memory-user-facts" class="memory-grid">
                         <div class="memory-empty-state">Analisi in corso...</div>
@@ -486,7 +464,7 @@
 
                 <!-- Conversation Flow -->
                 <div class="memory-section logs-section">
-                    <h4>💭 Conversazioni recenti</h4>
+                    <h4>Conversazioni recenti</h4>
                     <p class="section-desc">Ultimi scambi e pensieri registrati</p>
                     <div id="memory-logs" class="log-list">
                         <div class="memory-empty-state">Nessun log recente</div>
@@ -495,38 +473,154 @@
             </div>
 
         </div>
-    </div>
+    </main>
 
-    <!-- 7. Settings Panel (Overlay Modal) -->
-    <div id="panel-settings" class="sidebar-panel hidden">
-        <div class="panel-header">
-            <h3>⚙️ Impostazioni</h3>
-            <button class="close-panel-btn" onclick="closePanel('settings')">×</button>
-        </div>
-        <div class="panel-body">
-            <!-- Benchmark stays visible outside advanced settings. -->
-            <div class="settings-section" id="benchmark-settings">
-                <h4>Benchmark cognitivo</h4>
-                <p class="section-desc">Prove in memoria separata. La qualità delle risposte va valutata nel report.</p>
-                <div class="setting-item">
-                    <label for="benchmark-profile">Tipo di prova</label>
-                    <select id="benchmark-profile" aria-label="Tipo di benchmark">
-                        <option value="quick">Rapida · 6 casi nuovi</option>
-                        <option value="historical">Confronto storico · 6 casi</option>
-                        <option value="extended">Estesa · 14 casi, anche memoria</option>
-                    </select>
-                </div>
-                <button type="button" id="benchmark-start" class="benchmark-button" onclick="startBenchmark()">
-                    <div class="action-label">
-                        <span class="icon">🧠</span>
-                        <span>Avvia benchmark</span>
-                    </div>
-                    <span class="arrow-icon" aria-hidden="true">▶</span>
-                </button>
+    <!-- Settings screen -->
+    <main id="panel-settings" class="app-view screen hidden" data-screen="settings" aria-labelledby="settings-title"><header class="screen-header">
+            <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
+            <h1 id="settings-title" tabindex="-1" data-screen-heading>Impostazioni</h1><span class="screen-header-space" aria-hidden="true"></span>
+        </header><div class="screen-content settings-content">
+        <div id="settings-home">
+            <div class="settings-intro">
+                <span class="screen-eyebrow">IL TUO SPAZIO</span>
+                <h2>Fai spazio al tuo modo<br>di usare ALLMA.</h2>
+                <p>Le cose di ogni giorno, i tuoi dati e gli strumenti per andare più a fondo.</p>
             </div>
-            <!-- Dream Mode Setting -->
-            <div class="settings-section">
-                <h4>🌙 Sogni & Iniziativa</h4>
+            <h3 class="settings-group-label">PERSONALIZZA</h3>
+            <button type="button" class="settings-link" onclick="appNav.go('profile')">
+                <span class="settings-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM5 21v-2a7 7 0 0 1 14 0v2"/>
+                    </svg>
+                </span>
+                <span class="settings-link-copy">
+                    <strong>Il tuo profilo</strong>
+                    <span>Il nome con cui ALLMA si rivolge a te</span>
+                </span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="m9 5 7 7-7 7"/>
+                </svg>
+            </button>
+            <button type="button" class="settings-link" onclick="appNav.go('settings/model')">
+                <span class="settings-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M8 3h8l5 9-5 9H8l-5-9 5-9ZM3 12h18M8 3l8 18M16 3 8 21"/>
+                    </svg>
+                </span>
+                <span class="settings-link-copy">
+                    <strong>Modello di ALLMA</strong>
+                    <span>Modelli disponibili e decisore locale</span>
+                </span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="m9 5 7 7-7 7"/>
+                </svg>
+            </button>
+            <button type="button" class="settings-link" onclick="appNav.go('settings/chat')">
+                <span class="settings-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 6h16M4 12h10M4 18h16"/>
+                    </svg>
+                </span>
+                <span class="settings-link-copy">
+                    <strong>Aspetto e chat</strong>
+                    <span>Tema e modalità delle risposte</span>
+                </span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="m9 5 7 7-7 7"/>
+                </svg>
+            </button>
+            <button type="button" class="settings-link" onclick="appNav.go('settings/notifications')">
+                <span class="settings-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 8a6 6 0 0 0-12 0v5l-2 4h16l-2-4V8ZM10 21h4"/>
+                    </svg>
+                </span>
+                <span class="settings-link-copy">
+                    <strong>Notifiche</strong>
+                    <span>Scegli quando ricevere gli avvisi</span>
+                </span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="m9 5 7 7-7 7"/>
+                </svg>
+            </button>
+            <button type="button" class="settings-link" onclick="appNav.go('settings/dreams')">
+                <span class="settings-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 13A8 8 0 0 1 11 4a8 8 0 1 0 9 9Z"/>
+                    </svg>
+                </span>
+                <span class="settings-link-copy">
+                    <strong>Sogni e iniziativa</strong>
+                    <span>Riflessioni e attività quando ALLMA è libera</span>
+                </span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="m9 5 7 7-7 7"/>
+                </svg>
+            </button>
+            <h3 class="settings-group-label">LA TUA STORIA</h3>
+            <button type="button" class="settings-link" onclick="appNav.go('settings/data')">
+                <span class="settings-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 5h14v14H5V5ZM8 5v6h8V5M8 19v-5h8v5"/>
+                    </svg>
+                </span>
+                <span class="settings-link-copy">
+                    <strong>Dati e backup</strong>
+                    <span>Proteggi e trasferisci la tua storia</span>
+                </span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="m9 5 7 7-7 7"/>
+                </svg>
+            </button>
+            <h3 class="settings-group-label">STRUMENTI AVANZATI</h3>
+            <button type="button" class="settings-link" onclick="appNav.go('diagnostics')">
+                <span class="settings-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+                    </svg>
+                </span>
+                <span class="settings-link-copy">
+                    <strong>Diagnostica e prestazioni</strong>
+                    <span>Benchmark, temperature e stato dei motori</span>
+                </span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                    <path d="m9 5 7 7-7 7"/>
+                </svg>
+            </button>
+        </div>
+        <div class="settings-detail" data-settings-page="model" hidden><section class="settings-section" id="model-settings">
+                <h4>Modello di ALLMA</h4>
+                <p>Puoi cambiare il modello. Memoria, identità e crescita restano con ALLMA.</p>
+                <label for="model-choice">Scegli il modello</label>
+                <select id="model-choice" aria-describedby="model-status" onchange="modelUI.select()"></select>
+                <p id="model-status" role="status" aria-live="polite">Apri le impostazioni per verificare i modelli.</p>
+                <progress id="model-progress" max="1" value="0" hidden style="width:100%"></progress>
+                <button type="button" id="model-apply" class="benchmark-button" onclick="modelUI.apply()" disabled>Verifico i modelli…</button>
+            </section><details class="advanced-section"><summary>Decisore locale</summary><section class="settings-section" id="decider-settings">
+                <h4>Decisore locale</h4>
+                <p class="section-desc">Aiuta ALLMA a scegliere i percorsi nelle chat e nella voce, recuperare ricordi e ordinare le riflessioni. ALLMA mantiene il controllo di memoria e permessi.</p>
+                <div class="setting-item"><span>Usa Decider</span>
+                    <label class="apple-switch"><input type="checkbox" id="decider-toggle" aria-label="Usa il decisore locale" onchange="deciderUI.configure(this.checked)"><span class="slider round"></span></label>
+                </div>
+                <p id="decider-status" class="section-desc" role="status">Controllo disponibilità…</p>
+            </section></details></div><div class="settings-detail" data-settings-page="chat" hidden><section class="settings-section"><h4>Aspetto</h4><p class="section-desc">Scegli il tema che preferisci.</p><div class="appearance-options" role="group" aria-label="Tema dell’app"><button type="button" data-appearance="light" aria-pressed="true" onclick="setAppearance('light')"><span class="theme-swatch theme-swatch-light" aria-hidden="true"></span>Chiaro</button><button type="button" data-appearance="dark" aria-pressed="false" onclick="setAppearance('dark')"><span class="theme-swatch theme-swatch-dark" aria-hidden="true"></span>Scuro</button></div></section><section class="settings-section"><h4>Come ricevi le risposte</h4><p>Puoi dire ad ALLMA «Scrivi progressivamente», «Rispondi tutto insieme» oppure «Scegli tu come inviare le risposte». La preferenza viene conservata.</p><p class="section-desc">Per alcune risposte personali, ALLMA attende i controlli finali prima di mostrarle. I dettagli disponibili si aprono direttamente in chat.</p></section></div><div class="settings-detail" data-settings-page="notifications" hidden><section class="settings-section" id="notification-settings">
+                <h4>Notifiche</h4>
+                <p class="section-desc">Ricevi avvisi per nuovi messaggi, riflessioni e modelli pronti. Nessun testo personale compare nell’avviso.</p>
+                <div class="setting-item">
+                    <span>Consenti le notifiche</span>
+                    <label class="apple-switch">
+                        <input type="checkbox" id="notification-toggle" aria-label="Consenti le notifiche" onchange="notificationUI.setEnabled(this.checked)">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <p id="notification-status" class="section-desc" role="status" aria-live="polite">Disattivate finché non le attivi.</p>
+                <div class="notification-actions">
+                    <button type="button" id="notification-test" onclick="notificationUI.test()" disabled>Invia una prova</button>
+                    <button type="button" id="notification-system-settings" onclick="notificationUI.openSettings()" hidden>Impostazioni Android</button>
+                </div>
+                <p class="section-desc">Gli avvisi dipendono dalle attività in esecuzione. A processo chiuso ALLMA non genera nuovi messaggi in background.</p>
+            </section></div><div class="settings-detail" data-settings-page="dreams" hidden><div class="settings-section">
+                <h4>Sogni & Iniziativa</h4>
                 <p class="section-desc">ALLMA riflette sui messaggi quando è in carica, con almeno il 72% di batteria e temperatura entro 40 °C.</p>
                 <div class="setting-item">
                     <span>Consenti i sogni</span>
@@ -535,27 +629,213 @@
                         <span class="slider round"></span>
                     </label>
                 </div>
+            </div></div><div class="settings-detail" data-settings-page="data" hidden><section class="settings-section" id="backup-settings">
+                <h4>Dati e backup</h4>
+                <p>Memoria, apprendimento, personalità e sogni. Le copie private restano su questo telefono: salva una copia cifrata altrove per proteggerle anche dalla perdita del dispositivo.</p>
+                <label class="backup-toggle"><input type="checkbox" id="backup-auto" onchange="backupUI.configure(this.checked)"> Copie private automatiche quando ALLMA è libera</label>
+                <p id="backup-status" role="status" aria-live="polite">Verifico le copie…</p>
+                <div class="backup-actions">
+                    <button type="button" data-backup-action onclick="backupUI.send('backup_create')">Crea copia privata</button>
+                    <button type="button" data-backup-action onclick="backupUI.send('backup_verify')">Verifica ultima copia</button>
+                </div>
+                <label for="backup-password">Password della copia cifrata · almeno 12 caratteri</label>
+                <input id="backup-password" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="1024" placeholder="Conservala: non può essere recuperata">
+                <div class="backup-actions">
+                    <button type="button" data-backup-action onclick="backupUI.transfer('backup_export')">Salva copia cifrata…</button>
+                    <button type="button" data-backup-action onclick="backupUI.transfer('backup_import')">Apri copia cifrata…</button>
+                </div>
+                <p id="backup-message" role="status" aria-live="polite"></p>
+                <div id="backup-preview" hidden>
+                    <p id="backup-preview-text"></p>
+                    <p>Il ripristino sostituisce l’intera storia di ALLMA, senza unire i due archivi. Conserviamo anche lo stato attuale. Sarà necessario chiudere e riaprire l’app.</p>
+                    <div class="backup-actions">
+                        <button type="button" data-backup-action onclick="backupUI.send('backup_confirm_restore')">Conferma ripristino</button>
+                        <button type="button" data-backup-action onclick="backupUI.send('backup_cancel_restore')">Annulla</button>
+                    </div>
+                </div>
+                <details><summary>Controlli avanzati</summary>
+                    <p>Se l’indice delle copie è danneggiato, puoi ricostruirlo verificando ciascun archivio. Nessuna copia viene eliminata.</p>
+                    <button type="button" data-backup-action onclick="backupUI.send('backup_repair')">Ricontrolla tutte le copie</button>
+                    <p>Le copie usano formati versionati e controlli SHA-256. L’esportazione è cifrata AES-256-GCM. Modelli e cache ricostruibili sono esclusi. Per archivi molto grandi servirà una migrazione del formato; nessun dato viene cancellato per liberare spazio.</p>
+                </details>
+            </section></div></div></main>
+
+    <!-- Internal screens -->
+
+
+
+
+    <!-- Local profile: optional personal information, no account required. -->
+    <main id="user-modal" class="app-view screen hidden" data-screen="profile" aria-labelledby="profile-screen-title"><header class="screen-header">
+            <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
+            <h1 id="profile-screen-title" tabindex="-1" data-screen-heading>Il tuo profilo</h1><span class="screen-header-space" aria-hidden="true"></span>
+        </header><div class="screen-content"><section class="profile-content"><span class="screen-eyebrow">IL TUO SPAZIO</span><h2 id="profile-title">Come vuoi essere chiamato?</h2><p id="profile-description">Scegli come vuoi che ALLMA si rivolga a te.</p><form onsubmit="event.preventDefault(); saveUserProfile()">
+                <div class="input-group">
+                    <label for="input-name">Il tuo nome</label>
+                    <input type="text" id="input-name" placeholder="Come vuoi essere chiamato" autocomplete="given-name" maxlength="80" required>
+                </div>
+                <div class="input-group">
+                    <label for="input-age">Età <span class="profile-optional">· facoltativa</span></label>
+                    <input type="number" id="input-age" placeholder="La tua età" inputmode="numeric" min="1" max="120">
+                </div>
+                <p class="profile-note">Nessun account da creare. Puoi modificare questi dati quando vuoi.</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeUserModal()">Indietro</button>
+                    <button type="submit" class="btn-save">Salva profilo</button>
+                </div>
+            </form></section></div></main>
+
+    <header id="top-header">
+        <button id="menu-btn" class="icon-button" aria-label="Apri menu" onclick="toggleSidebar()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" d="M4 7h16M4 12h12M4 17h8"/></svg>
+        </button>
+        <div class="header-brand"><div><button type="button" id="brain-open" class="wordmark" aria-label="Esplora ALLMA" aria-haspopup="dialog" onclick="brainView.open()">ALLMA</button><div id="chat-status" role="status"></div></div></div>
+        <button id="new-chat-btn" class="icon-button" aria-label="Nuova chat" onclick="startNewChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3M14 5h8m-4-4v8"/></svg></button>
+    </header>
+
+    <!-- VIEW: CHAT -->
+    <div id="view-chat" class="app-view active">
+        <!-- Main Chat Container -->
+        <div id="chat-container">
+            <div class="empty-chat"><span class="empty-eyebrow">Il tuo spazio con ALLMA</span><h1>Cosa esploriamo<br>oggi?</h1><p>Partiamo da una domanda, un’idea o qualcosa che vuoi raccontare.</p></div>
+        </div>
+
+        <!-- Input Area -->
+        <div id="chat-notice" role="status" aria-live="polite"></div>
+        <div class="chat-caption">La nostra storia, un messaggio alla volta.</div>
+        <div id="input-area">
+            <div class="capsule">
+                <textarea id="message-input" rows="2" placeholder="Come posso aiutarti?" aria-label="Messaggio per ALLMA" autocomplete="off" enterkeyhint="send" onkeydown="handleInputKey(event)"></textarea>
+                <button id="composer-model" type="button" aria-label="Scegli il modello di ALLMA" onclick="appNav.go('settings/model')"><span id="composer-model-name">Modello locale</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+                <button id="voice-mode-btn" class="icon-button" aria-label="Apri modalità vocale" onclick="openVoiceMode()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path stroke-linecap="round" d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6"/></svg></button>
+                <button id="send-btn" type="button" onpointerdown="event.preventDefault()" aria-label="Invia messaggio" onclick="sendMessage()" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
+                <button id="cancel-generation-btn" type="button" hidden onpointerdown="armCancelGeneration()" onpointercancel="disarmCancelGeneration()" onclick="cancelGeneration(event)">Interrompi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: DIAGNOSTICS (Full Screen) -->
+    <div id="view-diagnostics" class="app-view screen hidden" data-screen="diagnostics" aria-labelledby="diagnostics-title">
+        <header class="screen-header">
+            <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
+            <h1 id="diagnostics-title" tabindex="-1" data-screen-heading>Diagnostica</h1><span class="screen-header-space" aria-hidden="true"></span>
+        </header><div class="screen-content diagnostics-content">
+<p id="diag-conn-status" class="section-desc" role="status">Verifico lo stato…</p><div class="settings-section" id="benchmark-settings">
+                <h4>Prova ALLMA</h4>
+                <p class="section-desc">Prove in memoria separata. La qualità delle risposte va valutata nel report.</p>
+                <div class="setting-item">
+                    <label for="benchmark-profile">Tipo di prova</label>
+                    <select id="benchmark-profile" aria-label="Tipo di benchmark" onchange="document.getElementById('benchmark-decider-note').hidden=this.value!=='decider'"><optgroup label="Software e memoria">
+<option value="operational">Affidabilità software · 60 scenari</option>
+<option value="tool_learning">Apprendimento strumenti · 12 scenari</option>
+<option value="relational">Sensibilità e contesto · 12 scenari</option>
+<option value="memory_recovery">Memoria e recupero · 16 scenari</option>
+<option value="preservation">Conservazione e backup · 20 scenari</option>
+<option value="long_history">Storia lunga · 24 scenari</option>
+<option value="memory_personal">Memoria personale · 6 casi</option>
+<option value="memory_lifecycle">Memoria · correzioni e revoche · 7 casi</option>
+<option value="memory_recall">Richiamo letterale ALLMA · 4 casi</option>
+<option value="memory_contract">Memoria · confronto istruzioni · 4 casi</option>
+<option value="memory">Fedeltà ai ricordi · 4 casi sintetici</option>
+</optgroup>
+<optgroup label="Conversazione e personalità">
+<option value="quick" selected>Rapida · 6 casi nuovi</option>
+<option value="historical">Confronto storico · 6 casi</option>
+<option value="extended">Estesa · 14 casi, anche memoria</option>
+<option value="dialogue">Dialogo su ALLMA · 6 turni</option>
+<option value="growth">Crescita emotiva · 5 turni</option>
+<option value="personality">Personalità · 6 prove isolate</option>
+<option value="personality_feedback">Personalità · prima / dopo i riscontri</option>
+<option value="memory_dialogue">Dialogo e memoria · 4 prove con modello</option>
+<option value="greeting">Saluto cordiale · 1 prova mirata</option>
+<option value="greeting_closure">Saluto · confronto chiusura · 2 prove</option>
+</optgroup>
+<optgroup label="Ragionamento e supporto">
+<option value="reasoning">Ragionamento 96 / 128 · 4 coppie</option>
+<option value="support">Supporto emotivo · 3 casi</option>
+<option value="support_roles">Mappa dei ruoli · 2 confronti</option>
+<option value="support_reasoning">Supporto · ragionamento 48 / 128</option>
+<option value="support_natural">Supporto · chiusura naturale</option>
+</optgroup>
+<optgroup label="Confronti sperimentali">
+<option value="comparison">ALLMA / modello · 4 coppie</option>
+<option value="decider">Prova del decisore · 8 casi EN/IT · download 529 MB</option>
+</optgroup></select>
+                </div>
+                <p id="benchmark-decider-note" class="section-desc" hidden>La prova del decisore usa esempi sintetici e scarica il modello da 529 MB se manca. Puoi attivarlo in Impostazioni → Modello di ALLMA.</p>
+                <button type="button" id="benchmark-start" class="benchmark-button" onclick="startBenchmark()">
+                    <div class="action-label">
+                        <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h11v16H8a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z"/><path d="M8 4v16M11 9h5M11 13h5"/></svg></span>
+                        <span>Avvia benchmark</span>
+                    </div>
+                    <span class="arrow-icon" aria-hidden="true">▶</span>
+                </button>
+            </div>            <!-- Resource Monitor -->
+            <div class="diag-section">
+                <h4>Monitor Risorse</h4>
+                <div class="diag-grid">
+                    <!-- CPU -->
+                    <div class="diag-card">
+                        <div class="diag-label">CPU App (1 core)</div>
+                        <div class="diag-value" id="diag-cpu-val">—</div>
+                        <div class="diag-bar-bg">
+                            <div class="diag-bar-fill" id="diag-cpu-bar" style="width:0%"></div>
+                        </div>
+                    </div>
+                    <!-- RAM -->
+                    <div class="diag-card">
+                        <div class="diag-label">RAM App (picco)</div>
+                        <div class="diag-value" id="diag-ram-val">—</div>
+                        <div class="diag-bar-bg">
+                            <div class="diag-bar-fill" id="diag-ram-bar" style="width:0%"></div>
+                        </div>
+                    </div>
+                    <!-- TEMP -->
+                    <div class="diag-card">
+                        <div class="diag-label">Temperatura batteria</div>
+                        <div class="diag-value" id="diag-temp-val">--°C</div>
+                        <div class="diag-bar-bg">
+                            <div class="diag-bar-fill" id="diag-temp-bar" style="width:0%"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div class="settings-section">
-                <h4>💬 Preferenze Chat</h4>
-                <p class="section-desc">Personalizza l'esperienza conversazione</p>
-                <div class="setting-item">
-                    <span>Streaming risposte</span>
-                    <span class="setting-value">✅ Attivo</span>
-                </div>
-                <div class="setting-item">
-                    <span>Dettagli delle risposte</span>
-                    <span class="setting-value">Apri in chat</span>
+            <!-- Identity Monitor (V5) -->
+            <div class="diag-section">
+                <h4>Stato interno</h4>
+                <div class="soul-viz-container">
+                    <div class="soul-metric">
+                        <span>Maturità</span>
+                        <div class="soul-bar">
+                            <div class="soul-fill energy" id="soul-energy-bar" style="width:50%"></div>
+                        </div>
+                    </div>
+                    <div class="soul-metric">
+                        <span>Stabilità</span>
+                        <div class="soul-bar">
+                            <div class="soul-fill chaos" id="soul-chaos-bar" style="width:50%"></div>
+                        </div>
+                    </div>
+                    <div class="soul-metric">
+                        <span>Entropia</span>
+                        <div class="soul-bar">
+                            <div class="soul-fill entropy" id="soul-entropy-bar" style="width:10%"></div>
+                        </div>
+                    </div>
+                    <div class="soul-status-text" id="soul-status-text">Stato: Analisi...</div>
                 </div>
             </div>
 
-            <details class="advanced-section settings-advanced">
-                <summary>Impostazioni avanzate</summary>
-                <p class="section-desc">Temperature e stato dei motori. Tutti i controlli restano disponibili.</p>
-            <!-- Device Temperature Monitor -->
-            <div class="settings-section">
-                <h4>🌡️ Temperatura Dispositivo</h4>
+            <!-- Live Logs -->
+            <div class="diag-section no-pad full-height-log">
+                <h4>Registro tecnico</h4>
+                <div id="diag-logs" class="terminal-logs large">
+                    <div class="log-entry"><span class="log-time">--:--</span> <span class="log-msg">In attesa dei dati.</span></div>
+                </div>
+            </div>
+        <details class="advanced-section"><summary>Sensori e stato dei motori</summary><div class="settings-section">
+                <h4>Temperatura Dispositivo</h4>
                 <p class="section-desc">Monitora il carico termico dell'app ALLMA</p>
 
                 <div class="temp-monitor-grid">
@@ -588,9 +868,7 @@
                     <span class="status-dot"></span>
                     <span id="temp-status-text">Normale</span>
                 </div>
-            </div>
-
-            <div class="settings-section">
+            </div><div class="settings-section">
                 <h4>Stato dei motori</h4>
                 <!-- Status Chips moved here -->
                 <div class="setting-item">
@@ -601,157 +879,7 @@
                         <span id="status-llm" class="status-chip status-unknown">LLM</span>
                     </div>
                 </div>
-            </div>
-            </details>
-        </div>
-    </div>
-
-    <!-- 8. Diagnostics Panel (Overlay Modal) -->
-
-
-
-
-    <!-- User Info Modal -->
-    <div id="user-modal" class="modal-backdrop">
-        <div class="modal-content">
-            <h3>Il tuo Profilo</h3>
-            <p>Racconta ad ALLMA chi sei.</p>
-
-            <div class="input-group">
-                <label>Nome</label>
-                <input type="text" id="input-name" placeholder="Es. Erik">
-            </div>
-
-            <div class="input-group">
-                <label>Età</label>
-                <input type="number" id="input-age" placeholder="Es. 25">
-            </div>
-
-            <div class="modal-actions">
-                <button class="btn-cancel" onclick="closeUserModal()">Annulla</button>
-                <button class="btn-save" onclick="saveUserProfile()">Salva</button>
-            </div>
-        </div>
-    </div>
-
-    <header id="top-header">
-        <button id="menu-btn" class="icon-button" aria-label="Apri menu" onclick="toggleSidebar()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" d="M4 7h16M4 12h12M4 17h8"/></svg>
-        </button>
-        <div class="header-brand"><div><div class="wordmark">ALLMA</div><div id="chat-status" role="status">Parliamone insieme</div></div></div>
-        <button id="new-chat-btn" class="icon-button" aria-label="Nuova chat" onclick="startNewChat()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7M15 4l5 5M10 14l1-5 7-7 4 4-7 7-5 1Z"/></svg></button>
-    </header>
-
-    <!-- VIEW: CHAT -->
-    <div id="view-chat" class="app-view active">
-        <!-- Main Chat Container -->
-        <div id="chat-container">
-            <div class="empty-chat"><h1>Da dove iniziamo?</h1><p>Una domanda, un’idea, qualcosa da raccontare.</p></div>
-        </div>
-
-        <!-- Input Area -->
-        <div id="chat-notice" role="status" aria-live="polite"></div>
-        <div class="chat-caption">La nostra storia, un messaggio alla volta.</div>
-        <div id="input-area">
-            <div class="capsule">
-                <input type="text" id="message-input" placeholder="Scrivi ad ALLMA…" aria-label="Messaggio" autocomplete="off" enterkeyhint="send" onkeypress="handleInputKey(event)">
-                <button id="voice-mode-btn" class="icon-button" aria-label="Apri modalità vocale" onclick="openVoiceMode()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path stroke-linecap="round" d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6"/></svg></button>
-                <button id="send-btn" aria-label="Invia messaggio" onclick="sendMessage()" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
-                <button id="cancel-generation-btn" hidden onclick="cancelGeneration()">Interrompi</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- VIEW: DIAGNOSTICS (Full Screen) -->
-    <div id="view-diagnostics" class="app-view hidden">
-        <div class="diagnostics-header">
-            <button class="back-btn" onclick="switchView('chat')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M15 18l-6-6 6-6" />
-                </svg>
-                Chat
-            </button>
-            <div style="display:flex; flex-direction:column; align-items:center;">
-                <h2>Mission Control</h2>
-                <span id="diag-conn-status" style="font-size:10px; color:gray; font-family:monospace;">Waiting...</span>
-            </div>
-            <div class="header-actions">
-                <!-- Actions like clear logs -->
-            </div>
-        </div>
-
-        <div class="diagnostics-content">
-            <div class="diag-section">
-                <h4>Benchmark cognitivo</h4>
-                <p class="section-desc">Scegli una prova e valuta risposte e tempi nel report.</p>
-                <button type="button" class="benchmark-button" onclick="openBenchmarkSettings()">Apri benchmark <span aria-hidden="true">→</span></button>
-            </div>
-            <!-- Resource Monitor -->
-            <div class="diag-section">
-                <h4>📊 Monitor Risorse</h4>
-                <div class="diag-grid">
-                    <!-- CPU -->
-                    <div class="diag-card">
-                        <div class="diag-label">CPU App (1 core)</div>
-                        <div class="diag-value" id="diag-cpu-val">0%</div>
-                        <div class="diag-bar-bg">
-                            <div class="diag-bar-fill" id="diag-cpu-bar" style="width:0%"></div>
-                        </div>
-                    </div>
-                    <!-- RAM -->
-                    <div class="diag-card">
-                        <div class="diag-label">RAM App (picco)</div>
-                        <div class="diag-value" id="diag-ram-val">0 MB</div>
-                        <div class="diag-bar-bg">
-                            <div class="diag-bar-fill" id="diag-ram-bar" style="width:0%"></div>
-                        </div>
-                    </div>
-                    <!-- TEMP -->
-                    <div class="diag-card">
-                        <div class="diag-label">Temperatura batteria</div>
-                        <div class="diag-value" id="diag-temp-val">--°C</div>
-                        <div class="diag-bar-bg">
-                            <div class="diag-bar-fill" id="diag-temp-bar" style="width:0%"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Identity Monitor (V5) -->
-            <div class="diag-section">
-                <h4>🧠 Stato Identità (V5 Limbico)</h4>
-                <div class="soul-viz-container">
-                    <div class="soul-metric">
-                        <span>Maturity</span>
-                        <div class="soul-bar">
-                            <div class="soul-fill energy" id="soul-energy-bar" style="width:50%"></div>
-                        </div>
-                    </div>
-                    <div class="soul-metric">
-                        <span>Stability</span>
-                        <div class="soul-bar">
-                            <div class="soul-fill chaos" id="soul-chaos-bar" style="width:50%"></div>
-                        </div>
-                    </div>
-                    <div class="soul-metric">
-                        <span>Entropy</span>
-                        <div class="soul-bar">
-                            <div class="soul-fill entropy" id="soul-entropy-bar" style="width:10%"></div>
-                        </div>
-                    </div>
-                    <div class="soul-status-text" id="soul-status-text">Stato: Analisi...</div>
-                </div>
-            </div>
-
-            <!-- Live Logs -->
-            <div class="diag-section no-pad full-height-log">
-                <h4>📜 Live System Trace</h4>
-                <div id="diag-logs" class="terminal-logs large">
-                    <div class="log-entry"><span class="log-time">--:--</span> <span class="log-msg">System
-                            Ready.</span></div>
-                </div>
-            </div>
-        </div>
+            </div></details></div>
     </div>
 
     <!-- Templates -->
@@ -774,13 +902,40 @@
         </div>
     </template>
 
-    <!-- Voice Overlay -->
-    <div id="voice-overlay" class="voice-glass" role="dialog" aria-modal="true" aria-labelledby="voice-heading">
+    <!-- Voice screen -->
+    <main id="voice-overlay" class="voice-glass app-view screen hidden" data-screen="voice" aria-labelledby="voice-screen-title"><header class="screen-header">
+            <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
+            <h1 id="voice-screen-title" tabindex="-1" data-screen-heading>Voce</h1><span class="screen-header-space" aria-hidden="true"></span>
+        </header><div class="screen-content voice-screen-content">
         <canvas id="voice-bg-canvas"></canvas>
         <div class="voice-header">
             <div class="voice-brand">ALLMA</div>
             <div class="voice-title" id="voice-heading">Parliamo a voce</div>
             <div class="voice-subtitle">Un turno alla volta, senza fretta</div>
+            <details class="voice-preferences">
+                <summary>Lingua e voce <span id="voice-preferences-summary">Italiano · Android</span></summary>
+                <div class="voice-preferences-fields">
+                    <label for="voice-language">Lingua che parli</label>
+                    <select id="voice-language" onchange="voiceControls.save()">
+                        <option value="auto">Automatica · se supportata da Android</option>
+                        <option value="it-IT" selected>Italiano</option><option value="en-US">English</option>
+                        <option value="fr-FR">Français</option><option value="de-DE">Deutsch</option>
+                        <option value="es-ES">Español</option><option value="pt-BR">Português</option>
+                        <option value="ja-JP">日本語</option><option value="ko-KR">한국어</option>
+                        <option value="zh-CN">中文</option><option value="ar-SA">العربية</option>
+                        <option value="hi-IN">हिन्दी</option><option value="ru-RU">Русский</option>
+                        <option value="nl-NL">Nederlands</option><option value="pl-PL">Polski</option>
+                        <option value="tr-TR">Türkçe</option><option value="uk-UA">Українська</option>
+                    </select>
+                    <p id="voice-language-support" class="voice-preferences-help" role="status">La disponibilità delle lingue viene verificata all’avvio del microfono.</p>
+                    <label for="voice-speaker">Voce di ALLMA</label>
+                    <select id="voice-speaker" onchange="voiceControls.save()"><option value="android">Voce Android · leggera</option><option value="if_sara" disabled>Sara · naturale, italiano</option><option value="im_nicola" disabled>Nicola · naturale, italiano</option></select>
+                    <div class="voice-preferences-actions"><button type="button" id="voice-preview" onclick="voiceControls.preview()">Ascolta una prova</button><button type="button" id="voice-pack-download" onclick="voiceControls.download()">Scarica voci naturali · 132 MB</button></div>
+                    <p id="voice-pack-status" class="voice-preferences-help" role="status">Le voci naturali sono opzionali e funzionano sul telefono. Nelle altre lingue viene usata la voce Android.</p>
+                    <label class="voice-service-option"><input type="checkbox" id="voice-service-fallback" onchange="voiceControls.save()">Consenti il servizio Android se il riconoscimento locale non è disponibile</label>
+                    <p class="voice-preferences-help">Questa opzione può usare la rete secondo il servizio Android. Di base il riconoscimento resta sul dispositivo.</p>
+                </div>
+            </details>
         </div>
 
         <div class="voice-visualizer" aria-hidden="true">
@@ -807,13 +962,46 @@
             <div class="voice-mic-ring">
             <button class="voice-btn mic" id="voice-mic-btn" aria-label="Microfono" onclick="window.voiceToggleListening && window.voiceToggleListening()"><svg class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path stroke-linecap="round" d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6"/></svg><svg class="voice-stop-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="3"/></svg></button>
             </div>
-            <button class="voice-btn close" aria-label="Chiudi modalità vocale" onclick="closeVoiceMode()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" d="m6 6 12 12M18 6 6 18"/></svg></button>
         </div>
         <div class="voice-footer">Tocca il microfono per un nuovo turno</div>
-    </div>
+    </div></main>
+
+    <section id="brain-explorer" class="brain-explorer" role="dialog" aria-modal="true" aria-labelledby="brain-title" hidden>
+        <header class="brain-header">
+            <button type="button" id="brain-close" aria-label="Torna alla chat" onclick="brainView.close()"><span aria-hidden="true">←</span> Chat</button>
+            <div><span class="brain-eyebrow">ALLMA / CERVELLO</span><h1 id="brain-title">Dentro un pensiero.</h1></div>
+        </header>
+        <div class="brain-scroll">
+            <div class="brain-stage" id="brain-stage" data-view="brain">
+                <div class="brain-stage-top"><span id="brain-live" role="status">In attesa di attività</span><button type="button" id="brain-motion" onclick="brainView.toggleMotion()" aria-pressed="false">Pausa animazioni</button></div>
+                <canvas id="brain-anatomy-canvas" aria-hidden="true"></canvas>
+                <canvas id="brain-canvas" tabindex="0" role="img" aria-label="Cervello umano tridimensionale con i sistemi di ALLMA. Trascina o usa le frecce per ruotarlo a 360 gradi; seleziona un modulo per seguirne l’attività."></canvas>
+                <div class="brain-stage-bottom"><span id="brain-stage-hint">Ruota a 360° · tocca un sistema</span><div class="brain-camera-tools"><button type="button" id="brain-reset" onclick="brainView.resetPose()" aria-label="Centra il cervello">Centra</button><button type="button" id="brain-zoom" onclick="brainView.zoom()">Avvicina +</button></div></div>
+            </div>
+            <div id="brain-inspector">
+            <div class="brain-legend" aria-label="Legenda dei collegamenti"><span><i class="brain-structure" aria-hidden="true"></i>Forma simbolica</span><span><i class="brain-path" aria-hidden="true"></i>Percorso osservato</span></div>
+            <p class="brain-explanation">Fai una domanda e segui i sistemi che collaborano. Tocca un punto per esplorarlo.</p>
+            <div class="brain-overview"><div><span>IL TURNO</span><strong id="brain-turn">Nessuna domanda osservata</strong></div><div><span>IL MOTORE</span><strong id="brain-engine">In attesa del collegamento</strong></div></div>
+            <section class="brain-detail" aria-labelledby="brain-detail-title"><span id="brain-detail-group" class="brain-eyebrow">ESPLORA I COLLEGAMENTI</span><h2 id="brain-detail-title">Ogni parte ha un ruolo.</h2><p id="brain-detail-text">Tocca un punto o un modulo per scoprire cosa fa. Verranno evidenziati solo i passaggi osservati nei turni di chat.</p><span id="brain-detail-state"></span></section>
+            <button type="button" id="brain-replay" class="brain-replay" onclick="brainView.replay()" disabled>Rivedi percorso ↗</button>
+            <div class="brain-section-heading"><h2>I sistemi</h2><span id="brain-observed">Nessuna attività osservata</span></div>
+            <div id="brain-modules" class="brain-modules" aria-label="Moduli e stati osservati"></div>
+            <details class="brain-history"><summary>Il percorso dell’ultima domanda</summary><ol id="brain-events"><li>Invia una domanda per osservare il percorso.</li></ol></details>
+            </div>
+            <section class="brain-answer" id="brain-answer-box" hidden><span class="brain-eyebrow">LA RISPOSTA IN CHAT</span><p id="brain-answer"></p></section>
+        </div>
+        <form id="brain-form" class="brain-form"><label class="brain-sr-only" for="brain-question">Fai una domanda ad ALLMA</label><input id="brain-question" type="text" autocomplete="off" placeholder="Fai una domanda. Osserva cosa succede." maxlength="8000"><button type="submit" id="brain-send" aria-label="Invia la domanda">↑</button><button type="button" id="brain-stop" hidden onpointerdown="armCancelGeneration()" onpointercancel="disarmCancelGeneration()" onclick="cancelGeneration(event)">Interrompi</button></form>
+        <p id="brain-notice" class="brain-notice" role="status">La domanda e la risposta restano nella chat corrente.</p>
+    </section>
 
     <script src="marked.min.js"></script>
+    <script src="startup_transition.js"></script>
     <script src="script_v24.js"></script>
+    <script src="voice_controls.js"></script>
+    <script src="brain_geometry.js"></script>
+    <script src="brain_anatomy.js"></script>
+    <script src="brain_view.js"></script>
+    <script src="navigation.js"></script>
 </body>
 
 </html>

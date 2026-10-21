@@ -77,7 +77,7 @@ class NLPProcessor:
     
     def extract_entities(self, text: str, context: Dict[str, Any] = None) -> Dict[str, List[str]]:
         """Estrae entità dal testo"""
-        logging.debug(f"Analyzing text: {text}")
+        logging.debug("NLP analysis step completed")
         
         # Inizializza il dizionario delle entità
         entities = {
@@ -106,8 +106,8 @@ class NLPProcessor:
                 # Rimuovi il match dal testo
                 text = text.replace(word, ' ' * len(word))
                 
-        logging.debug(f"After known organizations extraction: {text}")
-        logging.debug(f"Found known organizations: {entities['organization']}")
+        logging.debug("NLP analysis step completed")
+        logging.debug("NLP analysis step completed")
         
         # Cerca città note
         known_cities = {'Milano', 'Roma', 'Napoli', 'Torino', 'London', 'Paris', 'Madrid', 'Berlin', 'New York'}
@@ -120,14 +120,14 @@ class NLPProcessor:
         text = text.replace('\n', ' ').replace('\t', ' ')
         text = ' '.join(text.split())  # Rimuove spazi multipli
         words = [w.strip('.,;:!?') for w in text.split()]
-        logging.debug(f"Words for location extraction: {words}")
+        logging.debug("NLP analysis step completed")
         
         preps = {'a', 'in', 'da', 'per', 'verso', 'presso', 'di', 'en', 'from', 'to', 'at', 'en', 'de', 'para'}
         
         for i in range(len(words) - 1):
             current_word = words[i].lower()
             next_word = words[i + 1]
-            logging.debug(f"Checking for location: '{current_word}' -> '{next_word}'")
+            logging.debug("NLP analysis step completed")
             
             if current_word in preps and next_word:
                 # Verifica che la parola successiva inizi con maiuscola
@@ -135,13 +135,13 @@ class NLPProcessor:
                     next_word not in entities['person'] and
                     next_word not in entities['organization'] and
                     next_word not in known_orgs):
-                    logging.debug(f"Found location: {next_word}")
+                    logging.debug("NLP analysis step completed")
                     entities['location'].append(next_word)
                     # Rimuovi il match dal testo
                     text = text.replace(next_word, ' ' * len(next_word))
                     
-        logging.debug(f"After location extraction: {text}")
-        logging.debug(f"Found locations: {entities['location']}")
+        logging.debug("NLP analysis step completed")
+        logging.debug("NLP analysis step completed")
         
         # Estrai nomi di persona (pattern: Nome Cognome)
         name_pattern = r'\b[A-Z][a-zàèéìòóù]+(?:\s+[A-Z][a-zàèéìòóù]+)*\b'
@@ -155,8 +155,8 @@ class NLPProcessor:
                 # Rimuovi il match dal testo per evitare sovrapposizioni
                 text = text.replace(name, ' ' * len(name))
             
-        logging.debug(f"After person extraction: {text}")
-        logging.debug(f"Found persons: {entities['person']}")
+        logging.debug("NLP analysis step completed")
+        logging.debug("NLP analysis step completed")
         
         # Estrai altre organizzazioni (pattern: parole che iniziano con maiuscola seguite da indicatori)
         org_indicators = r'(?:SpA|Srl|Inc|Ltd|Corp|Company|Azienda|Società|Ditta)'
@@ -170,8 +170,8 @@ class NLPProcessor:
                 # Rimuovi il match dal testo
                 text = text.replace(match.group(), ' ' * len(match.group()))
                 
-        logging.debug(f"After all organization extraction: {text}")
-        logging.debug(f"Found all organizations: {entities['organization']}")
+        logging.debug("NLP analysis step completed")
+        logging.debug("NLP analysis step completed")
                 
         # Estrai date e orari
         temporal_patterns = [
@@ -186,7 +186,7 @@ class NLPProcessor:
                 if match.group() not in entities['temporal']:
                     entities['temporal'].append(match.group())
                 
-        logging.debug(f"Found temporals: {entities['temporal']}")
+        logging.debug("NLP analysis step completed")
         
         # Estrai quantità (numeri con unità di misura)
         quantity_pattern = r'\b\d+(?:,\d+)?(?:\s*(?:euro|kg|km|m|cm|mm|l|ml|g|mg))?\b'
@@ -195,7 +195,7 @@ class NLPProcessor:
             if match.group() not in entities['quantity']:
                 entities['quantity'].append(match.group())
             
-        logging.debug(f"Found quantities: {entities['quantity']}")
+        logging.debug("NLP analysis step completed")
         
         return entities
     

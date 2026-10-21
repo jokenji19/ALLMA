@@ -46,7 +46,7 @@ import time
 import json
 
 class ContextUnderstandingSystem:
-    def __init__(self):
+    def __init__(self, load_models=True):
         """Inizializza il sistema di comprensione del contesto"""
         self.context_memory = []
         self.visual_memory = VisualMemorySystem()
@@ -64,7 +64,7 @@ class ContextUnderstandingSystem:
         
         try:
             # Carica i modelli di ML
-            if TRANSFORMERS_AVAILABLE:
+            if load_models and TRANSFORMERS_AVAILABLE:
                 self.emotion_detector = pipeline("text-classification", 
                                               model="j-hartmann/emotion-english-distilroberta-base", 
                                               top_k=None)

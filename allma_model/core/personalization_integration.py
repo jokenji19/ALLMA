@@ -589,6 +589,14 @@ class PersonalizationIntegration:
         return style_adaptations.get(relationship_level, style_adaptations['initial'])
 
     def _cleanup_memory(self):
-        """Libera spazio nella memoria eliminando i nodi meno importanti"""
-        # TODO: Implementare la pulizia della memoria
-        pass
+        """Repair references without deleting autobiographical experiences."""
+        nodes = self.memory_system.nodes
+        valid = set(nodes)
+        removed = 0
+        for node in nodes.values():
+            before = len(node.connections)
+            node.connections.intersection_update(valid)
+            removed += before - len(node.connections)
+        for topic, references in self.memory_system.thematic_map.items():
+            self.memory_system.thematic_map[topic] = [key for key in references if key in valid]
+        return {'dangling_connections_removed':removed, 'memories_preserved':len(nodes)}

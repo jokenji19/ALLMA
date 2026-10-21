@@ -126,36 +126,39 @@ class EventBus:
         self._running = True
         logger.info("[EventBus] Consume loop started.")
 
-        while self._running:
-            try:
-                # Attendi un evento con timeout per non bloccare il loop
+        try:
+            while self._running:
                 try:
-                    event = self._queue.get_nowait()
-                except queue.Empty:
-                    await asyncio.sleep(0.05)
-                    continue
-
-                if self._consumer:
+                    # Attendi un evento con timeout per non bloccare il loop
                     try:
-                        await self._consumer(event)
-                    except Exception as e:
-                        logger.error(
-                            f"[EventBus] Consumer error handling '{event.event_type}': {e}",
-                            exc_info=True
-                        )
-                    finally:
-                        self._queue.task_done()
-                else:
-                    # Nessun consumer: rimetti in coda o droppa
-                    logger.warning(f"[EventBus] No consumer for event: {event.event_type}")
-                    self._queue.task_done()
+                        event = self._queue.get_nowait()
+                    except queue.Empty:
+                        await asyncio.sleep(0.05)
+                        continue
 
-            except asyncio.TimeoutError:
-                # Normale: nessun evento in questo secondo, continua il loop
-                continue
-            except Exception as e:
-                logger.error(f"[EventBus] Unexpected error in consume loop: {e}", exc_info=True)
-                await asyncio.sleep(0.1)
+                    if self._consumer:
+                        try:
+                            await self._consumer(event)
+                        except Exception as e:
+                            logger.error(
+                                f"[EventBus] Consumer error handling '{event.event_type}': {e}",
+                                exc_info=True
+                            )
+                        finally:
+                            self._queue.task_done()
+                    else:
+                        # Nessun consumer: rimetti in coda o droppa
+                        logger.warning(f"[EventBus] No consumer for event: {event.event_type}")
+                        self._queue.task_done()
+
+                except asyncio.TimeoutError:
+                    # Normale: nessun evento in questo secondo, continua il loop
+                    continue
+                except Exception as e:
+                    logger.error(f"[EventBus] Unexpected error in consume loop: {e}", exc_info=True)
+                    await asyncio.sleep(0.1)
+        finally:
+            self._running = False
 
     def stop(self):
         """Ferma il consume loop al prossimo ciclo."""

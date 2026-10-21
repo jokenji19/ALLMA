@@ -1,0 +1,3 @@
+android:fullBackupContent="@xml/allma_backup_rules"
+android:dataExtractionRules="@xml/allma_extraction_rules"
+android:enableOnBackInvokedCallback="true"

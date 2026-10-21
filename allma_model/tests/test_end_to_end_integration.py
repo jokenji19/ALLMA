@@ -6,12 +6,12 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 
-from core.personalization_integration import PersonalizationIntegration
-from core.document_processor import DocumentProcessor
-from core.extraction import InformationExtractor
-from core.nlp_processor import NLPProcessor
-from core.personality_coalescence import CoalescenceProcessor
-from core.memory_system.memory_manager import AdvancedMemorySystem
+from allma_model.core.personalization_integration import PersonalizationIntegration
+from allma_model.core.document_processor import DocumentProcessor
+from allma_model.core.extraction import InformationExtractor
+from allma_model.core.nlp_processor import NLPProcessor
+from allma_model.core.personality_coalescence import CoalescenceProcessor
+from allma_model.core.memory_system.memory_manager import AdvancedMemorySystem
 
 class TestEndToEndIntegration(unittest.TestCase):
     def setUp(self):
@@ -122,7 +122,7 @@ class TestEndToEndIntegration(unittest.TestCase):
     def test_error_recovery(self):
         """Testa la capacità del sistema di recuperare da errori"""
         # Test di recupero da errore di memoria piena
-        with patch('core.memory_system.memory_manager.AdvancedMemorySystem.add_memory', side_effect=[MemoryError, True]):
+        with patch('allma_model.core.memory_system.memory_manager.AdvancedMemorySystem.add_memory', side_effect=[MemoryError, True]):
             result = self.personalization.process_interaction(
                 "Questo è un test di recupero da errore",
                 {'time_of_day': 'morning'}
@@ -130,7 +130,7 @@ class TestEndToEndIntegration(unittest.TestCase):
             self.assertIn('understanding', result)
         
         # Test di recupero da errore di file corrotto
-        with patch('core.document_processor.DocumentProcessor.process_document', 
+        with patch('allma_model.core.document_processor.DocumentProcessor.process_document',
                   side_effect=[IOError("File corrotto"), {'text': 'contenuto recuperato'}]):
             try:
                 # Prima chiamata dovrebbe fallire
@@ -143,7 +143,7 @@ class TestEndToEndIntegration(unittest.TestCase):
             self.assertEqual(result['text'], 'contenuto recuperato')
         
         # Test di recupero da timeout di rete
-        with patch('core.nlp_processor.NLPProcessor.extract_entities', 
+        with patch('allma_model.core.nlp_processor.NLPProcessor.extract_entities',
                   side_effect=[TimeoutError, {'person': [], 'location': [], 'organization': ['Test']}]):
             try:
                 # Prima chiamata dovrebbe fallire

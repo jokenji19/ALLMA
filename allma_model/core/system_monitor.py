@@ -22,7 +22,22 @@ class SystemMonitor:
     def __init__(self, is_android: bool = False):
         self.is_android = is_android
         self.last_state = MetabolicState()
+        self._ram_free_mb = None
         
+    def get_metrics(self):
+        """Available RAM in MB, or unavailable; never a guessed capacity."""
+        self._ram_free_mb = None
+        if self.is_android:
+            self.get_metabolic_state()
+        else:
+            try:
+                import os
+                self._ram_free_mb = os.sysconf('SC_AVPHYS_PAGES') * os.sysconf('SC_PAGE_SIZE') / (1024 * 1024)
+            except (ValueError, OSError, AttributeError):
+                pass
+        return {'ram_free': self._ram_free_mb,
+                'ram_source': 'os' if self._ram_free_mb is not None else 'unavailable'}
+
     def get_metabolic_state(self) -> MetabolicState:
         """Legge i sensori hardware e restituisce lo stato metabolico."""
         if self.is_android:
@@ -71,6 +86,7 @@ class SystemMonitor:
             
             # total = mem_info.totalMem
             avail = mem_info.availMem
+            self._ram_free_mb = avail / (1024 * 1024)
             # Load roughly inverted avail
             # (Simple approximation as totalMem access might vary by API level)
             # Defaulting to a safe heuristic if total unavailable in older APIs

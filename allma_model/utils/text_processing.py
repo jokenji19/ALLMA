@@ -17,7 +17,7 @@ class SimpleTfidf:
         
         for doc in documents:
             if not isinstance(doc, str):
-                continue
+                doc = ""
             words = doc.lower().split()
             # Basic stop word filtering if list provided
             if self.stop_words == 'english':
@@ -43,14 +43,14 @@ class SimpleTfidf:
         
         for word in self.vocab:
             doc_freq = sum(1 for counts in word_counts if word in counts)
-            self.idf[word] = math.log(self.doc_count / (1 + doc_freq))
+            self.idf[word] = math.log((1 + self.doc_count) / (1 + doc_freq)) + 1.0
             
         vectors = []
         for counts in word_counts:
             vector = [counts[word] * self.idf.get(word, 0) for word in self.vocab]
             vectors.append(vector)
             
-        return np.array(vectors)
+        return np.asarray(vectors, dtype=float).reshape(len(documents), len(self.vocab))
 
     def get_feature_names_out(self):
         return self.vocab
@@ -65,7 +65,7 @@ class SimpleTfidf:
             counts = Counter(words)
             vector = [counts[word] * self.idf.get(word, 0) for word in self.vocab]
             vectors.append(vector)
-        return np.array(vectors)
+        return np.asarray(vectors, dtype=float).reshape(len(documents), len(self.vocab))
 
 def cosine_similarity(v1, v2):
     # Ensure inputs are numpy arrays

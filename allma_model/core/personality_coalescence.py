@@ -11,10 +11,21 @@ import re
 import logging
 import sqlite3
 import threading
+import copy
 from pathlib import Path
 from allma_model.utils.persistence import atomic_write_json
 from allma_model.utils.cognitive_state import CognitiveStateStore, unit_number
 from allma_model.memory_system.knowledge_memory import KnowledgeMemory
+
+VALUE_KEYWORDS = {
+    "empatia": ["comprensione", "empatia", "sentire", "capire"],
+    "curiosità": ["scoperta", "imparare", "conoscenza", "esplorare", "vorrei capire", "vorrei sapere", "mi domando"],
+    "crescita": ["crescita", "sviluppo", "miglioramento", "evoluzione"],
+    "aiuto": ["aiutare", "supporto", "assistenza", "sostegno"],
+    "autonomia": ["indipendenza", "decisione", "scelta", "libertà"],
+    "saggezza": ["saggezza", "intelligenza", "comprensione", "esperienza"],
+    "creatività": ["creatività", "innovazione", "arte", "espressione"]
+}
 
 EmotionalIntensity = NewType('EmotionalIntensity', float)
 
@@ -110,7 +121,7 @@ class PersonalityCore:
                 if v2 in self.values[v1].conflicts:
                     relationship = -0.5  # Conflitto base
                 else:
-                    relationship = random.uniform(0.1, 0.5)  # Sinergia casuale
+                    relationship = 0.0  # Structural neutral prior, not a randomly invented affinity
                 relationships[v1][v2] = relationship
                 relationships[v2][v1] = relationship
                 
@@ -191,9 +202,10 @@ class PersonalityCore:
         return changes
 
     def _identify_relevant_values(self, experience: str) -> List[str]:
-        """Identifica i valori rilevanti per l'esperienza"""
-        # Questo metodo è stato spostato nella classe CoalescenceProcessor
-        pass
+        """Legacy explicit-value API; share the processor's vocabulary."""
+        text = experience.casefold()
+        return [name for name, keywords in VALUE_KEYWORDS.items()
+                if any(keyword in text for keyword in keywords)]
 
     def get_resilience_level(self) -> float:
         """Calcola il livello attuale di resilienza basato su tratti e valori"""
@@ -261,15 +273,7 @@ class CoalescenceProcessor:
         self._diary_lock = threading.RLock()
         self.emotional_memory = []  # lista vuota
         self.value_threshold = 0.7  # Soglia per l'emergenza di meta-valori
-        self.value_keywords = {
-            "empatia": ["comprensione", "empatia", "sentire", "capire"],
-            "curiosità": ["scoperta", "imparare", "conoscenza", "esplorare", "vorrei capire", "vorrei sapere", "mi domando"],
-            "crescita": ["crescita", "sviluppo", "miglioramento", "evoluzione"],
-            "aiuto": ["aiutare", "supporto", "assistenza", "sostegno"],
-            "autonomia": ["indipendenza", "decisione", "scelta", "libertà"],
-            "saggezza": ["saggezza", "intelligenza", "comprensione", "esperienza"],
-            "creatività": ["creatività", "innovazione", "arte", "espressione"]
-        }
+        self.value_keywords = VALUE_KEYWORDS
         self.learned_concepts = {}  # Dizionario per memorizzare i concetti appresi
         self.knowledge = KnowledgeMemory(db_path)
         for source in (Path(db_path).resolve().parent / 'legacy_coalescence.db', Path('Model/data/allma.db')):
@@ -278,9 +282,74 @@ class CoalescenceProcessor:
             except (OSError, ValueError, sqlite3.Error) as error:
                 logging.warning('Legacy coalescence import deferred: %s', error)
         self._restore_state()
+        self._previous_traits = dict(self.core.personality_traits)
+
+    def observe_feedback(self, user_id, event_id, positive, topics):
+        """Adapt bounded response tendencies only from explicit feedback.
+
+        These values are control estimates, not emotions or measured intelligence.
+        One original answer contributes at most once to each feedback decision.
+        """
+        if not user_id or not event_id or type(positive) is not bool:
+            raise ValueError('An attributed feedback event is required')
+        import hashlib
+        key = hashlib.sha256(json.dumps([user_id, event_id, positive]).encode()).hexdigest()
+        with self._diary_lock:
+            if key in self._feedback_events:
+                return False
+            before = dict(self.core.personality_traits)
+            trait = None
+            if positive:
+                if set(topics or []) & {'emotion', 'support', 'emotional_support'}:
+                    trait = 'empathy'
+                elif set(topics or []) & {'learning', 'technical', 'history'}:
+                    trait = 'curiosity'
+            else:
+                trait = 'openness'  # Responsiveness to corrections, not confidence in an error.
+            changes = {}
+            if trait:
+                value = before[trait]
+                updated = min(.9, value + .005 * (1 - value))
+                self.core.personality_traits[trait] = updated
+                changes[trait] = updated - value
+            self._feedback_events[key] = {'user_id': user_id, 'positive': positive,
+                                          'changes': changes, 'policy': 'explicit_feedback_v1'}
+            # Events and traits share one atomic state snapshot.
+            try:
+                self._state_store.put('personality', {
+                    'traits': dict(self.core.personality_traits),
+                    'values': {name: value.strength for name, value in self.core.values.items()},
+                    'resilience_bonus': self.core.resilience_bonus,
+                    'learned_concepts': self.learned_concepts,
+                    'feedback_events': self._feedback_events,
+                    'emotion_growth': self._emotion_growth,
+                    'expression_development': self._expression_development,
+                    'experience_checkpoint': self.experience_checkpoint,
+                    'experience_report': self.experience_report})
+            except Exception:
+                self.core.personality_traits = before
+                del self._feedback_events[key]
+                raise
+            self._previous_traits = dict(self.core.personality_traits)
+            return True
 
     def _restore_state(self):
         saved = self._state_store.get('personality')
+        self.experience_checkpoint = saved.get('experience_checkpoint',0)
+        if type(self.experience_checkpoint) is not int or not 0 <= self.experience_checkpoint < 2**53:
+            raise ValueError('Invalid experience checkpoint')
+        self.experience_report = saved.get('experience_report',{})
+        if not isinstance(self.experience_report,dict):
+            raise ValueError('Invalid experience report')
+        from allma_model.core.personality_development import empty_state as empty_expression, validate
+        self._expression_development = validate(saved.get('expression_development', empty_expression()))
+        from allma_model.core.emotional_growth import empty_state
+        self._emotion_growth = saved.get('emotion_growth', empty_state())
+        if (not isinstance(self._emotion_growth, dict) or self._emotion_growth.get('version') != 1
+                or not isinstance(self._emotion_growth.get('profiles'), dict)):
+            raise ValueError('Invalid emotional growth state; refusing to overwrite it')
+        events = saved.get('feedback_events', {})
+        self._feedback_events = events if isinstance(events, dict) else {}
         for field, target in (('traits', self.core.personality_traits),):
             values = saved.get(field, {})
             if isinstance(values, dict):
@@ -403,7 +472,7 @@ class CoalescenceProcessor:
             duration=1.0
         )
 
-    def integrate_knowledge(self, content: str, source_type: str, emotional_state: Any) -> None:
+    def integrate_knowledge(self, content: str, source_type: str, emotional_state: Any, user_id=None) -> None:
         """Integra la conoscenza dal contenuto. Handles polymorphic emotional_state."""
         if not content:
             return
@@ -435,7 +504,7 @@ class CoalescenceProcessor:
             content=content,
             timestamp=time.time(),
             emotional_response=final_emotional_state,
-            context={"source_type": source_type}
+            context={"source_type": source_type, "user_id": user_id, "emotion_subject": "user" if source_type == "user_interaction" else "unspecified"}
         )
         
         # Estrai i concetti e le spiegazioni dal contenuto
@@ -448,7 +517,7 @@ class CoalescenceProcessor:
         # Per ogni concetto trovato
         for concept, explanation in concepts_and_explanations.items():
             # Verifica se il concetto esiste già
-            existing_concept = self.knowledge.get_concept(concept)
+            existing_concept = self.knowledge.get_concept(concept, user_id=user_id)
             
             if existing_concept:
                 # Aggiorna il concetto esistente
@@ -474,7 +543,7 @@ class CoalescenceProcessor:
                     "last_updated": time.time(),
                     "source_type": source_type,
                     "emotional_state": final_emotional_state
-                })
+                }, user_id=user_id)
                 
             else:
                 # Crea un nuovo concetto
@@ -486,13 +555,13 @@ class CoalescenceProcessor:
                     "last_updated": time.time(),
                     "source_type": source_type,
                     "emotional_state": final_emotional_state
-                })
+                }, user_id=user_id)
         
         # Aggiorna la confidenza della memoria
         if concepts_and_explanations:
             confidences = []
             for concept, _ in concepts_and_explanations.items():
-                concept_data = self.knowledge.get_concept(concept)
+                concept_data = self.knowledge.get_concept(concept, user_id=user_id)
                 if concept_data:
                     confidences.append(concept_data["confidence"])
             if confidences:
@@ -590,10 +659,84 @@ class CoalescenceProcessor:
             related_concepts=[]
         )
 
-    def get_current_personality_state(self) -> Dict[str, Any]:
+    def observe_interaction(self, user_id, event_id, text, response_context=None, *, experience_sequence=None):
+        from allma_model.core.emotional_growth import evolve
+        from allma_model.core.personality_development import evolve as evolve_expression
+        with self._diary_lock:
+            if experience_sequence is not None and experience_sequence <= self.experience_checkpoint:
+                return copy.deepcopy(self.experience_report)
+            candidate, report = evolve(self._emotion_growth, user_id, event_id, text)
+            expression, style_report = evolve_expression(self._expression_development, user_id, event_id, text)
+            if response_context is not None:
+                from allma_model.core.personality_outcomes import evolve as evolve_outcome
+                expression, outcome = evolve_outcome(expression,user_id,event_id,text,response_context)
+                style_report = dict(style_report,outcome_feedback=outcome)
+            result = dict(report, personality_expression=style_report)
+            if candidate is not self._emotion_growth or expression is not self._expression_development or experience_sequence is not None:
+                self._state_store.put('personality', {
+                    'traits': dict(self.core.personality_traits),
+                    'values': {name: value.strength for name, value in self.core.values.items()},
+                    'resilience_bonus': self.core.resilience_bonus,
+                    'learned_concepts': self.learned_concepts,
+                    'feedback_events': self._feedback_events, 'emotion_growth': candidate,
+                    'expression_development': expression,
+                    'experience_checkpoint': experience_sequence if experience_sequence is not None else self.experience_checkpoint,
+                    'experience_report': result if experience_sequence is not None else self.experience_report})
+                self._emotion_growth = candidate
+                self._expression_development = expression
+                if experience_sequence is not None:
+                    self.experience_checkpoint = experience_sequence
+                    self.experience_report = copy.deepcopy(result)
+            return result
+
+    def expression_view(self, user_id):
+        from allma_model.core.personality_development import view
+        with self._diary_lock:
+            return view(self._expression_development,user_id)
+
+    def expression_plan(self, user_id, message, emotional_state=None):
+        from allma_model.core.personality_development import plan
+        with self._diary_lock:
+            return plan(self._expression_development,user_id,message,emotional_state)
+
+    def expression_revision(self, user_id):
+        from allma_model.core.personality_development import revision
+        with self._diary_lock:
+            return revision(self._expression_development,user_id)
+
+    def learned_emotion_aliases(self, user_id):
+        from allma_model.core.emotional_growth import aliases
+        with self._diary_lock:
+            return aliases(self._emotion_growth, user_id)
+
+    def emotion_growth_view(self, user_id):
+        from allma_model.core.emotional_growth import view
+        with self._diary_lock:
+            return view(self._emotion_growth, user_id)
+
+    def growth_instruction(self, user_id, message=None, emotional_state=None):
+        mode = self.emotion_growth_view(user_id)['response_disposition'].get('mode')
+        if message is not None:
+            from allma_model.utils.output_contract import requested_contract
+            if requested_contract(message):
+                return ''
+            read = emotional_state.get if isinstance(emotional_state,dict) else lambda key,default: getattr(emotional_state,key,default)
+            primary = read('primary_emotion','neutral')
+            primary = str(getattr(primary,'value',primary)).casefold()
+            if mode == 'care' and (unit_number(read('confidence',0.),0.) < .6 or primary == 'neutral'):
+                return ''
+            if mode == 'exploration' and self.expression_plan(user_id,message,emotional_state)['values'].get('questions') == 'restrained':
+                return ''
+        if mode == 'care':
+            return 'Dalle interazioni documentate emerge una tendenza al sostegno: ascolta e, se utile, esplora con delicatezza senza insistere né attribuirti le emozioni dell’utente.'
+        if mode == 'exploration':
+            return 'Dalle interazioni documentate emerge una tendenza esplorativa: approfondisci se utile, senza inventare interessi o ricordi.'
+        return ''
+
+    def get_current_personality_state(self, user_id=None) -> Dict[str, Any]:
         """Restituisce lo stato attuale della personalità"""
         current_state = {
-            "personality_traits": self.core.personality_traits,
+            "personality_traits": dict(self.core.personality_traits),
             "values": {name: value.strength for name, value in self.core.values.items()},
             "emotional_state": {
                 "primary": self.core.current_emotional_state.primary,
@@ -602,6 +745,21 @@ class CoalescenceProcessor:
             },
             "resilience": self.core.resilience_base + self.core.resilience_bonus
         }
+        if user_id:
+            growth = self.emotion_growth_view(user_id)
+            current_state['emotional_growth'] = growth
+            current_state['response_expression'] = self.expression_view(user_id)
+            current_state['trait_provenance'] = 'software_control_estimates_not_human_traits'
+            disposition = growth['response_disposition']
+            own_mode = {'care': EmotionalState.EMPATHY, 'exploration': EmotionalState.CURIOSITY}
+            current_state['emotional_state'] = {
+                'primary': own_mode.get(disposition.get('mode'), EmotionalState.NEUTRAL),
+                'secondary': None, 'intensity': disposition.get('strength', 0.),
+                'source': 'coalescence_response_policy', 'subject': 'ALLMA',
+                'subjective_experience_verified': False}
+            for trait, delta in growth['trait_deltas'].items():
+                if trait in current_state['personality_traits']:
+                    current_state['personality_traits'][trait] = min(.9, current_state['personality_traits'][trait] + delta)
         
         # Aggiungi informazioni sui concetti appresi
         if self.learned_concepts:
@@ -769,7 +927,7 @@ class CoalescenceProcessor:
         # Analizza i concetti appresi
         if hasattr(droplet, 'concepts') and droplet.concepts:
             for concept in droplet.concepts:
-                concept_data = self.knowledge.get_concept(concept)
+                concept_data = self.knowledge.get_concept(concept, user_id=droplet.context.get('user_id'))
                 if concept_data:
                     confidence = concept_data.get('confidence', 0.0)
                     if confidence > 0.8:
@@ -808,6 +966,11 @@ class CoalescenceProcessor:
                 'values': {name: value.strength for name, value in self.core.values.items()},
                 'resilience_bonus': self.core.resilience_bonus,
                 'learned_concepts': self.learned_concepts,
+                'feedback_events': self._feedback_events,
+                'emotion_growth': self._emotion_growth,
+                'expression_development': self._expression_development,
+                'experience_checkpoint': self.experience_checkpoint,
+                'experience_report': self.experience_report,
             })
 
     def _update_personality_values(self, droplet: Memory) -> Dict[str, float]:
@@ -835,7 +998,7 @@ class CoalescenceProcessor:
             # E con la loro confidenza media
             confidences = []
             for concept in droplet.concepts:
-                concept_data = self.knowledge.get_concept(concept)
+                concept_data = self.knowledge.get_concept(concept, user_id=droplet.context.get('user_id'))
                 if concept_data and "confidence" in concept_data:
                     confidences.append(concept_data["confidence"])
             if confidences:
@@ -857,9 +1020,10 @@ class CoalescenceProcessor:
             tech_count = sum(1 for term in tech_terms if term in droplet.content.lower())
             complexity_factor += min(tech_count * 0.1, 0.3)
         
-        # Aggiorna i tratti della personalità
+        # Return actual changes, not absolute trait values.
+        before = dict(self.core.personality_traits)
         self._update_personality_traits(emotional_impact, learning_factor, complexity_factor)
-        
+        changes = {name: value - before[name] for name, value in self.core.personality_traits.items()}
         return changes
 
     def _extract_concepts_and_explanations(self, content: str) -> dict:
@@ -954,12 +1118,12 @@ class CoalescenceProcessor:
         """Analizza i cambiamenti nella personalità"""
         changes = {}
         
-        # Confronta i valori attuali con quelli precedenti
         for trait, value in self.core.personality_traits.items():
-            # Per ora restituiamo solo i valori attuali
-            # In futuro potremmo confrontarli con i valori precedenti
-            changes[trait] = value
-            
+            delta = value - self._previous_traits.get(trait, value)
+            if abs(delta) > 1e-12:
+                changes[trait] = delta
+        self._previous_traits = dict(self.core.personality_traits)
+
         return changes
 
 class LegacyInMemoryConcepts:

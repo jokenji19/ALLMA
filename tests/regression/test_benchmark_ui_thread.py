@@ -11,12 +11,15 @@ def test_benchmark_close_dispatches_webview_work_to_android_thread(monkeypatch):
     cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'WebViewBridge')
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == 'execute_js')
     env = {}
-    exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), str(source), 'exec'), env)
+    evaluator = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '_evaluate_js')
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[method, evaluator], type_ignores=[])), str(source), 'exec'), env)
     ui_queue, calls = [], []
     runnable = ModuleType('android.runnable')
     runnable.run_on_ui_thread = lambda fn: lambda: ui_queue.append(fn)
     monkeypatch.setitem(sys.modules, 'android.runnable', runnable)
     bridge = SimpleNamespace(webview=SimpleNamespace(evaluateJavascript=lambda code, callback: calls.append(code)))
+    bridge._closed = False
+    bridge._evaluate_js = lambda code, callback: env['_evaluate_js'](bridge, code, callback)
     bridge.execute_js = lambda code: env['execute_js'](bridge, code)
     receiver = SimpleNamespace(bridge=bridge)
     closes = [n for n in ast.walk(tree) if isinstance(n, ast.Lambda)
@@ -30,3 +33,9 @@ def test_benchmark_close_dispatches_webview_work_to_android_thread(monkeypatch):
     for job in ui_queue:
         job()
     assert len(calls) == 2 and all('benchmarkUI.close' in code for code in calls)
+
+    # A scheduled callback must not touch a destroyed WebView.
+    bridge.execute_js('window.benchmarkUI.close()')
+    bridge._closed = True
+    ui_queue[-1]()
+    assert len(calls) == 2

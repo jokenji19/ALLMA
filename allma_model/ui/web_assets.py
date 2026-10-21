@@ -28,4 +28,8 @@ def inline_stylesheets(html, asset_dir):
         css = re.sub(r"url\(['\"]?(fonts/[^'\")]+\.woff2)['\"]?\)", font, css)
         return '<style>' + css + '</style>'
 
-    return re.sub(r'<link[^>]+rel=[\"\']stylesheet[\"\'][^>]*>', sheet, html, flags=re.I)
+    html = re.sub(r'<link[^>]+rel=[\"\']stylesheet[\"\'][^>]*>', sheet, html, flags=re.I)
+    def image(match):
+        data = base64.b64encode(local_path(match.group(2)).read_bytes()).decode('ascii')
+        return match.group(1) + 'data:image/png;base64,' + data + match.group(3)
+    return re.sub(r'(<img\b[^>]*\bsrc=[\"\'])(images/[^\"\']+\.png)([\"\'])', image, html, flags=re.I)

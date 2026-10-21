@@ -102,3 +102,17 @@ input:checked+.slider:before {
 .slider.round:before {
     border-radius: 50%;
 }
+
+#model-settings p { font-size: 14px; line-height: 1.5; opacity: .85; }
+#model-choice { width: 100%; min-height: 48px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(98,155,189,.3); background: rgba(255,255,255,.65); color: inherit; font: inherit; margin: 8px 0; }
+body.dark-mode #model-choice { background: #253342; }
+#model-settings button { width: 100%; }
+#model-status { overflow-wrap: anywhere; }
+
+#backup-settings .backup-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+#backup-settings button { border:1px solid var(--border-color,#d7d1c7); border-radius:12px; padding:10px 13px; background:var(--bg-secondary,#eee9df); color:inherit; font:inherit; cursor:pointer; }
+#backup-settings button:disabled { opacity:.5; cursor:default; }
+#backup-password { display:block; box-sizing:border-box; width:100%; margin-top:8px; padding:12px; border-radius:12px; border:1px solid #b9afa2; background:transparent; color:inherit; font:inherit; }
+#backup-preview { margin-top:12px; padding:12px; border:1px solid #b9afa2; border-radius:14px; }
+#backup-settings .backup-toggle { display:flex; align-items:flex-start; gap:9px; }
+#backup-settings p { line-height:1.5; }

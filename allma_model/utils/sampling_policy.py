@@ -10,9 +10,37 @@ def sampling_options(model_path):
 
 
 REASONING_INSTRUCTION = (
-    'Ragiona brevemente sul compito effettivo: identifica il punto decisivo, '
-    'verifica la conclusione e passa alla risposta. Non consumare il ragionamento '
-    'ripetendo la domanda o descrivendo come vorresti rispondere. '
-    'Nella risposta usa termini italiani corretti e soltanto spiegazioni che sai sostenere. '
-    'Una risposta breve e precisa è preferibile a dettagli inventati.'
+    'Ragiona sul punto decisivo, verifica premesse e conclusione, poi rispondi. '
+    'Non consumare il ragionamento ripetendo la domanda. Non inventare dettagli.'
 )
+
+
+def reasoning_instruction(request):
+    """Keep internal reasoning separate from an explicitly constrained answer.
+
+    This is guidance, not a formatter or proof of model compliance. The existing
+    output validator remains authoritative; no generated answer is truncated.
+    """
+    from .output_contract import requested_sentence_count, requested_contract
+    count = requested_sentence_count(request)
+    contract = requested_contract(request)
+    if count or contract:
+        text = ('Svolgi ragionamento e verifiche internamente. Non consumare il ragionamento ripetendo la domanda. '
+                'Nella risposta finale dai soltanto '
+                'la risposta richiesta, senza etichette di verifica, conclusione o spiegazione del procedimento. ')
+        if count:
+            text += f'La risposta finale deve contenere esattamente {count} ' + ('frase. ' if count == 1 else 'frasi. ')
+        if contract:
+            text += {'json':'Restituisci soltanto JSON valido, senza blocchi Markdown.',
+                     'number':'Restituisci soltanto un numero.',
+                     'yes_no_it':'Restituisci soltanto sì oppure no.',
+                     'yes_no_en':'Restituisci soltanto yes oppure no.'}[contract]
+        return text
+    return REASONING_INSTRUCTION
+
+
+def brief_answer_instruction(request):
+    from .output_contract import requested_sentence_count, requested_contract
+    if requested_sentence_count(request) or requested_contract(request):
+        return 'Budget breve: completa soltanto la risposta nel formato richiesto, senza aggiungere sezioni o spiegazioni esterne al formato.'
+    return 'Budget breve: dai prima la conclusione e una spiegazione essenziale. Completa il punto principale, senza introduzioni o ripetizioni.'

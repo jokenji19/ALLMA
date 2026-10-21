@@ -20,9 +20,12 @@ def test_sentence_validation_is_conservative_and_does_not_truncate():
     assert valid_sentence_count('La misura è 2.5. Il totale è 3.',2)
     assert not valid_sentence_count('Una sola frase.',2)
     assert valid_sentence_count('Davvero?! Certamente...',2)
-    assert valid_sentence_count('Dott. Rossi è arrivato.',2)  # uncertain: do not guess
-    assert valid_sentence_count('Dice «Una frase. Due frasi.»',1)
-    assert valid_sentence_count('```python\nprint("x")\n```',2)
+    # Uncertainty must not silently satisfy an exact output contract.
+    assert not valid_sentence_count('Dott. Rossi è arrivato.',2)
+    assert not valid_sentence_count('Dice «Una frase. Due frasi.»',1)
+    assert valid_sentence_count('Dice «Una frase. Due frasi.»',2)
+    assert not valid_sentence_count('```python\nprint("x")\n```',2)
+    assert valid_sentence_count('```python\nprint("x")\n```',None)
 
 
 def test_sampling_is_specific_to_qwen3_and_does_not_disable_reasoning():

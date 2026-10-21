@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime
-from core.personalization_integration import PersonalizationIntegration
+from allma_model.core.personalization_integration import PersonalizationIntegration
 
 class TestPersonalizationIntegration(unittest.TestCase):
     def setUp(self):

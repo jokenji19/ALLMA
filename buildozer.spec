@@ -23,15 +23,15 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin,html,css,js,woff2
 source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer, unpacked_brain, tmp_llama_check, allma_model/tests
+source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer, unpacked_brain, tmp_llama_check, allma_model/tests, models, Library, htmlcov, _quarantine, incremental_cache, data, logs, benchmarks/reports
 
 # (list) List of exclusions using pattern matching
 # Removed *.txt exclusion to allow requirements.txt
-source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md,*.bak
+source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md,*.bak,allma_model.zip,allma_model/allma_diary.json,personality_state.json,beta_test_conversations.json,allma.db,allma_memory.json,allma_settings.json,allma_modules.db,answer_recall.json,incremental_cache/knowledge_states.json,data/allma_vectors.db,data/dream_journal.json,data/dream_journal.json.pending.json,data/dream_journal.json.processed.json,message_delivery.json,data/dream_journal.json.reviews.db,cognitive_state.json,allma_diary.json
 
 # (str) Application versioning (method 1)
-version = 0.9.0.0
-android.numeric_version = 102457
+version = 0.9.1
+android.numeric_version = 102539
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
@@ -81,6 +81,12 @@ android.presplash_color = #FFFFFF
 
 # (list) Permissions
 android.add_src = libs/android_src
+android.add_aars = libs/sherpa-onnx-1.12.20-arm64.aar
+android.gradle_dependencies = org.jetbrains.kotlin:kotlin-stdlib:1.9.25
+android.add_gradle_repositories = flatDir { dirs 'libs' }
+android.add_resources = assets/android/drawable/ic_allma_notification.xml:drawable/ic_allma_notification.xml, assets/android/xml/allma_backup_rules.xml:xml/allma_backup_rules.xml, assets/android/xml/allma_extraction_rules.xml:xml/allma_extraction_rules.xml
+android.add_assets = startup_ui.py:startup/startup_ui.py, assets/web/images/startup-connection.png:startup/assets/web/images/startup-connection.png, assets/web/fonts/Inter-Regular.ttf:startup/assets/web/fonts/Inter-Regular.ttf, assets/web/fonts/Inter-LICENSE.txt:startup/assets/web/fonts/Inter-LICENSE.txt
+android.extra_manifest_application_arguments = libs/backup_application.xml
 android.extra_manifest_xml = libs/voice_manifest.xml
 
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,CAMERA,RECORD_AUDIO,WAKE_LOCK,VIBRATE,ACCESS_NETWORK_STATE,MODIFY_AUDIO_SETTINGS,BLUETOOTH,BLUETOOTH_CONNECT,FOREGROUND_SERVICE,POST_NOTIFICATIONS,FOREGROUND_SERVICE_DATA_SYNC
@@ -134,7 +140,7 @@ android.manifest = AndroidManifest.xml
 p4a.local_recipes = ./libs/recipes
 
 # (str) Filename to the hook for p4a
-#p4a.hook =
+p4a.hook = ./libs/android_build_hook.py
 
 # (str) Bootstrap to use for android builds
 # p4a.bootstrap = sdl2

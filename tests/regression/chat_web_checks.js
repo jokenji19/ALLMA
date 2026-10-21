@@ -146,10 +146,13 @@ async function runChatChecks() {
         check(reviewContainer.querySelector('.dream-review-editor').hidden && !dreamReviewDrafts.has(hypothesis.id), 'Solo il salvataggio riuscito elimina la bozza');
         window.restoreDreamReviews({items: []});
         check(reviewContainer.textContent.includes('Nessuna ipotesi') && !reviewContainer.querySelector('button'), 'Archivio vuoto mostra uno stato esplicito senza azioni residue');
-        check(!document.querySelector('.settings-advanced').open && document.getElementById('temp-cpu').closest('.settings-advanced'), 'Temperature disponibili nelle impostazioni avanzate chiuse');
+        check(!document.querySelector('#view-diagnostics .advanced-section').open && document.getElementById('temp-cpu').closest('#view-diagnostics .advanced-section'), 'Temperature disponibili nelle impostazioni avanzate chiuse');
         check(document.getElementById('dream-mode-toggle') && !document.getElementById('dream-mode-toggle').closest('.settings-advanced'), 'Attivazione sogni disponibile senza aprire i controlli avanzati');
         check(!document.querySelector('.dream-activity').open && document.getElementById('dream-journal-entries').closest('.dream-activity'), 'Registro tecnico separato e chiuso inizialmente');
-        check(document.querySelector('.settings-advanced #voice-stack-status') && document.querySelector('.settings-advanced [onclick="startBenchmark()"]'), 'Motori e benchmark conservati nelle impostazioni avanzate');
+        check(document.querySelector('#view-diagnostics #voice-stack-status') &&
+            document.querySelector('#view-diagnostics #benchmark-start') &&
+            !document.getElementById('benchmark-start').closest('.settings-advanced'),
+            'Stato motori avanzato e benchmark direttamente accessibile');
         const ids = [...document.querySelectorAll('[id]')].map(element => element.id);
         check(new Set(ids).size === ids.length, 'Nessun ID duplicato dopo la riorganizzazione');
         window.restoreDreamReviews({items: [hypothesis]});
@@ -184,18 +187,21 @@ async function runChatChecks() {
         window.endStream('Finale obsoleto',103);
         check(!document.getElementById('voice-answer').textContent.includes('obsoleto'), 'Finale obsoleto non sovrascrive la scheda vocale');
         window.closeVoiceMode();
+        await new Promise(resolve => setTimeout(resolve, 40));
         check(!document.getElementById('voice-overlay').classList.contains('active') && !VoiceFX.isActive(), 'Chiusura vocale disattiva gli effetti e il pannello');
         window.openVoiceMode();
         check(document.getElementById('voice-text').textContent === '' && document.getElementById('voice-answer').textContent.includes('Sono qui.'), 'Riapertura vocale pulita senza vecchie frasi');
         window.closeVoiceMode();
+        await new Promise(resolve => setTimeout(resolve, 40));
         for (const panelName of ['settings', 'memory', 'dream']) {
             window.openPanel(panelName);
             await new Promise(resolve => setTimeout(resolve, 260));
             const bounds = document.getElementById('panel-' + panelName).getBoundingClientRect();
-            check(Math.abs(bounds.left + bounds.width / 2 - window.innerWidth / 2) < 1 &&
-                Math.abs(bounds.top + bounds.height / 2 - window.innerHeight / 2) < 1,
-                'Pannello ' + panelName + ' centrato dopo l’animazione');
+            check(Math.abs(bounds.left) < 1 && Math.abs(bounds.top) < 1 &&
+                Math.abs(bounds.width-window.innerWidth) < 1 && Math.abs(bounds.height-window.innerHeight) < 1,
+                'Schermata ' + panelName + ' occupa la pagina senza popup');
             window.closePanel(panelName);
+            await new Promise(resolve => setTimeout(resolve, 40));
         }
         result.textContent += '\nTUTTI I CONTROLLI PASSATI';
     } catch (error) {

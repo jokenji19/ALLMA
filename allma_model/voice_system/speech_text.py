@@ -12,6 +12,8 @@ def spoken_text(text):
     text = re.sub(r'https?://\S+', '', text)
     text = re.sub(r'<[^>]+>', '', text)
     text = re.sub(r'(?m)^\s*(?:#{1,6}\s+|>\s*|[-*]\s+)', '', text)
+    # A list marker is not a standalone sentence for neural speech segmentation.
+    text = re.sub(r'(?m)^(\s*)(\d{1,3})[.)]\s+(?=\S)', r'\1\2: ', text)
     text = text.replace('**', '').replace('__', '').replace('`', '').replace('|', ', ')
     return re.sub(r'\s+', ' ', html.unescape(text)).strip()
 

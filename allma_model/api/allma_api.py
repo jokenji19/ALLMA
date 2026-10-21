@@ -1,468 +1,145 @@
-"""
-API Bridge per l'integrazione di ALLMA con Android.
-Questo modulo fornisce un'interfaccia pulita per l'accesso alle funzionalità di ALLMA
-dall'app Android.
-"""
-
-import json
+"""Compatibility API over the canonical ALLMA core; no second cognitive state."""
+from copy import deepcopy
+from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any
-
+from typing import Optional, Dict, Any
 from allma_model.core.allma_core import ALLMACore
-from allma_model.project_tracking.project_tracker import ProjectTracker, ProjectStatus
-from allma_model.emotional_system.emotional_core import EmotionalCore
-from allma_model.learning_system.incremental_learning import IncrementalLearner
-from allma_model.personality_system.personality import Personality
-from allma_model.user_preferences.preference_analyzer import PreferenceAnalyzer
+from allma_model.utils.cognitive_state import CognitiveStateStore
+
 
 class AllmaAndroidBridge:
-    """Bridge per l'integrazione di ALLMA con Android"""
-    
-    def __init__(self, db_path: str = "allma.db"):
-        """Inizializza il bridge ALLMA-Android"""
-        self.allma = ALLMACore(db_path=db_path)
-        self.project_tracker = ProjectTracker(db_path)
-        self.emotional_core = EmotionalCore()
-        self.learner = IncrementalLearner()
-        self.personality = Personality()
-        self.preference_analyzer = PreferenceAnalyzer(db_path)
-        
-    def initialize_user_session(self, user_id: str) -> Dict[str, Any]:
-        """
-        Inizializza una nuova sessione utente.
+    def __init__(self, db_path='allma.db', *, core=None):
+        if core is None:
+            Path(db_path).resolve().parent.mkdir(parents=True, exist_ok=True)
+        self.allma = core if core is not None else ALLMACore(db_path=db_path, mobile_mode=True)
+        self.project_tracker = self.allma.project_tracker
+        self.emotional_core = self.allma.emotional_core
+        self.learner = self.allma.incremental_learner
+        self.personality = self.allma.personality
+        self.preference_analyzer = self.allma.preference_analyzer
+        self._settings = CognitiveStateStore(self.allma.db_path)
+        self._active_user = None
 
-        Args:
-            user_id: ID univoco dell'utente
+    def _user(self, user_id):
+        if not isinstance(user_id,str) or not user_id.strip():
+            raise ValueError('User ID richiesto')
+        return user_id
 
-        Returns:
-            Dict con lo stato iniziale della sessione
-        """
-        if not user_id:
-            raise ValueError("User ID non può essere vuoto")
+    def _emotional_state(self, user_id):
+        with self.allma.conversational_memory.lock:
+            records = [m for m in self.allma.conversational_memory.messages
+                       if (m.user_id or m.metadata.get('user_id')) == user_id
+                       and m.metadata.get('is_valid') is not False and m.metadata.get('emotion_analysis')]
+        return deepcopy(records[-1].metadata['emotion_analysis']) if records else {
+            'primary_emotion':'neutral', 'confidence':0., 'source':'no_evidence'}
 
-        # Ottieni i progetti attivi dell'utente
-        all_projects = self.project_tracker.get_user_projects(user_id)
-        
-        # Filtra solo i progetti attivi
-        active_projects = []
-        for project in all_projects:
-            # Converti lo stato in un formato leggibile
-            status_map = {
-                "active": "Active",
-                "in_progress": "In Progress",
-                "paused": "Paused",
-                "completed": "Completed",
-                "archived": "Archived"
-            }
-            
-            # Formatta i metadati
-            metadata = {}
-            if project.get('metadata'):
-                metadata = json.loads(project['metadata'])
-            
-            formatted_project = {
-                "id": str(project['id']),
-                "name": project['name'],
-                "description": project['description'],
-                "status": status_map.get(project['status'], project['status']),
-                "metadata": metadata,
-                "created_at": project['created_at'],
-                "updated_at": project['updated_at'],
-                "interaction_count": project['interaction_count']
-            }
-            
-            # Aggiungi solo i progetti attivi
-            if project['status'] == 'active':
-                active_projects.append(formatted_project)
+    def initialize_user_session(self, user_id):
+        self._user(user_id)
+        self._active_user = user_id
+        return {'user_id':user_id, 'emotional_state':self._emotional_state(user_id),
+                'personality_state':self.allma.coalescence_processor.get_current_personality_state(user_id),
+                'active_projects':[self.get_project_summary(p.id, user_id=user_id)
+                                   for p in self.project_tracker.get_user_projects(user_id)
+                                   if self.project_tracker.get_project_summary(p.id)['status']=='active'],
+                'learning_progress':self.learner.get_learning_progress(user_id)}
 
-        return {
-            "user_id": user_id,
-            "emotional_state": self.emotional_core.get_current_state(),
-            "personality_state": self.personality.get_current_state(),
-            "active_projects": active_projects,
-            "learning_progress": self.learner.get_learning_progress(user_id)
-        }
-        
-    def process_message(self, user_id: str, message: str, context: Optional[Dict] = None) -> Dict[str, Any]:
-        """
-        Processa un messaggio dell'utente.
-        
-        Args:
-            user_id: ID dell'utente
-            message: Messaggio da processare
-            context: Contesto aggiuntivo opzionale
-            
-        Returns:
-            Dict con la risposta processata
-        """
-        if not user_id or not message:
-            raise ValueError("User ID e messaggio sono richiesti")
-            
-        # Usa il session_id dal contesto come conversation_id se presente
-        conversation_id = context.get("session_id") if context else None
-        if not conversation_id:
-            # Se non c'è un conversation_id, usa l'user_id
-            conversation_id = user_id
-            
-        # Aggiungi user_id al contesto
-        context = context or {}
-        context["user_id"] = user_id
-            
-        try:
-            # Processa il messaggio
-            response = self.allma.process_message(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                message=message,
-                context=context
-            )
-            
-            # Formatta la risposta per l'API
-            return {
-                "response": response.content,
-                "emotional_state": {
-                    "primary": response.emotion,
-                    "detected": response.emotion_detected
-                },
-                "personality_state": {
-                    "topics": response.topics if hasattr(response, 'topics') else [],
-                    "metadata": response.metadata if hasattr(response, 'metadata') else {}
-                }
-            }
-            
-        except Exception as e:
-            raise Exception(f"Errore nel processare il messaggio: {str(e)}")
-        
-    def get_project_summary(self, project_id: str) -> Dict[str, Any]:
-        """
-        Ottiene il riepilogo di un progetto.
-        
-        Args:
-            project_id: ID del progetto
-            
-        Returns:
-            Dict con i dettagli del progetto
-        """
+    def process_message(self, user_id, message, context=None):
+        self._user(user_id)
+        if not isinstance(message,str) or not message.strip():
+            raise ValueError('Messaggio richiesto')
+        self._active_user = user_id
+        context = dict(context or {})
+        memory = self.allma.conversational_memory
+        conversation = context.get('session_id')
+        with memory.lock:
+            owners = {u for u, chats in memory.conversations.items()
+                      if any(c.id == conversation for c in chats)} if conversation else set()
+        if owners and owners != {user_id}:
+            raise PermissionError('Conversazione non disponibile')
+        if not owners:
+            conversation = self.allma.start_conversation(user_id)
+        response = self.allma.process_message(user_id, conversation, message, context=context)
+        emotion = getattr(response.emotion,'value',response.emotion)
+        return {'response':response.content, 'session_id':conversation, 'is_valid':response.is_valid,
+                'emotional_state':{'primary':emotion, 'detected':response.emotion_detected},
+                'personality_state':{'topics':response.topics, 'metadata':deepcopy(response.metadata)}}
+
+    def get_project_summary(self, project_id, *, user_id=None):
         if not project_id:
-            raise Exception("Project ID non può essere vuoto")
-            
-        try:
-            # Ottieni il progetto
-            project = self.project_tracker.get_project_summary(project_id)
-            if not project:
-                raise Exception(f"Progetto {project_id} non trovato")
-                
-            # Formatta il progetto per l'API
-            metadata = {}
-            if project.get('metadata'):
-                metadata = json.loads(project['metadata'])
-                
-            # Converti lo stato in un formato leggibile
-            status_map = {
-                "active": "Active",
-                "in_progress": "In Progress",
-                "paused": "Paused",
-                "completed": "Completed",
-                "archived": "Archived"
-            }
-            
-            return {
-                "id": str(project['id']),
-                "name": project['name'],
-                "description": project['description'],
-                "status": status_map.get(project['status'], project['status']),
-                "metadata": metadata,
-                "created_at": project['created_at'],
-                "updated_at": project['updated_at'],
-                "interaction_count": project['interaction_count']
-            }
-            
-        except Exception as e:
-            raise Exception(f"Errore nel recupero del progetto: {str(e)}")
-        
-    def create_project(self, user_id: str, name: str, description: str, metadata: Optional[Dict] = None) -> str:
-        """
-        Crea un nuovo progetto.
-        
-        Args:
-            user_id: ID dell'utente che crea il progetto
-            name: Nome del progetto
-            description: Descrizione del progetto
-            metadata: Metadati opzionali del progetto
-            
-        Returns:
-            ID del progetto creato
-        """
-        if not user_id or not name:
-            raise ValueError("User ID e nome del progetto sono richiesti")
-            
-        try:
-            # Crea il progetto
-            success = self.project_tracker.create_project(
-                name=name,
-                description=description,
-                user_id=user_id,
-                metadata=metadata
-            )
-            
-            if not success:
-                raise Exception("Creazione del progetto fallita")
-            
-            # Ottieni il riepilogo del progetto per ottenere l'ID
-            project = self.project_tracker.get_project_summary(name)
-            if not project:
-                raise Exception("Progetto creato ma impossibile recuperare l'ID")
-            
-            # Converti l'ID in stringa per l'API
-            return str(project['id'])
-            
-        except Exception as e:
-            raise Exception(f"Errore nella creazione del progetto: {str(e)}")
-        
-    def update_project(self, project_id: str, status: str, metadata: Optional[Dict] = None) -> bool:
-        """
-        Aggiorna lo stato di un progetto.
+            raise ValueError('Project ID richiesto')
+        project = self.project_tracker.get_project_summary(project_id)
+        owner = user_id or self._active_user
+        if not project or not owner or project['user_id'] != owner:
+            raise ValueError('Progetto non disponibile')
+        result = dict(project)
+        result['id'] = str(result['id'])
+        result['status'] = result['status'].replace('_',' ').title()
+        return result
 
-        Args:
-            project_id: ID del progetto
-            status: Nuovo stato del progetto
-            metadata: Metadati opzionali da aggiornare
-
-        Returns:
-            True se l'aggiornamento è riuscito, False altrimenti
-        """
+    def create_project(self, user_id, name, description='', metadata=None):
+        self._user(user_id)
+        if not isinstance(name,str) or not name.strip():
+            raise ValueError('Nome richiesto')
+        self._active_user = user_id
+        project_id = self.project_tracker.create_project(user_id,name,description,metadata)
         if not project_id:
-            raise Exception("Project ID non può essere vuoto")
+            raise ValueError('Progetto non creato')
+        return str(project_id)
 
-        try:
-            # Ottieni il progetto
-            project = self.project_tracker.get_project_summary(project_id)
-            if not project:
-                raise Exception(f"Progetto {project_id} non trovato")
+    def update_project(self, project_id, status, metadata=None, *, user_id=None):
+        project = self.get_project_summary(project_id,user_id=user_id)
+        normalized = status.casefold().strip().replace(' ','_')
+        if normalized not in {'active','in_progress','paused','completed','archived'}:
+            raise ValueError('Stato non valido')
+        current = dict(project.get('metadata') or {})
+        current.update(metadata or {})
+        return self.project_tracker.update_project_status(project_id,normalized,current)
 
-            # Converti lo stato in un valore valido per l'enum
-            status_map = {
-                "active": ProjectStatus.ACTIVE,
-                "in progress": ProjectStatus.IN_PROGRESS,
-                "paused": ProjectStatus.PAUSED,
-                "completed": ProjectStatus.COMPLETED,
-                "archived": ProjectStatus.ARCHIVED
-            }
-            
-            # Normalizza lo stato in input
-            normalized_status = status.lower().strip()
-            if normalized_status not in status_map:
-                raise Exception(f"Stato del progetto non valido: {status}")
-                
-            # Aggiorna lo stato del progetto
-            project_status = status_map[normalized_status]
-            success = self.project_tracker.update_project_status(
-                project['user_id'],
-                project['name'],
-                project_status
-            )
+    def get_learning_progress(self, user_id):
+        self._user(user_id)
+        known = (user_id == self._active_user
+                 or user_id in self.allma.conversational_memory.conversations
+                 or user_id in self._settings.get('api_preferences').get('users',{}))
+        if not known:
+            raise ValueError('Utente non disponibile')
+        return self.learner.get_learning_progress(user_id)
 
-            if not success:
-                raise Exception(f"Stato del progetto non aggiornato correttamente")
-                
-            # Se ci sono metadati da aggiornare, aggiornali
-            if metadata:
-                # Ottieni i metadati attuali
-                current_metadata = {}
-                if project.get('metadata'):
-                    current_metadata = json.loads(project['metadata'])
-                    
-                # Aggiorna i metadati
-                current_metadata.update(metadata)
-                success = self.project_tracker.update_project_metadata(
-                    project['user_id'],
-                    project['name'],
-                    current_metadata
-                )
-                
-                if not success:
-                    raise Exception(f"Metadati del progetto non aggiornati correttamente")
-
-            return True
-
-        except Exception as e:
-            raise Exception(f"Errore nell'aggiornamento del progetto: {str(e)}")
-        
-    def get_learning_progress(self, user_id: str) -> Dict[str, Any]:
-        """
-        Ottiene il progresso di apprendimento di un utente.
-        
-        Args:
-            user_id: ID dell'utente
-            
-        Returns:
-            Dict con il progresso di apprendimento
-            
-        Raises:
-            Exception: Se l'utente non è valido
-        """
-        if not user_id:
-            raise Exception("User ID non può essere vuoto")
-            
-        try:
-            # Verifica che l'utente esista
-            user_exists = self.preference_analyzer.has_user_preferences(user_id)
-            if not user_exists:
-                raise Exception(f"Utente {user_id} non trovato")
-            
-            # Ottieni il progresso
-            progress = self.allma.get_learning_progress(user_id)
-            if not progress:
-                return {
-                    "topics": [],
-                    "confidence_levels": {},
-                    "recent_learning": []
-                }
-                
-            return progress
-            
-        except Exception as e:
-            raise Exception(f"Errore nel recupero del progresso: {str(e)}")
-        
-    def get_emotional_analysis(self, text: str) -> Dict[str, Any]:
-        """
-        Analizza il contenuto emotivo di un testo.
-        
-        Args:
-            text: Testo da analizzare
-            
-        Returns:
-            Dict con l'analisi emotiva
-        """
+    def get_emotional_analysis(self, text):
         return self.emotional_core.analyze_text(text)
-        
-    def get_personality_insights(self, user_id: str) -> Dict[str, Any]:
-        """
-        Ottiene insights sulla personalità dell'utente.
-        
-        Args:
-            user_id: ID dell'utente
-            
-        Returns:
-            Dict con gli insights sulla personalità
-        """
-        return self.personality.get_insights(user_id)
-        
-    def save_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> bool:
-        """
-        Salva le preferenze dell'utente.
 
-        Args:
-            user_id: ID dell'utente
-            preferences: Dizionario con le preferenze
+    def get_personality_insights(self, user_id):
+        self._user(user_id)
+        expression = self.allma.coalescence_processor.expression_view(user_id)
+        return {'communication_style':expression,
+                'learning_preferences':self._settings.get('api_preferences').get('users',{}).get(user_id,{}),
+                'interaction_patterns':{'observations':expression.get('observations',0)}}
 
-        Returns:
-            True se il salvataggio è riuscito
+    def save_user_preferences(self, user_id, preferences):
+        self._user(user_id)
+        if not isinstance(preferences,dict) or any(not isinstance(k,str) for k in preferences):
+            raise ValueError('Preferenze non valide')
+        with self._settings.lock:
+            state = deepcopy(self._settings.get('api_preferences'))
+            state.setdefault('users',{})[user_id] = deepcopy(preferences)
+            self._settings.put('api_preferences',state)
+        return True
 
-        Raises:
-            Exception: Se le preferenze non sono valide
-        """
+    def get_conversation_history(self, user_id, limit=50):
+        self._user(user_id)
+        if type(limit) is not int or limit < 0:
+            raise ValueError('Limite non valido')
+        with self.allma.conversational_memory.lock:
+            messages = [m for m in self.allma.conversational_memory.messages
+                        if (m.user_id or m.metadata.get('user_id')) == user_id]
+            return [{'text':m.content,'timestamp':m.timestamp.isoformat(),'sender':m.role,
+                     'metadata':deepcopy(m.metadata)} for m in (messages[-limit:] if limit else [])]
+
+    def get_memory_data(self, user_id):
         if not user_id:
-            raise Exception("User ID non può essere vuoto")
-
-        if not isinstance(preferences, dict):
-            raise Exception("Le preferenze devono essere un dizionario")
-
-        try:
-            # Verifica che le chiavi siano stringhe
-            for key in preferences.keys():
-                if not isinstance(key, str):
-                    raise Exception("Le chiavi delle preferenze devono essere stringhe")
-
-            # Salva le preferenze
-            return self.preference_analyzer._store_preferences(user_id, preferences)
-
-        except Exception as e:
-            raise Exception(f"Errore nel salvare le preferenze: {str(e)}")
-        
-    def get_conversation_history(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """
-        Ottiene la cronologia delle conversazioni dell'utente.
-        
-        Args:
-            user_id: ID dell'utente
-            limit: Numero massimo di messaggi da recuperare
-            
-        Returns:
-            Lista di messaggi della conversazione
-        """
-        if not user_id:
-            raise ValueError("User ID non può essere vuoto")
-            
-        try:
-            # Usa l'ultima conversazione dell'utente
-            conversations = self.allma.conversational_memory.get_conversation_history(user_id)
-            if limit:
-                conversations = conversations[:limit]
-            
-            # Formatta i messaggi per l'API
-            history = []
-            for msg in conversations:
-                history.append({
-                    "text": msg.content,
-                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
-                    "sender": msg.sender,
-                    "metadata": msg.metadata
-                })
-                
-            return history
-            
-        except Exception as e:
-            raise Exception(f"Errore nel recuperare la cronologia: {str(e)}")
-
-    def get_memory_data(self, user_id: str) -> Dict[str, Any]:
-        """
-        Ottiene i dati completi della memoria per il pannello di debug UI.
-        
-        Args:
-            user_id: ID dell'utente
-            
-        Returns:
-            Dict con 'facts' (user_data) e 'logs' (conversazioni recenti)
-        """
-        if not user_id:
-            return {"facts": {}, "logs": []}
-            
-        try:
-            # 1. Recupera i "Fatti Cognitivi" (Persistente)
-            # Accessing internal memory structure safely
-            if hasattr(self.allma, 'conversational_memory') and hasattr(self.allma.conversational_memory, 'user_data'):
-                facts = self.allma.conversational_memory.user_data.get(user_id, {})
-            else:
-                facts = {}
-
-            # 2. Recupera i Log recenti (Pensieri + Risposte)
-            logs = []
-            try:
-                all_msgs = self.allma.conversational_memory.messages
-                # Filter by user if possible, else take all (mobile typically has 1 user)
-                user_msgs = [m for m in all_msgs if getattr(m, 'user_id', None) == user_id]
-                if not user_msgs and all_msgs:
-                    user_msgs = all_msgs
-                
-                # Prendiamo gli ultimi 10 scambi
-                for msg in user_msgs[-10:]:
-                    content = getattr(msg, 'content', '')
-                    timestamp = getattr(msg, 'timestamp', None)
-                    logs.append({
-                        "role": getattr(msg, 'role', 'assistant'),
-                        "content": content,
-                        "timestamp": timestamp.isoformat() if timestamp else "",
-                        "is_thought": "[[TH:" in content
-                    })
-            except:
-                pass
-
-            return {
-                "facts": facts,
-                "logs": logs
-            }
-            
-        except Exception as e:
-            print(f"API ERROR (get_memory_data): {e}")
-            return {"facts": {}, "logs": [], "error": str(e)}
+            return {'facts':{},'logs':[]}
+        memory = self.allma.conversational_memory
+        with memory.lock:
+            facts = deepcopy(memory.user_data.get(user_id,{}))
+        history = self.get_conversation_history(user_id,10)
+        return {'facts':facts, 'logs':[{'role':m['sender'],'content':m['text'],
+                    'timestamp':m['timestamp'],'is_thought':False} for m in history]}

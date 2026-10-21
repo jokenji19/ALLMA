@@ -27,6 +27,8 @@ class MetaLearningSystem:
     def __init__(self, db_path: str = "allma_modules.db"):
         self.logger = logging.getLogger(__name__)
         self.state_manager = ModuleStateManager(db_path)
+        from .tool_strategy_learning import ToolStrategyLearning
+        self.tool_learning = ToolStrategyLearning(self.state_manager)
         self.module_name = "meta_learning_system"
         self._user_id = None
         
@@ -75,7 +77,8 @@ class MetaLearningSystem:
         result = {
             'intent': 'meta_learning',
             'suggested_style': best_style if max(self.style_scores.values()) > .55 else None,
-            'suggested_comm': best_comm if max(self.communication_scores.values()) > .55 else None,
+            'suggested_comm': best_comm if not context.get('personality_expression_applied') and max(self.communication_scores.values()) > .55 else None,
+            'communication_owner': 'personality' if context.get('personality_expression_applied') else 'meta_learning',
             'confidence': max(*self.style_scores.values(), *self.communication_scores.values())
         }
         self.logger.info(f"🧠 Meta-Learning Result: {result}")
@@ -108,7 +111,7 @@ class MetaLearningSystem:
             'detailed': r'\b(?:spiega|rispondi) (?:in dettaglio|dettagliatamente)\b',
             'metaphorical': r'\b(?:usa|spiega con) (?:una |delle )?metafor[ae]\b',
         }.items():
-            if re.search(pattern, text) and not re.search(r'\bnon\b', text):
+            if not context.get('personality_expression_applied') and re.search(pattern, text) and not re.search(r'\bnon\b', text):
                 self.communication_scores[comm] = min(1., self.communication_scores[comm] + .1)
 
         # Reward only strategies actually included in the preceding valid answer.
@@ -123,6 +126,8 @@ class MetaLearningSystem:
         rate = .1 if kind == 'positive' else -.15
         for scores, key in [(self.style_scores, 'suggested_style'),
                             (self.communication_scores, 'suggested_comm')]:
+            if key == 'suggested_comm' and context.get('personality_expression_applied'):
+                continue
             value = applied.get(key)
             if value in scores:
                 scores[value] = max(0., min(1., scores[value] + rate))

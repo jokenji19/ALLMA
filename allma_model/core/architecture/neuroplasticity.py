@@ -17,7 +17,24 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta
 import re
+import copy
+from functools import wraps
 from allma_model.utils.cognitive_state import CognitiveStateStore
+
+
+def rules_transaction(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        original = self.rules
+        checkpoint = self.delivery_checkpoint
+        self.rules = copy.deepcopy(original)
+        try:
+            return method(self, *args, **kwargs)
+        except Exception:
+            self.rules = original
+            self.delivery_checkpoint = checkpoint
+            raise
+    return call
 
 @dataclass
 class LearnedRule:
@@ -49,6 +66,9 @@ class NeuroplasticitySystem:
         self.rules: Dict[str, LearnedRule] = {}
         self.max_synapses = 50 # Biological Cap (Limite massimo di regole attive)
         self._store = CognitiveStateStore(db_path)
+        self.delivery_checkpoint = self._store.get('neuroplasticity').get('delivery_checkpoint', 0)
+        if type(self.delivery_checkpoint) is not int or not 0 <= self.delivery_checkpoint < 2**53:
+            raise ValueError('Invalid neuroplasticity delivery checkpoint; recovery required')
         
         # Inizializza con regole base (Bootstrap)
         self._bootstrap_memory()
@@ -72,7 +92,7 @@ class NeuroplasticitySystem:
                     continue
 
     def _save(self):
-        self._store.put('neuroplasticity', {'rules': [{
+        self._store.put('neuroplasticity', {'delivery_checkpoint': self.delivery_checkpoint, 'rules': [{
             'pattern': r.pattern, 'replacement': r.replacement, 'activation_count': r.activation_count,
             'last_activated': r.last_activated.isoformat(), 'created_at': r.created_at.isoformat()
         } for r in self.rules.values()]})
@@ -87,6 +107,7 @@ class NeuroplasticitySystem:
             # Le regole base partono con un'attivazione alta per non essere dimenticate subito
             self.add_rule(p, r, initial_activation=100) 
 
+    @rules_transaction
     def add_rule(self, pattern: str, replacement: str, initial_activation: int = 1):
         """Aggiunge o aggiorna una regola."""
         re.compile(pattern)
@@ -105,11 +126,16 @@ class NeuroplasticitySystem:
         self.prune_synapses()
         self._save()
 
-    def analyze(self, violations: List[str]):
+    @rules_transaction
+    def analyze(self, violations: List[str], *, delivery_sequence=None):
         """
         [PHASE D] Analisi Cognitiva.
         Analizza le violazioni rilevate dal StructuralCore e rinforza le sinapsi corrispondenti.
         """
+        if delivery_sequence is not None:
+            if delivery_sequence <= self.delivery_checkpoint:
+                return
+            self.delivery_checkpoint = delivery_sequence
         reinforced_count = 0
         
         for v in violations:
@@ -125,7 +151,7 @@ class NeuroplasticitySystem:
                     reinforced_count += 1
                     self.logger.info(f"🧠 Neuroplasticity: Reinforced synapse '{pattern_found}' (Score: {rule.activity_score})")
 
-        if reinforced_count > 0:
+        if reinforced_count > 0 or delivery_sequence is not None:
             # Se abbiamo imparato qualcosa, potiamo le connessioni deboli
             self.prune_synapses()
             self._save()

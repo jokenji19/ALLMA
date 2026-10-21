@@ -5,6 +5,9 @@ Definizione dei tipi di memoria utilizzati nel sistema avanzato
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+import hashlib
+import re
+import math
 try:
     import numpy as np
 except ImportError:
@@ -37,8 +40,15 @@ class Memory:
     
     def __post_init__(self):
         if self.embedding is None:
-            # Placeholder per l'embedding - in produzione useremmo un modello reale
-            self.embedding = np.random.rand(768)  # Dimensione standard BERT
+            # Deterministic lexical feature hashing, not a semantic model.
+            # Explicit embeddings supplied by callers remain untouched.
+            vector = [0.0] * 768
+            for word in re.findall(r"\w+", self.content.casefold()):
+                digest = hashlib.blake2b(word.encode('utf-8'), digest_size=8).digest()
+                index = int.from_bytes(digest[:4], 'big') % len(vector)
+                vector[index] += 1.0 if digest[4] & 1 else -1.0
+            norm = math.sqrt(sum(v*v for v in vector))
+            self.embedding = np.array([v/norm if norm else v for v in vector])
 
 @dataclass
 class MemoryNode:

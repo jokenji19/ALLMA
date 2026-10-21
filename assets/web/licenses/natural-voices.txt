@@ -1,0 +1,29 @@
+ALLMA 0.9.1 optional natural voice integration — 2026-10-21
+
+Model: hexgrad/Kokoro-82M, Apache-2.0, voices if_sara and im_nicola.
+Converted INT8 pack: k2-fsa/sherpa-onnx tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2.
+Original pack SHA256: 4c3052abaa60943a341f193888cf6abd68787dae6ab8ae5c925a706caa247e4e.
+Runtime: sherpa-onnx 1.12.20, Apache-2.0.
+AAR source: https://github.com/k2-fsa/sherpa-onnx/tree/v1.12.20
+Official AAR: sherpa-onnx-static-link-onnxruntime-1.12.20.aar, SHA256
+c8a88a8390ea699b24c49a31c56e8b2e3515c5cd5a2a49f8555a3b3fd68d253a.
+The local AAR removes unused CPU ABIs; code and ARM64 library are unchanged.
+Kotlin 1.9.25: Apache-2.0, https://github.com/JetBrains/kotlin/tree/v1.9.25
+ONNX Runtime: MIT, https://github.com/microsoft/onnxruntime
+This runtime includes eSpeak NG (GPL-3.0-or-later), used for phonemization.
+Source: https://github.com/espeak-ng/espeak-ng
+The runtime's exact build scripts/dependency revisions are in the sherpa-onnx source above.
+Full license texts are supplied alongside this notice.
+
+The Android APK includes GPL-3.0-or-later eSpeak NG; distribution of the
+combined binary is subject to that license as well as the applicable notices
+of the other components. ALLMA's own source retains its original MIT license.
+
+Source availability for ALLMA 0.9.1:
+https://github.com/jokenji19/ALLMA/releases/tag/v0.9.1
+The release supplies ALLMA sources and ALLMA-0.9.1-voice-sources.tar.gz,
+containing sherpa-onnx v1.12.20 and the pinned dependency source snapshots,
+including the eSpeak NG and piper-phonemize forks used by its build recipes.
+Build instructions and source hashes: docs/THIRD_PARTY_SOURCES.md and
+SOURCE_MANIFEST.json in the voice source archive. No model weights or
+personal recordings are included in that source archive.

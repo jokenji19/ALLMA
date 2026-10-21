@@ -1,5 +1,7 @@
 # ALLMA - Advanced Learning and Memory Architecture
 
+Current release: **0.9.1**. See [release notes](docs/RELEASE_V0.9.1.md) for the current Android features, validation results and known limitations, and [the system audit](docs/AUDIT_SISTEMA_2026-10-21.md) for the remaining work. Some architecture sections below describe earlier development stages; in particular, automatic background service activity and universal memory or model compatibility are not guarantees of the current app.
+
 <div align="center">
 
 **An AI with Long-Term Memory, Emotional Intelligence, and Evolutionary Learning**

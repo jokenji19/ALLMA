@@ -18,8 +18,8 @@ LEXICON = {
     'relief': ('joy', .6, .2, .6, r'sollevat[oaie]|sollievo|che sollievo|relieved'),
     'sadness': ('sadness', -.7, .3, .3, r'trist[ei]|infelic[ei]|sconfortat[oaie]|piango|piangere|a pezzi|gi[uù] di morale|sad|😢|😭|💔'),
     'loneliness': ('sadness', -.7, .3, .2, r'solitudine|mi sento sol[oa]|sono sol[oa](?!\s+(?:un|una))|nessuno mi (?:ascolta|capisce)|lonely'),
-    'grief': ('sadness', -.9, .4, .2, r'lutto|mi manca|mi mancano|ho perso (?:mia madre|mio padre|una persona cara)|grief|grieving'),
-    'nostalgia': ('sadness', -.3, .3, .5, r'nostalgi[ac]\w*|malinconi[ac]\w*|nostalgic'),
+    'grief': ('sadness', -.9, .4, .2, r'lutto|ho perso (?:mia madre|mio padre|una persona cara)|grief|grieving'),
+    'nostalgia': ('sadness', -.3, .3, .5, r'nostalgi[ac]\w*|malinconi[ac]\w*|nostalgic|mi manca(?:no)?'),
     'disappointment': ('sadness', -.6, .4, .4, r'delus[oaie]|delusione|amareggiat[oaie]|disappointed'),
     'helplessness': ('sadness', -.8, .4, .1, r'impotente|senza speranza|non ce la faccio pi[uù]|helpless|hopeless'),
     'guilt': ('sadness', -.6, .4, .3, r'senso di colpa|mi sento in colpa|colpevole|guilty|rimorso'),
@@ -60,28 +60,54 @@ def unit(value, default=0.):
     return max(0., min(1., float(value)))
 
 
-def analyze(text):
+def analyze(text, learned_aliases=None):
     original = unicodedata.normalize('NFKC', text if isinstance(text, str) else '')[:12000]
     # Preserve offsets while excluding examples, quoted speech, and code.
     clean = re.sub(r'```.*?(?:```|$)|"[^"\n]*"|“[^”\n]*”|«[^»\n]*»|(?<!\w)\x27[^\x27\n]{2,}\x27(?!\w)',
                    lambda m: ' '*len(m[0]), original, flags=re.S).casefold()
     scores, evidence, other, negated, past = {}, [], [], [], []
     ambiguous = False
+    unasserted = []
+    patterns = list(PATTERNS)
+    personal_patterns = {}
+    if isinstance(learned_aliases, dict):
+        for alias, label in learned_aliases.items():
+            if (label in LEXICON and isinstance(alias, str) and len(alias) <= 32
+                    and re.fullmatch(r'[\wÀ-ÿ -]+', alias) and alias.casefold() in clean):
+                pattern = re.compile(r'(?<!\w)' + re.escape(alias) + r'(?!\w)', re.I)
+                patterns.append((label, LEXICON[label], pattern))
+                personal_patterns[pattern.pattern] = alias
     for clause in re.finditer(r'[^.!?;\n]+', clean):
         chunk = clause[0]
-        for label, values, pattern in PATTERNS:
+        for label, values, pattern in patterns:
             for match in pattern.finditer(chunk):
                 before = chunk[:match.start()]
                 # Conjunctions bound negation and temporal changes; retain subject
                 # attribution from the surrounding clause for fragments.
-                scopes = re.split(r'\b(?:ma|però|invece|but|e|and)\b|,', before)
+                scopes = re.split(r'\b(?:ma|però|invece|but|e|and)\b|,|:(?=\s*(?:io\s+)?(?:sono|mi sento|provo|sento|i am|i feel)\b)', before)
                 local = scopes[-1]
                 self_hits, other_hits, generic_hits = list(SELF.finditer(before)), list(OTHER.finditer(before)), list(GENERIC.finditer(before))
                 self_pos = self_hits[-1].start() if self_hits else -1
                 other_pos = other_hits[-1].start() if other_hits else -1
                 generic_pos = generic_hits[-1].start() if generic_hits else -1
                 first_person_phrase = bool(re.match(r'(?:mi |ho perso |non ce la faccio|non mi sento|non sento|ti (?:amo|voglio bene|ringrazio))', match[0]))
+                if pattern.pattern in personal_patterns and self_pos < 0:
+                    continue  # An object bearing the learned word is not the user.
                 record = {'label': label, 'start': clause.start()+match.start(), 'end': clause.start()+match.end()}
+                if pattern.pattern in personal_patterns:
+                    record['learned_alias'] = personal_patterns[pattern.pattern]
+                # An emotion inside a feared/wished/reported belief is not an
+                # assertion that the user experiences that emotion now.
+                if re.search(r'\b(?:ho paura|temo|spero|vorrei|crede\w*|credi\w*|creda\w*|pensa\w*|pensi\w*)\b.*\bche\b', local):
+                    unasserted.append(record)
+                    continue
+                if match[0].startswith('mi manca'):
+                    # Require an object of attachment, rather than guessing
+                    # sadness from every missing resource or bodily function.
+                    attachment = chunk[match.end():].strip()
+                    if not re.match(r"(?:(?:mio|mia|miei|mie)\s+(?:padre|madre|fratell\w*|sorell\w*|amic\w*|figli\w*|nonn\w*|famiglia)|casa\b|la mia famiglia\b)", attachment):
+                        ambiguous = True
+                        continue
                 if not first_person_phrase and other_pos > self_pos:
                     other.append(record); continue
                 if not first_person_phrase and generic_pos > self_pos:
@@ -99,7 +125,7 @@ def analyze(text):
                 # Negation over a complement can exceed a short token window.
                 # Preserve the operator across coordinated "né/nor" fragments.
                 long_negation = bool(re.search(r'\bnon\b.*\b(?:niente|nulla|nessuno)\b.*\b(?:sentire|essere|provo|sento)\b', local))
-                coordinated_negation = bool(re.search(r'\b(?:né|ne|nor|neither)\b', local)
+                coordinated_negation = bool(re.search(r'\b(?:né|ne|nemmeno|neanche|neppure|nor|neither)\b', local)
                                             and re.search(r'\b(?:non|not|né|neither)\b', before))
                 # Failure to inhibit an action is not negation of its emotion.
                 inability = bool(re.search(r'\bnon riesco a\b.*\b(?:smettere di|trattenere|evitare di)\b', local))
@@ -148,8 +174,22 @@ def analyze(text):
                 analysis={'version': VERSION, 'source': 'local_evidence', 'uncertain': ambiguous or not scores or confidence < .6,
                           'mixed': len(scores)>1, 'evidence': evidence[:32], 'other_evidence': other[:16],
                           'negated': negated[:16], 'past_evidence': past[:16],
+                          'unasserted_evidence': unasserted[:16],
                           'truncated': len(text or '') > 12000 if isinstance(text, str) else False})
 
+
+# Language hints, not additional inferred feelings or autobiographical facts.
+NUANCE_NAMES_IT = {
+    'joy':'gioia', 'excitement':'entusiasmo', 'gratitude':'gratitudine', 'pride':'orgoglio',
+    'love':'affetto', 'relief':'sollievo', 'sadness':'tristezza', 'loneliness':'solitudine',
+    'grief':'dolore per una perdita', 'nostalgia':'nostalgia', 'disappointment':'delusione',
+    'helplessness':'impotenza', 'guilt':'senso di colpa', 'shame':'vergogna',
+    'anger':'rabbia', 'frustration':'frustrazione', 'annoyance':'fastidio', 'jealousy':'gelosia',
+    'fear':'paura', 'anxiety':'ansia', 'insecurity':'insicurezza', 'overwhelm':'sopraffazione',
+    'surprise':'sorpresa', 'confusion':'confusione', 'disgust':'disgusto', 'trust':'fiducia',
+    'calm':'serenità', 'hope':'speranza', 'curiosity':'curiosità', 'motivation':'motivazione',
+    'fatigue':'stanchezza', 'numbness':'vuoto emotivo',
+}
 
 def prompt_context(state):
     if state is None:
@@ -161,13 +201,24 @@ def prompt_context(state):
     if not nuances and not analysis.get('other_evidence') and not analysis.get('evidence'):
         if not analysis.get('negated') and not analysis.get('past_evidence'):
             return ''
-    labels = ', '.join(list(nuances)[:4]) or 'nessuna emozione attuale esplicita'
+    labels = ', '.join(f'{label} ({NUANCE_NAMES_IT.get(label,label)})' for label in list(nuances)[:4]) or 'nessuna emozione attuale esplicita'
     detail = 'Possibile ambivalenza. ' if analysis.get('mixed') else ''
     detail += 'Interpretazione incerta. ' if analysis.get('uncertain') else ''
     if analysis.get('other_evidence'):
-        detail += 'Sono citate emozioni di altre persone. '
-    return ('Indizi emotivi dell’utente (ipotesi, non stato interno di ALLMA): '+labels+'. '+detail+
-            'Rivolgiti all’utente in seconda persona. Accogli le emozioni che coesistono senza minimizzarle, '
-            'senza rassicurazioni assolute e senza presentarle come tue. '
-            'Considera il messaggio completo; non diagnosticare o attribuire emozioni negate. '
-            'Se il significato è ambiguo, chiedi con tatto anziché presumere.')
+        others = list(dict.fromkeys(item.get('label') for item in analysis['other_evidence'] if item.get('label')))
+        detail += 'Altre persone: '+', '.join(NUANCE_NAMES_IT.get(label,label) for label in others[:4])+'. '
+    denied = list(dict.fromkeys(item.get('label') for item in analysis.get('negated', []) if item.get('label')))
+    if denied:
+        detail += 'Negate dall’utente: '+', '.join(NUANCE_NAMES_IT.get(label,label) for label in denied[:4])+'. '
+    return 'Indizi emotivi dell’utente (ipotesi, non stato interno di ALLMA): '+labels+'. '+detail
+
+
+def support_instruction(state):
+    """One role-specific task, separate from the detector's attributed data."""
+    if not prompt_context(state):
+        return ''
+    return ('Supporto: rivolgiti all’utente con il tu, nel formato richiesto. '
+            'Riconosci le sue emozioni nella situazione descritta, distinguendo quelle altrui o negate. '
+            'Offri un passo concreto solo se utile alla richiesta, oppure ascolta. '
+            'Non attribuirtele: parla della sua esperienza, senza raccontare tuoi sentimenti o partecipazioni. '
+            'Usa tatto nelle ipotesi, senza diagnosi o certezze inventate.')

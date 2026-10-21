@@ -55,6 +55,7 @@ class ConversationalMemory:
         self.vectorizer = SimpleTfidf()
         self.conversation_vectors = {}
         self.messages: List[Message] = []
+        self._load_error = None
         self.trauma_log: List[Dict] = [] # AXIOM 3: Sedimentation
         
         # Concurrency safety
@@ -210,7 +211,8 @@ class ConversationalMemory:
         self,
         current_topic: str,
         user_id: Optional[str] = None,
-        max_results: int = 5
+        max_results: int = 5,
+        exclude_query_replays: bool = False
     ) -> List[Tuple[float, Conversation]]:
         """
         Recupera il contesto rilevante per il topic corrente.
@@ -249,6 +251,7 @@ class ConversationalMemory:
                     user_id=user_id or "user_default",
                     query=current_topic,
                     top_k=max_results,
+                    exclude_query_replays=exclude_query_replays,
                 )
                 for hit in hits:
                     synth = Conversation(
@@ -312,6 +315,19 @@ class ConversationalMemory:
                 bonus = 0.5 if topic_tokens & content_tokens else 0.0
                 return sim + bonus
             results.sort(reverse=True, key=score_pair)
+            if exclude_query_replays:
+                from allma_model.utils.memory_evidence import is_replayed_question
+                filtered = []
+                for item in results:
+                    text = item[1].content
+                    if item[1].metadata.get('role') != 'user' or item[1].metadata.get('is_valid') is False:
+                        continue
+                    if item[1].metadata.get('revoked') is True or item[1].metadata.get('status') in ('revoked','superseded'):
+                        continue
+                    if is_replayed_question(text, current_topic):
+                        continue
+                    filtered.append(item)
+                results = filtered
             return results[:max_results]
 
         for conv in conversations:
@@ -344,21 +360,24 @@ class ConversationalMemory:
         """
         if not conversation_id:
             raise ValueError("Conversation ID è richiesto")
+        if limit is not None and (type(limit) is not int or limit < 0):
+            raise ValueError('Il limite deve essere un intero non negativo')
             
         # Filtra i messaggi per conversation_id e timestamp
-        messages = [
-            msg for msg in self.messages
-            if msg.conversation_id == conversation_id and
-            (start_time is None or msg.timestamp >= start_time) and
-            (end_time is None or msg.timestamp <= end_time)
-        ]
+        with self.lock:
+            messages = [
+                msg for msg in self.messages
+                if msg.conversation_id == conversation_id and
+                (start_time is None or msg.timestamp >= start_time) and
+                (end_time is None or msg.timestamp <= end_time)
+            ]
         
         # Ordina per timestamp
         messages = sorted(messages, key=lambda x: x.timestamp)
         
-        # Applica il limite se specificato
+        # Return the newest window, keeping chronological order within it.
         if limit is not None:
-            messages = messages[:limit]
+            messages = messages[-limit:] if limit else []
             
         return messages
         
@@ -574,7 +593,13 @@ class ConversationalMemory:
                 user_id=user_id
             )
             self.messages.append(message)
-            self.save_memory()
+            try:
+                self.save_memory()
+            except Exception:
+                # Readers share this lock: a failed transaction never becomes
+                # part of the live history or of a later successful save.
+                self.messages.pop()
+                raise
             self._index_messages([message])
 
     def save_interaction(self, user_id: str, message: str, role: str):
@@ -720,11 +745,15 @@ class ConversationalMemory:
             for uid, convs in self.conversations.items():
                 for c in convs:
                     if c.id == conversation_id:
-                        if c.metadata is None:
-                            c.metadata = {}
-                        if isinstance(context, dict):
-                            c.metadata.update(context)
-                        self.save_memory()
+                        if not isinstance(context, dict):
+                            raise TypeError("Context must be a dictionary")
+                        previous = c.metadata
+                        c.metadata = {**(previous or {}), **context}
+                        try:
+                            self.save_memory()
+                        except Exception:
+                            c.metadata = previous
+                            raise
                         return
 
     def store_insight(self, content: str, origin_topics: List[str]) -> None:
@@ -812,6 +841,8 @@ class ConversationalMemory:
     def save_memory(self):
         """Serialize and replace while holding the same lock as mutations."""
         with self.lock:
+            if self._load_error is not None:
+                raise RuntimeError('Memory archive could not be loaded; preserving original file') from self._load_error
             data = {
                 "conversations": {
                     uid: [
@@ -841,54 +872,54 @@ class ConversationalMemory:
             atomic_write_json(self.memory_path, data, default=self._json_serial)
 
     def load_memory(self):
-        """Carica lo stato della memoria da file JSON."""
-        try:
-            import os
-            file_path = self.memory_path
-            
-            with self.lock:
-                if not os.path.exists(file_path):
-                    print("No memory file found. Starting fresh.")
-                    return
+        """Validate a complete snapshot before swapping any live collection.
 
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-
-            # Restore Conversations
-            self.conversations = defaultdict(list)
-            for uid, convs_data in data.get("conversations", {}).items():
-                for c_data in convs_data:
-                    c = Conversation(
-                        id=c_data["id"],
-                        user_id=c_data["user_id"],
-                        timestamp=datetime.fromisoformat(c_data["timestamp"]),
-                        content=c_data["content"],
-                        metadata=c_data["metadata"]
-                    )
-                    # Re-calculate embedding on load if needed, or skip for speed
-                    self.conversations[uid].append(c)
-
-            # Restore Messages
-            self.messages = []
-            for m_data in data.get("messages", []):
-                m = Message(
-                    conversation_id=m_data["conversation_id"],
-                    role=m_data["role"],
-                    content=m_data["content"],
-                    timestamp=datetime.fromisoformat(m_data["timestamp"]),
-                    metadata=m_data["metadata"]
-                )
-                if "user_id" in m_data:
-                    m.user_id = m_data["user_id"]
-                self.messages.append(m)
-
-            # Restore User Data
-            self.user_data = data.get("user_data", {})
-            
-            # Restore Trauma Log (Axiom 3)
-            self.trauma_log = data.get("trauma_log", [])
-            
-            print(f"📂 MEMORY LOADED: {len(self.messages)} messages, {len(self.trauma_log)} traumas.")
-
-        except Exception as e:
-            print(f"❌ MEMORY LOAD FAILED: {e}")
+        A failed load disables writes until a successful explicit reload, so
+        startup with a damaged archive cannot overwrite its recoverable data.
+        """
+        with self.lock:
+            if not os.path.exists(self.memory_path):
+                return False
+            try:
+                with open(self.memory_path, 'r', encoding='utf-8') as stream:
+                    data = json.load(stream)
+                if not isinstance(data, dict):
+                    raise ValueError('Memory root must be an object')
+                raw_conversations = data.get('conversations', {})
+                raw_messages = data.get('messages', [])
+                users = data.get('user_data', {})
+                traumas = data.get('trauma_log', [])
+                if (not isinstance(raw_conversations, dict) or not isinstance(raw_messages, list)
+                        or not isinstance(users, dict) or not isinstance(traumas, list)):
+                    raise ValueError('Invalid memory collection types')
+                conversations = defaultdict(list)
+                messages = []
+                for uid, rows in raw_conversations.items():
+                    if not isinstance(rows, list):
+                        raise ValueError('Invalid conversation list')
+                    for row in rows:
+                        if not isinstance(row['content'], str) or not isinstance(row['metadata'], dict):
+                            raise ValueError('Invalid conversation record')
+                        conversations[uid].append(Conversation(
+                            id=row['id'], user_id=row['user_id'],
+                            timestamp=datetime.fromisoformat(row['timestamp']),
+                            content=row['content'], metadata=row['metadata']))
+                for row in raw_messages:
+                    if (not isinstance(row['content'], str) or not isinstance(row['metadata'], dict)
+                            or not isinstance(row['conversation_id'], str)
+                            or not isinstance(row['role'], str)):
+                        raise ValueError('Invalid message record')
+                    messages.append(Message(conversation_id=row['conversation_id'],
+                        role=row['role'], content=row['content'],
+                        timestamp=datetime.fromisoformat(row['timestamp']),
+                        metadata=row['metadata'], user_id=row.get('user_id')))
+                self.conversations, self.messages = conversations, messages
+                self.user_data, self.trauma_log = users, traumas
+                self.conversation_vectors = {}
+                self._load_error = None
+                return True
+            except Exception as error:
+                self._load_error = error
+                import logging
+                logging.getLogger(__name__).error('Memory load failed; original archive protected: %s', error)
+                return False

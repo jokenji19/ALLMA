@@ -8,11 +8,17 @@ import time
 from allma_model.ui.temperature_monitor import TemperatureMonitor
 
 class WebViewBridge:
-    def __init__(self, message_callback):
+    def __init__(self, message_callback, core=None):
         self.webview = None
         self.message_callback = message_callback
+        self.core = core
         self.is_android = platform == 'android'
         self.running = True
+        self._closed = False
+        self._poll_event = None
+        self._startup_ready = False
+        self._startup_revealed = False
+        self._startup_reveal_event = None
         
         # Initialize temperature monitor
         self.temperature_monitor = TemperatureMonitor()
@@ -50,6 +56,8 @@ class WebViewBridge:
 
             @java_method('(Ljava/lang/Object;)V')
             def onReceiveValue(self, value):
+                if self.bridge._closed or not self.bridge.running:
+                    return
                 # value is a JSON string from JS, e.g., '"Hello"' or 'null'
                 # print(f"POLL RESULT: {value}")
                 if value and value != 'null' and value != 'None':
@@ -84,6 +92,37 @@ class WebViewBridge:
                                 return
                             if isinstance(effective_val, dict) and effective_val.get('type') == 'action':
                                 action = effective_val.get('action')
+                                if action == 'startup_ready':
+                                    self.bridge.reveal_startup()
+                                    return
+                                if action in ('backup_status','backup_configure','backup_create','backup_verify','backup_repair',
+                                              'backup_export','backup_import','backup_confirm_restore','backup_cancel_restore'):
+                                    if not hasattr(self.bridge,'backup_controller'):
+                                        from allma_model.ui.backup_controller import BackupController
+                                        self.bridge.backup_controller=BackupController(self.bridge)
+                                    self.bridge.backup_controller.handle(action,effective_val)
+                                    return
+                                if action == 'navigation_exit':
+                                    self.bridge.background_app()
+                                    return
+                                if action == 'brain_activity':
+                                    self.bridge.handle_brain_activity(effective_val.get('after', 0))
+                                    return
+                                if action == 'avatar_configure':
+                                    self.bridge.handle_avatar_configuration(effective_val.get('presentation'), effective_val.get('request_id'))
+                                    return
+                                if action in ('decider_status', 'set_decider'):
+                                    self.bridge.handle_decider_action(action, effective_val.get('enabled'))
+                                    return
+                                if action in ('notification_status', 'set_notifications', 'test_notification', 'notification_settings'):
+                                    self.bridge.handle_notification_action(action, effective_val.get('enabled'))
+                                    return
+                                if action == 'copy_message':
+                                    self.bridge.copy_message(effective_val.get('id'), effective_val.get('text'))
+                                    return
+                                if action in ('list_models', 'apply_model'):
+                                    self.bridge.handle_model_action(action, effective_val.get('key'))
+                                    return
                                 if action == 'cancel_benchmark':
                                     bench = getattr(self.bridge, 'active_benchmark', None)
                                     if bench is not None:
@@ -94,13 +133,14 @@ class WebViewBridge:
                                         return
                                     self.bridge.benchmark_running = True
                                     profile = effective_val.get('profile', 'quick')
-                                    if profile not in ('quick', 'historical', 'extended'):
+                                    if profile not in ('quick', 'historical', 'extended', 'comparison', 'reasoning', 'support', 'support_roles', 'support_reasoning', 'support_natural', 'operational', 'tool_learning', 'relational', 'memory_recovery', 'long_history', 'preservation', 'dialogue', 'growth', 'decider', 'memory', 'memory_contract', 'memory_recall', 'memory_lifecycle', 'memory_personal', 'memory_dialogue', 'greeting', 'greeting_closure', 'personality', 'personality_feedback'):
                                         profile = 'quick'
                                     print("🧪 UI Trigger: Starting Benchmark...")
                                     
                                     # TOAST FEEDBACK
                                     from kivy.app import App
                                     app = App.get_running_app()
+                                    app = getattr(app, 'internal_app', app)
                                     if hasattr(app, 'show_toast'):
                                         app.show_toast("Benchmark Richiesto... 🚀")
                                     
@@ -118,7 +158,7 @@ class WebViewBridge:
                                             sys.path.append(os.getcwd())
                                             from benchmark_iq import CognitiveBenchmark
                                             
-                                            brain_ref = None
+                                            brain_ref = self.bridge.core
                                             # Try 1: Direct Access
                                             if hasattr(app, 'chat_screen'):
                                                 if hasattr(app.chat_screen, 'core'):
@@ -141,7 +181,29 @@ class WebViewBridge:
                                                 Clock.schedule_once(lambda dt: app.show_toast(err_msg))
                                                 return
 
-                                            bench = CognitiveBenchmark(profile=profile)
+                                            if profile == 'relational':
+                                                from reliability_android import AndroidRelationalRun
+                                                bench = AndroidRelationalRun()
+                                            elif profile == 'tool_learning':
+                                                from reliability_android import AndroidToolLearningRun
+                                                bench = AndroidToolLearningRun()
+                                            elif profile == 'decider':
+                                                from allma_model.agency_system.decision_diagnostics import DecisionDiagnosticRun
+                                                bench = DecisionDiagnosticRun()
+                                            elif profile == 'operational':
+                                                from reliability_android import AndroidReliabilityRun
+                                                bench = AndroidReliabilityRun()
+                                            elif profile == 'memory_recovery':
+                                                from reliability_android import AndroidMemoryRecoveryRun
+                                                bench = AndroidMemoryRecoveryRun()
+                                            elif profile == 'preservation':
+                                                from reliability_android import AndroidPreservationRun
+                                                bench = AndroidPreservationRun()
+                                            elif profile == 'long_history':
+                                                from reliability_android import AndroidLongHistoryRun
+                                                bench = AndroidLongHistoryRun()
+                                            else:
+                                                bench = CognitiveBenchmark(profile=profile)
                                             self.bridge.active_benchmark = bench
                                             
                                             def on_progress(curr, tot, txt):
@@ -152,7 +214,7 @@ class WebViewBridge:
                                             
                                             print("✅ Benchmark Completed via UI Trigger")
                                             # Completion Toast
-                                            completion = "Benchmark interrotto; report parziale salvato" if bench.manifest.get('cancelled') else "Benchmark completato; valuta le risposte nel report"
+                                            completion = ("Telefono caldo; prova fermata e report salvato" if bench.manifest.get('stop_reason') == 'thermal_pause' else "Benchmark interrotto; report parziale salvato" if bench.manifest.get('cancelled') else "Benchmark completato; valuta le risposte nel report")
                                             Clock.schedule_once(lambda dt, msg=completion: app.show_toast(msg))
                                             
                                             # SHARE REPORT (Instead of Chat)
@@ -169,7 +231,7 @@ class WebViewBridge:
                                                 print(f"Failed to read/share report: {read_e}")
                                             
                                             # Close UI (fade out)
-                                            self.bridge.update_benchmark_ui(100, 100, "Completato!")
+                                            self.bridge.update_benchmark_ui(100, 100, "Fermato per temperatura" if bench.manifest.get('stop_reason') == 'thermal_pause' else "Interrotto" if bench.manifest.get('cancelled') else "Completato!")
                                             Clock.schedule_once(lambda dt: self.bridge.execute_js("if(window.benchmarkUI) window.benchmarkUI.close()"), 2.0)
                                             
                                         except Exception as e:
@@ -193,7 +255,7 @@ class WebViewBridge:
 
                             self.callback(clean_val)
                     except Exception as e:
-                        print(f"Bridge Decode Error: {e} for value: {value}")
+                        print(f"Bridge Decode Error: {type(e).__name__}")
                         # Fallback for simple strings if not valid JSON?
                         # Usually evaluateJavascript returns valid JSON string
                         simple_clean = value.strip('"')
@@ -202,9 +264,16 @@ class WebViewBridge:
 
         @run_on_ui_thread
         def create_webview_ui():
+            if self._closed:
+                return
             try:
                 activity = autoclass('org.kivy.android.PythonActivity').mActivity
                 self.webview = WebView(activity)
+                self._install_back_handler(activity)
+                # USB-authorized WebView inspection only in debuggable APKs.
+                info = activity.getApplicationInfo()
+                if info.flags & autoclass('android.content.pm.ApplicationInfo').FLAG_DEBUGGABLE:
+                    WebView.setWebContentsDebuggingEnabled(True)
                 
                 # Settings
                 settings = self.webview.getSettings()
@@ -217,7 +286,8 @@ class WebViewBridge:
                 except Exception:
                     pass
                 
-                self.webview.setBackgroundColor(Color.parseColor("#0B1220"))
+                self.webview.setBackgroundColor(Color.parseColor("#FAF9F5"))
+                self.webview.setAlpha(0.0)
                 
                 # --- EDGE-TO-EDGE CONFIGURATION (v0.39: NO LIMITS + JS FALLBACK) ---
                 
@@ -255,7 +325,7 @@ class WebViewBridge:
                                 activity_window.setDecorFitsSystemWindows(True)
                             activity_window.addFlags(-2147483648)  # DRAWS_SYSTEM_BAR_BACKGROUNDS
                             from allma_model.ui.android_bars import AndroidBars
-                            bar_color = "#091729" if AndroidBars.dark else "#E7F4FE"
+                            bar_color = AndroidBars.color_hex()
                             activity_window.setStatusBarColor(Color.parseColor(bar_color))
                             activity_window.setNavigationBarColor(Color.parseColor(bar_color))
                             decorView = activity_window.getDecorView()
@@ -267,6 +337,7 @@ class WebViewBridge:
                             else:
                                 sys_flags |= 8192 | 16
                             decorView.setSystemUiVisibility(sys_flags)
+                            AndroidBars.hide_navigation(activity_window)
 
                             # 6. FORCE LAYOUT
                             decorView.requestLayout()
@@ -321,13 +392,27 @@ class WebViewBridge:
                     with open(marked_path, 'r') as f:
                         marked_js = f.read()
 
-                with open(os.path.join(base_path, 'script_v24.js'), 'r') as f:
+                with open(os.path.join(base_path, 'startup_transition.js'), 'r') as f:
                     js = f.read()
+                with open(os.path.join(base_path, 'script_v24.js'), 'r') as f:
+                    js += '\n' + f.read()
+                with open(os.path.join(base_path, 'voice_controls.js'), 'r') as f:
+                    js += '\n' + f.read()
+                with open(os.path.join(base_path, 'brain_geometry.js'), 'r') as f:
+                    js += '\n' + f.read()
+                with open(os.path.join(base_path, 'brain_anatomy.js'), 'r') as f:
+                    js += '\n' + f.read()
+                with open(os.path.join(base_path, 'brain_view.js'), 'r') as f:
+                    js += '\n' + f.read()
+                with open(os.path.join(base_path, 'navigation.js'), 'r') as f:
+                    js += '\n' + f.read()
 
                 # Patch JS for polling
                 js_patch = """
                 console.log("ALLMA_DEBUG: Starting Bridge Patch...");
                 window.msgQueue = window.msgQueue || [];
+                window.allmaNativeClipboard = true;
+                window.allmaNativeStartup = true;
                 // API called by UI
                 function sendMessage(text) {
                      window.msgQueue.push(text);
@@ -337,7 +422,7 @@ class WebViewBridge:
                 window.pyBridge = {
                     postMessage: function(text) {
                         window.msgQueue.push(text);
-                        console.log("Buffered: " + text);
+                        console.log("Buffered UI event");
                     },
                     getTemperature: function() {
                         // This will be called from JavaScript
@@ -389,11 +474,11 @@ class WebViewBridge:
                         
                         // Progress Container
                         var progressBg = document.createElement('div');
-                        progressBg.style.cssText = "width:100%; height:8px; background:#333; border-radius:4px; overflow:hidden;";
+                        progressBg.style.cssText = "width:100%; height:8px; background:var(--subtle); border-radius:4px; overflow:hidden;";
                         
                         // Progress Bar
                         this.bar = document.createElement('div');
-                        this.bar.style.cssText = "width:0%; height:100%; background:linear-gradient(90deg, #00d2ff, #3a7bd5); transition: width 0.3s ease;";
+                        this.bar.style.cssText = "width:0%; height:100%; background:var(--primary-color); transition: width 0.3s ease;";
                         progressBg.appendChild(this.bar);
                         this.overlay.appendChild(progressBg);
                         
@@ -404,7 +489,7 @@ class WebViewBridge:
                         this.overlay.appendChild(this.text);
                         var cancel = document.createElement('button');
                         cancel.innerText = 'Interrompi e salva';
-                        cancel.style.cssText = 'margin-top:10px;padding:8px 12px;border:0;border-radius:12px;background:#d8edff;color:#233846;';
+                        cancel.style.cssText = 'margin-top:10px;padding:8px 12px;border:0;border-radius:12px;background:var(--subtle);color:var(--text-primary);';
                         cancel.onclick = function() {
                             if (window.pyBridge) window.pyBridge.postMessage(JSON.stringify({type:'action',action:'cancel_benchmark'}));
                             cancel.disabled = true;
@@ -479,6 +564,7 @@ class WebViewBridge:
                 
                 # Add to Activity
                 activity.addContentView(self.webview, params)
+                self._startup_reveal_event = Clock.schedule_once(lambda dt:self.reveal_startup(),5)
                 
                 # Start Polling Loop
                 self._start_polling()
@@ -490,25 +576,139 @@ class WebViewBridge:
 
         create_webview_ui()
 
+    def reveal_startup(self):
+        """Blend the first painted document over the native startup panel once."""
+        self._startup_ready = True
+        event = getattr(self, '_startup_reveal_event', None)
+        if event:
+            event.cancel()
+            self._startup_reveal_event = None
+        if self._closed or self._startup_revealed or not self.running:
+            return
+        from android.runnable import run_on_ui_thread
+        @run_on_ui_thread
+        def reveal():
+            if self._closed or self._startup_revealed or not self.running or self.webview is None:
+                return
+            from startup_ui import native_motion_allowed
+            motion = native_motion_allowed()
+            self._startup_revealed = True
+            if motion:
+                self.webview.animate().alpha(1.0).setDuration(320).start()
+            else:
+                self.webview.setAlpha(1.0)
+            self._evaluate_js('window.allmaStartup && window.allmaStartup.reveal('+
+                              json.dumps({'native':True,'motion':motion})+')',None)
+            print('ALLMA startup transition ready.')
+        reveal()
+
+    def background_app(self):
+        from android.runnable import run_on_ui_thread
+        @run_on_ui_thread
+        def minimize():
+            if not self._closed:
+                from jnius import autoclass
+                autoclass('org.kivy.android.PythonActivity').mActivity.moveTaskToBack(True)
+        minimize()
+
+    def _install_back_handler(self, activity):
+        """Called on Android UI thread; IME handles its own Back first."""
+        from jnius import autoclass, PythonJavaClass, java_method
+        bridge=self
+        class BackKey(PythonJavaClass):
+            __javacontext__='app'
+            __javainterfaces__=['android/view/View$OnKeyListener']
+            @java_method('(Landroid/view/View;ILandroid/view/KeyEvent;)Z')
+            def onKey(self,view,code,event):
+                if code!=4:return False
+                if event.getAction()==1:
+                    bridge.execute_js('window.handleAndroidBack && window.handleAndroidBack()')
+                return True
+        self._back_key=BackKey()
+        self.webview.setOnKeyListener(self._back_key)
+        if autoclass('android.os.Build$VERSION').SDK_INT>=33:
+            class BackGesture(PythonJavaClass):
+                __javacontext__='app'
+                __javainterfaces__=['android/window/OnBackInvokedCallback']
+                @java_method('()V')
+                def onBackInvoked(self):
+                    bridge.execute_js('window.handleAndroidBack && window.handleAndroidBack()')
+            self._back_callback=BackGesture()
+            self._back_dispatcher=activity.getOnBackInvokedDispatcher()
+            self._back_dispatcher.registerOnBackInvokedCallback(0,self._back_callback)
+
     def _start_polling(self):
-        Clock.schedule_interval(self._poll_js, 0.35)
+        if self.running and not self._closed and self._poll_event is None:
+            self._poll_event = Clock.schedule_interval(self._poll_js, 0.35)
+
+    def pause(self):
+        if self.is_android and self.webview is not None:
+            self.call_js_function('brainVisibility', 'false')
+        self.running = False
+        if self._poll_event is not None:
+            self._poll_event.cancel()
+            self._poll_event = None
+
+    def resume(self):
+        if not self._closed:
+            self.running = True
+            if getattr(self,'_startup_ready',False) and not getattr(self,'_startup_revealed',False):
+                self.reveal_startup()
+            if self.is_android and self.webview is not None:
+                self.call_js_function('brainVisibility', 'true')
+                self._start_polling()
+
+    def close(self):
+        if self._closed:
+            return
+        self.pause()
+        event = getattr(self, '_startup_reveal_event', None)
+        if event:
+            event.cancel()
+            self._startup_reveal_event = None
+        if getattr(self,'backup_controller',None):self.backup_controller.close()
+        self._closed = True
+        if self.is_android:
+            from android.runnable import run_on_ui_thread
+            @run_on_ui_thread
+            def destroy():
+                dispatcher=getattr(self,'_back_dispatcher',None)
+                if dispatcher is not None:
+                    dispatcher.unregisterOnBackInvokedCallback(self._back_callback)
+                    self._back_dispatcher=None
+                view, self.webview = self.webview, None
+                if view is not None:
+                    view.stopLoading()
+                    parent = view.getParent()
+                    if parent is not None:
+                        parent.removeView(view)
+                    view.destroy()
+            destroy()
+        else:
+            self.webview = None
+
+    def _evaluate_js(self, code, callback):
+        if not self._closed and self.webview is not None:
+            self.webview.evaluateJavascript(code, callback)
 
     def _poll_js(self, dt):
-        if not self.webview or not self.poll_callback:
+        if not self.running or not self.webview or not self.poll_callback:
             return
             
         from android.runnable import run_on_ui_thread
         
         @run_on_ui_thread
         def run_poll():
+            if not self.running:
+                return
             # fetchPending() returns the string or null
-            self.webview.evaluateJavascript("window.fetchPending()", self.poll_callback)
+            self._evaluate_js("window.fetchPending()", self.poll_callback)
             
         run_poll()
 
     def send_message_to_js(self, text, sender='bot', thought_text=None):
         if not self.webview:
-            print(f"Mock Send to JS ({sender}): {text}")
+            print(f"Mock Send to JS sender={sender}")
             return
             
         # Escape strings for JS
@@ -530,7 +730,7 @@ class WebViewBridge:
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_code, None)
+            self._evaluate_js(js_code, None)
             
         run_js()
 
@@ -555,8 +755,73 @@ class WebViewBridge:
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_code, None)
+            self._evaluate_js(js_code, None)
         run_js()
+
+    def handle_avatar_configuration(self, presentation, request_id=None):
+        # Ownership comes from the active native session, never the WebView.
+        owner = getattr(self.core, '_current_user_id', None) or 'user_default'
+        try:
+            if not hasattr(self, '_avatar_presence'):
+                from allma_model.utils.avatar_presence import AvatarPresence
+                self._avatar_presence = AvatarPresence(getattr(self.core, 'db_path', None))
+            self._avatar_presence.appearance(owner, presentation)
+            if presentation is None:
+                raise ValueError('Explicit choice required')
+            result = {'ok': True, 'presentation': presentation}
+        except Exception:
+            result = {'ok': False, 'message': 'Non è stato possibile salvare l’aspetto. Riprova.'}
+        result['request_id'] = request_id if isinstance(request_id, str) and len(request_id) <= 100 else None
+        self.call_js_function('receiveAvatarConfiguration', json.dumps(result))
+        if result['ok']:
+            self.handle_brain_activity()
+
+    def handle_brain_activity(self, after=0):
+        activity = getattr(self.core, 'brain_activity', None)
+        if activity is None:
+            payload = {'available': False}
+        else:
+            payload = activity.snapshot(after)
+            payload['available'] = True
+            dream_manager = getattr(self.core, 'dream_manager', None)
+            dreaming = bool(dream_manager and dream_manager.is_dreaming)
+            payload['dreaming'] = dreaming
+            for node in payload['nodes']:
+                if node['id'] == 'dreams':
+                    node['available'] = dream_manager is not None
+                    node['state'] = {'phase':'running' if dreaming else 'idle'}
+            registered = getattr(getattr(self.core, 'module_orchestrator', None), 'modules', {})
+            adapters = {'curiosity','emotional_adaptation','creativity','planning','perception',
+                        'language_processing','personality_style','meta_learning','cognitive_tracking'}
+            for node in payload['nodes']:
+                if node['id'] in adapters:
+                    config = registered.get(node['id'])
+                    node['available'] = config is not None
+                    node['enabled'] = bool(config and config.enabled)
+            engine = getattr(self.core, '_llm', None)
+            from pathlib import Path
+            name = getattr(engine, 'model_path', None)
+            payload['model'] = Path(name).name if isinstance(name, (str, Path)) else None
+            personality = getattr(self.core, 'coalescence_processor', None)
+            owner = getattr(self.core, '_current_user_id', None) or 'user_default'
+            if personality is not None:
+                expression = personality.expression_view(owner)
+                outcomes = expression.get('outcome_learning',{})
+                contexts = {'general':'nel dialogo generale','explanation':'nelle spiegazioni','support':'nel sostegno emotivo'}
+                labels = {'brief':'risposte essenziali','detailed':'risposte approfondite',
+                          'gentle':'delicatezza','direct':'franchezza','formal':'tono formale','informal':'tono informale',
+                          'light':'umorismo leggero','serious':'tono serio','restrained':'meno domande aggiuntive','exploratory':'domande di approfondimento'}
+                payload['personality_development'] = {
+                    'declared':len(expression['preferences']),
+                    'integrated':sum(item['stage']=='integrated' for item in expression['tendencies'].values()),
+                    'suspended':sum(item['stage']=='suspended' for item in expression['tendencies'].values()),
+                    'assessments':outcomes.get('strong_feedback',0),
+                    'courtesy':outcomes.get('weak_feedback',0),
+                    'growth':[f"{labels[item['value']]} {contexts[context]}: "
+                              f"{item['positive']} riscontri positivi, {item['negative']} negativi; "
+                              + ('consolidata' if item['stage']=='integrated' else 'in osservazione')
+                              for context,axes in outcomes.get('contexts',{}).items() for item in axes.values()]}
+        self.call_js_function('receiveBrainActivity', json.dumps(payload))
 
     def start_stream(self, request_id=None):
         self.call_js_function("startStream", json.dumps(request_id))
@@ -566,8 +831,9 @@ class WebViewBridge:
         is_thought_js = "true" if is_thought else "false"
         self.call_js_function("streamChunk", f"{safe_text}, {is_thought_js}, {json.dumps(request_id)}")
 
-    def end_stream(self, final_content=None, request_id=None):
-        self.call_js_function("endStream", f"{json.dumps(final_content)}, {json.dumps(request_id)}")
+    def end_stream(self, final_content=None, request_id=None, generation=None):
+        status = (generation or {}).get('status')
+        self.call_js_function("endStream", f"{json.dumps(final_content)}, {json.dumps(request_id)}, {json.dumps(status)}")
 
     def update_voice_internal_state(self, payload):
         if not self.webview:
@@ -575,6 +841,84 @@ class WebViewBridge:
         import json
         safe_payload = json.dumps(payload if payload is not None else {})
         self.call_js_function("updateVoiceInternalState", safe_payload)
+
+    def _notifications(self):
+        if not hasattr(self, '_notification_manager'):
+            from pathlib import Path
+            from allma_model.ui.system_notifications import SystemNotifications
+            self._notification_manager = SystemNotifications(Path(self.core.db_path).resolve().parent/'notifications.json')
+        return self._notification_manager
+
+    def handle_decider_action(self, action, enabled=None):
+        runtime = None
+        try:
+            runtime = getattr(self.core, 'decision_runtime', None)
+            payload = ({'error':'Attendi il caricamento di ALLMA.'} if runtime is None else
+                       runtime.configure(enabled) if action == 'set_decider' else runtime.status())
+        except Exception:
+            payload = dict(runtime.status() if runtime is not None else {},
+                           error='Non sono riuscita a salvare la preferenza del decisore.')
+        self.execute_js('window.deciderUI && window.deciderUI.update(' + json.dumps(payload) + ')')
+
+    def handle_notification_action(self, action, enabled=None):
+        def update(payload):
+            if not self._closed:
+                self.execute_js('window.notificationUI && window.notificationUI.update(' + json.dumps(payload) + ')')
+        try:
+            manager = self._notifications()
+            if action == 'set_notifications':
+                manager.configure(enabled, update)
+            else:
+                extra = {}
+                if action == 'test_notification':
+                    extra['test_sent'] = manager.publish('test', explicit_test=True)
+                elif action == 'notification_settings' and manager.backend:
+                    manager.backend.open_settings()
+                update(dict(manager.status(), **extra))
+        except Exception:
+            update({'error': 'Notifiche non disponibili. Riprova dalle impostazioni Android.'})
+
+    def notify_event(self, kind):
+        try:
+            return self._notifications().publish(kind)
+        except Exception:
+            logging.warning('System notification unavailable')
+            return False
+
+    def handle_model_action(self, action, key=None):
+        """Never hash/download/load a GGUF on the UI thread."""
+        from kivy.app import App
+        app = App.get_running_app()
+        app = getattr(app, 'internal_app', app)
+        screen = getattr(app, 'chat_screen', None)
+        if screen is None and hasattr(app, 'sm') and app.sm.has_screen('chat'):
+            screen = app.sm.get_screen('chat')
+        core = self.core if self.core is not None else getattr(screen, 'core', None)
+        if core is None:
+            return
+        if not hasattr(self, '_model_manager'):
+            from allma_model.llm.model_manager import ModelManager
+            self._model_manager = ModelManager(core)
+        def notify(payload):
+            if self._closed:
+                return
+            js = 'if(window.modelUI) window.modelUI.update(' + json.dumps(payload, ensure_ascii=False) + ')'
+            Clock.schedule_once(lambda dt: self.execute_js(js))
+        def work():
+            last_progress = [0.]
+            def progress(payload):
+                now = time.monotonic()
+                if payload.get('phase') != 'download' or now-last_progress[0] >= .25 or payload.get('progress') == 1:
+                    last_progress[0] = now
+                    notify(payload)
+            try:
+                if action == 'apply_model':
+                    self._model_manager.apply(key, progress)
+                    self.notify_event('model')
+                notify(dict(phase='ready', **self._model_manager.snapshot()))
+            except Exception as exc:
+                notify({'phase':'error', 'error': str(exc)})
+        threading.Thread(target=work, daemon=True, name='ModelChoice').start()
 
     def update_benchmark_ui(self, current, total, text):
         """Aggiorna l'overlay di progresso del benchmark."""
@@ -586,7 +930,7 @@ class WebViewBridge:
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_cmd, None)
+            self._evaluate_js(js_cmd, None)
         run_js()
 
 
@@ -596,12 +940,12 @@ class WebViewBridge:
             print(f"[WebViewBridge] Synergy update (No WebView): {percentage}% - {status_text}")
             return
             
-        js_cmd = f"updateAllmaStatus({percentage}, '{status_text}')"
+        js_cmd = "updateAllmaStatus(" + json.dumps(percentage) + "," + json.dumps(status_text) + ")"
         
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_cmd, None)
+            self._evaluate_js(js_cmd, None)
         run_js()
 
     def set_input_text(self, text):
@@ -614,14 +958,14 @@ class WebViewBridge:
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_cmd, None)
+            self._evaluate_js(js_cmd, None)
         run_js()
 
     def update_voice_text(self, text):
         """Aggiorna il testo nell'overlay vocale."""
         if not self.webview: return
         # Log to verify attempting update
-        print(f"Bridge: Updating Voice Text -> {text}")
+        print("Bridge: Voice transcript updated")
         
         import json
         safe_text = json.dumps(text)
@@ -630,7 +974,7 @@ class WebViewBridge:
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_cmd, None)
+            self._evaluate_js(js_cmd, None)
         run_js()
     
     def get_device_temperature(self):
@@ -656,13 +1000,38 @@ class WebViewBridge:
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
         def run_js():
-            self.webview.evaluateJavascript(js_cmd, None)
+            self._evaluate_js(js_cmd, None)
         run_js()
+
+    def copy_message(self, request_id, text):
+        """Explicit user copy, confirmed only after Android accepts the clip."""
+        if not isinstance(request_id, str) or not re.fullmatch(r'copy-\d{1,12}', request_id):
+            return
+        def done(success):
+            self.execute_js('window.messageCopyResult && window.messageCopyResult(' +
+                            json.dumps(request_id) + ',' + json.dumps(success) + ')')
+        if not isinstance(text, str) or not text.strip() or len(text.encode('utf-8')) > 500000:
+            done(False)
+            return
+        from jnius import autoclass, cast
+        from android.runnable import run_on_ui_thread
+
+        @run_on_ui_thread
+        def copy_ui():
+            try:
+                activity = autoclass('org.kivy.android.PythonActivity').mActivity
+                clipboard = cast('android.content.ClipboardManager', activity.getSystemService('clipboard'))
+                clip = autoclass('android.content.ClipData').newPlainText('ALLMA', text)
+                clipboard.setPrimaryClip(clip)
+                done(True)
+            except Exception:
+                done(False)
+        copy_ui()
 
     def share_text_content(self, text, subject="ALLMA Benchmark Result"):
         """Apre il menu di condivisione nativo Android con il testo fornito."""
         if not self.is_android:
-            print(f"[SHARE] Would share text: {text[:50]}...")
+            print("[SHARE] Text sharing unavailable on this platform")
             return
 
         from jnius import autoclass, cast
@@ -710,5 +1079,5 @@ class WebViewBridge:
         @run_on_ui_thread
         def run_js():
             wrapped = "(function(){try{" + str(js_code) + "}catch(e){try{console.warn('ALLMA execute_js failed',e);}catch(_){}}})();"
-            self.webview.evaluateJavascript(wrapped, None)
+            self._evaluate_js(wrapped, None)
         run_js()

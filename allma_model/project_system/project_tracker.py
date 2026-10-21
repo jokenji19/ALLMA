@@ -148,7 +148,7 @@ class ProjectTracker:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, name, description, created_at
+                SELECT id, name, description, created_at, metadata
                 FROM projects
                 WHERE user_id = ?
                 ORDER BY created_at DESC
@@ -164,6 +164,7 @@ class ProjectTracker:
                     "name": row[1],
                     "description": row[2],
                     "created_at": row[3]
+                    ,"metadata": json.loads(row[4] or '{}')
                 }
                 projects.append(Project.from_dict(project_data))
                 

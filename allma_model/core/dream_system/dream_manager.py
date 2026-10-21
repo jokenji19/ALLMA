@@ -8,6 +8,7 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from allma_model.utils.persistence import atomic_write_json, preserve_invalid_file, StateRecoveryRequired
 
 DREAM_JOURNAL_PATH = "data/dream_journal.json"
 MAX_DREAM_ENTRIES = 50
@@ -66,23 +67,37 @@ class DreamManager:
         self.pending_path = self.journal_path + '.pending.json'
         self.processed_path = self.journal_path + '.processed.json'
         self.processed_memories = []
+        self.archive_errors = {}
         self.review_store = None
         try:
             with open(self.processed_path, encoding='utf-8') as f:
                 processed = json.load(f)
-            if isinstance(processed, list):
-                self.processed_memories = [key for key in processed[-1000:] if isinstance(key, str)]
-        except (OSError, ValueError):
+            if not isinstance(processed, list) or any(not isinstance(key, str) for key in processed):
+                raise ValueError('Invalid processed dream index')
+            self.processed_memories = processed[-1000:]
+        except FileNotFoundError:
             pass
+        except (OSError, ValueError) as error:
+            self.archive_errors['processed'] = type(error).__name__
+            try:
+                preserve_invalid_file(self.processed_path)
+            except OSError:
+                pass
         try:
             with open(self.pending_path, encoding='utf-8') as f:
                 pending = json.load(f)
-            if isinstance(pending, list):
-                self.pending_verification = [item for item in pending[-MAX_DREAM_ENTRIES:]
-                                             if isinstance(item, dict) and isinstance(item.get('text'), str)
-                                             and item.get('user_id')]
-        except (OSError, ValueError):
+            if (not isinstance(pending, list) or any(not isinstance(item, dict)
+                    or not isinstance(item.get('text'), str) or not item.get('user_id') for item in pending)):
+                raise ValueError('Invalid pending dream archive')
+            self.pending_verification = pending[-MAX_DREAM_ENTRIES:]
+        except FileNotFoundError:
             pass
+        except (OSError, ValueError) as error:
+            self.archive_errors['pending'] = type(error).__name__
+            try:
+                preserve_invalid_file(self.pending_path)
+            except OSError:
+                pass
         
         try:
             from .review_store import DreamReviewStore
@@ -104,6 +119,7 @@ class DreamManager:
         
         # Inizializza il diario dei sogni persistente
         self.dream_history = []
+        self.journal_error = None
         self._load_dream_journal()
 
     def _load_dream_journal(self):
@@ -114,24 +130,26 @@ class DreamManager:
                     history = json.load(f)
                     if not isinstance(history, list):
                         raise ValueError('Il diario deve essere una lista')
-                    self.dream_history = [entry for entry in history[-MAX_DREAM_ENTRIES:]
-                                          if isinstance(entry, dict) and isinstance(entry.get('text'), str)]
+                    if any(not isinstance(entry, dict) or not isinstance(entry.get('text'), str) for entry in history):
+                        raise ValueError('Invalid dream journal record')
+                    self.dream_history = history[-MAX_DREAM_ENTRIES:]
+                    self.journal_error = None
+                    return True
             except Exception as e:
-                self.logger.error(f"Errore nel caricamento del diario dei sogni: {e}")
-                self.dream_history = []
+                self.journal_error = e
+                try:
+                    preserve_invalid_file(self.journal_path)
+                except OSError:
+                    pass
+                self.logger.error('Dream journal needs recovery: %s', type(e).__name__)
+                return False
+        return self.journal_error is None
 
     def _save_dream_journal(self):
         """Salva lo storico dei sogni su file (mantenendo solo gli ultimi N)."""
-        try:
-            os.makedirs(os.path.dirname(self.journal_path), exist_ok=True)
-            # Mantieni solo gli ultimi MAX_DREAM_ENTRIES
-            if len(self.dream_history) > MAX_DREAM_ENTRIES:
-                self.dream_history = self.dream_history[-MAX_DREAM_ENTRIES:]
-                
-            from allma_model.utils.persistence import atomic_write_json
-            atomic_write_json(self.journal_path, self.dream_history)
-        except Exception as e:
-            self.logger.error(f"Errore nel salvataggio del diario dei sogni: {e}")
+        if self.journal_error is not None:
+            raise StateRecoveryRequired('Diario dei sogni da recuperare') from self.journal_error
+        atomic_write_json(self.journal_path, self.dream_history[-MAX_DREAM_ENTRIES:])
     @property
     def user_active_event(self):
         return self._user_active_event
@@ -155,8 +173,21 @@ class DreamManager:
             'user_id': getattr(self, 'current_user_id', None)
         }
         with self._journal_lock:
-            self.dream_history.append(entry)
-            self._save_dream_journal()
+            original = self.dream_history
+            self.dream_history = (original + [entry])[-MAX_DREAM_ENTRIES:]
+            try:
+                self._save_dream_journal()
+            except (OSError, RuntimeError) as error:
+                self.dream_history = original
+                self.logger.error('Dream event not saved: %s', type(error).__name__)
+                if self.output_callback:
+                    try:
+                        self.output_callback({'type':'dream_log', 'content':{
+                            'text':'Diario non salvato: archivio non disponibile o da recuperare.',
+                            'phase':'error', 'persisted':False}})
+                    except Exception as callback_error:
+                        self.logger.warning('Dream error display unavailable: %s', type(callback_error).__name__)
+                return False
         
         # 2. Invia alla UI in tempo reale
         if self.output_callback:
@@ -164,7 +195,8 @@ class DreamManager:
                 self.output_callback({'type': 'dream_log', 'content': {'text': text, 'phase': phase}})
             except Exception:
                 pass
-        self.logger.info(f"[Dream/{phase}] {text}")
+        self.logger.info('[Dream] phase=%s saved=True', phase)
+        return True
 
     def check_and_start_dream(self, user_id=None):
         return self._launch(user_id, self._dream_cycle)
@@ -212,6 +244,9 @@ class DreamManager:
     def _dream_cycle(self):
         acquired = False
         try:
+            if self.archive_errors:
+                self._log_dream('Un archivio onirico richiede recupero. Nuove ipotesi sospese.', 'error')
+                return
             self._cancel_event.last_power_check = 0
             if self.review_store is None:
                 self._log_dream('Archivio delle revisioni non disponibile. Sogni sospesi.', 'error')
@@ -245,8 +280,13 @@ class DreamManager:
                 if acquired:
                     self.system_monitor.release_wake_lock()
             finally:
-                with self._state_lock:
-                    self.is_dreaming = False
+                runtime = getattr(self, 'decision_runtime', None)
+                try:
+                    if runtime is not None:
+                        runtime.release()
+                finally:
+                    with self._state_lock:
+                        self.is_dreaming = False
 
     def _fetch_unconsolidated_memories(self) -> List[Dict]:
         # Recupera i log della chat delle ultime 24 ore
@@ -304,7 +344,11 @@ class DreamManager:
         insights = []
         memories = [memory for memory in memories if self._memory_key(memory) not in self.processed_memories]
         # A bounded cycle; avoid dozens of model calls while the phone is idle.
-        for memory in sorted(memories, key=lambda item: str(item.get('timestamp', '')), reverse=True)[:3]:
+        ordered = sorted(memories, key=lambda item: str(item.get('timestamp', '')), reverse=True)[:3]
+        runtime = getattr(self, 'decision_runtime', None)
+        if runtime is not None and self._power_allows_dream():
+            ordered = runtime.prioritize_dreams(ordered, self._cancel_event)
+        for memory in ordered:
             if self.review_store.pending_count(self.current_user_id) >= MAX_DREAM_ENTRIES:
                 break
             if not self._power_allows_dream():
@@ -395,6 +439,8 @@ class DreamManager:
         }]
 
     def _consolidate_insights(self, insights: List[str], evidence=None):
+        if self.archive_errors:
+            raise StateRecoveryRequired('Archivio onirico da recuperare')
         from allma_model.utils.persistence import atomic_write_json
         accepted = []
         with self._journal_lock:
@@ -404,6 +450,9 @@ class DreamManager:
                 if self._cancel_event.is_set():
                     break
                 if not isinstance(insight, str) or not insight.strip():
+                    continue
+                from allma_model.utils.source_claims import unbacked_source_claim
+                if unbacked_source_claim(insight):
                     continue
                 if any(item['text'] == insight and item.get('user_id') == self.current_user_id
                        for item in self.pending_verification):
@@ -496,6 +545,8 @@ class DreamManager:
             formatted = f"💭 {text}" if is_thought else text
             self.webview_bridge.send_message_to_js(formatted, sender='system')
     def get_and_clear_pending_verification(self) -> Optional[Dict]:
+        if self.archive_errors:
+            raise StateRecoveryRequired('Archivio onirico da recuperare')
         from allma_model.utils.persistence import atomic_write_json
         with self._journal_lock:
             for index, item in enumerate(self.pending_verification):

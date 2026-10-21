@@ -120,7 +120,7 @@ def test_planning_and_personality_hints_reach_merged_guidance():
     o.register_module('personality_style', PersonalityAdapterLite(), ModulePriority.LOW, 1)
     plain = o.process('Ciao', {}, 'statement')
     assert plain['execution_report']['outcomes']['planning']['status'] == 'not_relevant'
-    plan = o.process('Pianifica il progetto', {}, 'request')
+    plan = o.process('Pianifica il progetto. Rispondi brevemente.', {}, 'request')
     assert 'non inventare tempi' in plan['system_instruction']
     assert plan['raw_results']['personality_style']['style_hint'] in plan['system_instruction']
 
@@ -140,6 +140,6 @@ def test_transient_personality_style_does_not_leak_between_users():
     module = PersonalityAdapterLite()
     for _ in range(8):
         module.process('Cortesemente, per favore', {'user_id': 'u'})
-    assert module.style.formality > .7
+    assert module.style.formality == .5  # Politeness alone is not a stable preference.
     module.process('Una domanda neutra', {'user_id': 'other'})
     assert module.style.formality == .5

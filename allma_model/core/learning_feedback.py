@@ -77,12 +77,12 @@ class LearningManager:
         current_confidence = knowledge_node['confidence']
         if impact > 0:
             # Per feedback positivo, diminuisce l'impatto se la confidenza è già alta
-            max_increase = self.confidence_threshold - current_confidence
+            max_increase = max(0.0, 1.0 - current_confidence)
             impact = min(impact * 1.1, max_increase)  # Aumenta del 10% il limite massimo
         else:
             # Per feedback negativo, mantiene sempre un minimo di confidenza
             min_confidence = 0.1
-            impact = max(impact, min_confidence - current_confidence)
+            impact = min(0.0, max(impact, min_confidence - current_confidence))
             
         return impact
         

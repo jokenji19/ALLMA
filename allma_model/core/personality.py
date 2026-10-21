@@ -190,11 +190,11 @@ class Personality:
         emotion_counts = {}
         for interaction in recent_interactions:
             emotions = interaction.get('emotions', {})
-            if isinstance(emotions, dict):
+            if isinstance(emotions, dict) and emotions:
                 # Trova l'emozione con il punteggio più alto
                 max_emotion = max(emotions.items(), key=lambda x: x[1] if isinstance(x[1], (int, float)) else 0)[0]
                 emotion_counts[max_emotion] = emotion_counts.get(max_emotion, 0) + 1
-            else:
+            elif emotions and not isinstance(emotions, dict):
                 # Se emotions non è un dizionario, usa l'emozione come stringa
                 emotion = str(emotions)
                 emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1

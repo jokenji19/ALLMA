@@ -242,6 +242,7 @@ class MobileGemmaWrapper:
             if lib_path:
                 print(f"[MobileGemma] Resolved libllama.so at {lib_path}, setting env...", flush=True)
                 os.environ["LLAMA_CPP_LIB"] = lib_path
+                os.environ["LLAMA_CPP_LIB_PATH"] = os.path.dirname(lib_path)
                 
                 # --- OPENCL DIAGNOSTIC LOAD (Build 164-v2) ---
                 try:
@@ -598,7 +599,8 @@ class MobileGemmaWrapper:
                 try:
                     use_prefix_state_cache = False
 
-                    if conversation_id and hasattr(self.llm, "set_cache"):
+                    hybrid = getattr(getattr(self, 'binding', None), 'architecture', '') in {'qwen35', 'qwen35moe'}
+                    if conversation_id and hasattr(self.llm, "set_cache") and not hybrid:
                         from llama_cpp import LlamaCache
                         conv = str(conversation_id)
                         prev_prefix = self._conv_cache_prefix.get(conv)

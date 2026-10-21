@@ -4,7 +4,34 @@ from kivy.clock import Clock
 print(f"!!!! [AndroidBars] MODULE IMPORTED. Platform: {platform} !!!!")
 
 class AndroidBars:
-    dark = True
+    dark = False
+
+    @staticmethod
+    def color_hex():
+        return "#262624" if AndroidBars.dark else "#FAF9F5"
+
+    @staticmethod
+    def hide_navigation(window):
+        """Keep status visible; reveal Android navigation temporarily with a swipe."""
+        from jnius import autoclass
+        version = autoclass('android.os.Build$VERSION')
+        decor = window.getDecorView()
+        # Resize to visible system bars; legacy STABLE reserves a blank nav strip.
+        flags = decor.getSystemUiVisibility() & ~(256 | 512 | 1024)
+        decor.setSystemUiVisibility(flags)
+        if version.SDK_INT >= 29:
+            window.setNavigationBarContrastEnforced(False)
+        if version.SDK_INT >= 28:
+            window.setNavigationBarDividerColor(0)
+        if version.SDK_INT >= 30:
+            window.setDecorFitsSystemWindows(True)
+            controller = window.getInsetsController()
+            if controller:
+                controller.setSystemBarsBehavior(2)  # BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(2)  # WindowInsets.Type.navigationBars()
+        else:
+            decor = window.getDecorView()
+            decor.setSystemUiVisibility(decor.getSystemUiVisibility() | 2 | 4096)
 
     @staticmethod
     def set_dark(enabled):
@@ -73,7 +100,7 @@ class AndroidBars:
                     window.clearFlags(LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
                     
                     # 4. SET COLORS (WHITE)
-                    white = Color.parseColor("#091729" if AndroidBars.dark else "#E7F4FE")
+                    white = Color.parseColor(AndroidBars.color_hex())
                     window.setStatusBarColor(white)
                     window.setNavigationBarColor(white)
                     
@@ -81,6 +108,7 @@ class AndroidBars:
                     if Version.SDK_INT >= 28:
                         window.setNavigationBarDividerColor(Color.parseColor("#00FFFFFF"))
 
+                    AndroidBars.hide_navigation(window)
                     print(f"!!!! [AndroidBars] Attempt {attempt}: SUCCESS !!!!")
                     
                 except Exception as inner_e:

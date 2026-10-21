@@ -52,6 +52,7 @@ class KnowledgeMemory:
             """)
             conn.execute('CREATE TABLE IF NOT EXISTS cognitive_concepts (name TEXT PRIMARY KEY, data TEXT NOT NULL)')
             conn.execute('CREATE TABLE IF NOT EXISTS knowledge_imports (source TEXT PRIMARY KEY)')
+            conn.execute('CREATE TABLE IF NOT EXISTS knowledge_delivery_events (event TEXT PRIMARY KEY, knowledge_id INTEGER NOT NULL)')
             
             # Commit esplicito per assicurarsi che le tabelle siano create
             conn.commit()
@@ -66,26 +67,42 @@ class KnowledgeMemory:
             return value.to_dict()
         raise TypeError('Unsupported concept metadata')
 
-    def get_concept(self, name):
+    @staticmethod
+    def _concept_key(name, user_id=None):
+        if user_id is None:
+            return name
+        if not isinstance(user_id, str) or not user_id:
+            raise ValueError('An explicit concept owner is required')
+        return '__user_concept__:' + json.dumps([user_id, name], ensure_ascii=False)
+
+    def get_concept(self, name, user_id=None):
+        name = self._concept_key(name, user_id)
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute('SELECT data FROM cognitive_concepts WHERE name=?', (name,)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def has_concept(self, name):
-        return self.get_concept(name) is not None
+    def has_concept(self, name, user_id=None):
+        return self.get_concept(name, user_id=user_id) is not None
 
-    def get_all_concepts(self):
+    def get_all_concepts(self, user_id=None):
         with sqlite3.connect(self.db_path) as conn:
-            return [row[0] for row in conn.execute('SELECT name FROM cognitive_concepts ORDER BY name')]
+            rows = conn.execute('SELECT name,data FROM cognitive_concepts ORDER BY name').fetchall()
+        return [json.loads(data).get('display_name', name) for name, data in rows
+                if json.loads(data).get('owner_user_id') == user_id]
 
-    def add_concept(self, name, data):
+    def add_concept(self, name, data, user_id=None):
         # Coalescence observations are not independently verified knowledge.
         record = dict(data, knowledge_verified=False)
+        if user_id is not None:
+            record.update(owner_user_id=user_id, display_name=name)
+        name = self._concept_key(name, user_id)
         encoded = json.dumps(record, default=self._json_default, ensure_ascii=False)
         with sqlite3.connect(self.db_path) as conn:
             conn.execute('INSERT OR IGNORE INTO cognitive_concepts(name,data) VALUES (?,?)', (name, encoded))
 
-    def update_concept(self, name, changes):
+    def update_concept(self, name, changes, user_id=None):
+        display_name = name
+        name = self._concept_key(name, user_id)
         with sqlite3.connect(self.db_path) as conn:
             # Lock before reading, otherwise concurrent read/modify/write updates
             # can overwrite fields saved by another connection in the meantime.
@@ -94,6 +111,8 @@ class KnowledgeMemory:
             record = json.loads(row[0]) if row else {}
             record.update(changes)
             record['knowledge_verified'] = False
+            if user_id is not None:
+                record.update(owner_user_id=user_id, display_name=display_name)
             conn.execute('INSERT OR REPLACE INTO cognitive_concepts(name,data) VALUES (?,?)',
                          (name, json.dumps(record, default=self._json_default, ensure_ascii=False)))
 
@@ -117,7 +136,7 @@ class KnowledgeMemory:
                         conn.execute('INSERT OR IGNORE INTO cognitive_concepts(name,data) VALUES (?,?)', (name, data))
             conn.execute('INSERT INTO knowledge_imports(source) VALUES (?)', (str(source),))
             
-    def store_knowledge(self, content: str, metadata: Optional[Dict] = None):
+    def store_knowledge(self, content: str, metadata: Optional[Dict] = None, *, delivery_event=None):
         """
         Memorizza una nuova conoscenza
         
@@ -129,11 +148,19 @@ class KnowledgeMemory:
         self._init_db()
         
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
+            if delivery_event is not None:
+                previous = conn.execute('SELECT knowledge_id FROM knowledge_delivery_events WHERE event=?', (delivery_event,)).fetchone()
+                if previous:
+                    return previous[0]
+            cursor = conn.execute(
                 "INSERT INTO knowledge (content, metadata) VALUES (?, ?)",
                 (content, json.dumps(metadata) if metadata else None)
             )
+            if delivery_event is not None:
+                conn.execute('INSERT INTO knowledge_delivery_events(event,knowledge_id) VALUES (?,?)',
+                             (delivery_event, cursor.lastrowid))
             conn.commit()
+            return cursor.lastrowid
             
     def get_knowledge_for_text(self, text: str, limit: int = 5) -> List[str]:
         """

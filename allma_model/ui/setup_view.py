@@ -37,6 +37,7 @@ class SetupView(Screen):
         # Start check on enter
         Clock.schedule_once(self.check_requirements, 0.5)
         self.intro.set_stage('Verifico il modello…','Controllo che i componenti siano pronti.',0)
+        self.intro.resume()
 
     def on_leave(self):
         self.intro.stop()
@@ -128,15 +129,18 @@ class SetupView(Screen):
         Clock.schedule_once(lambda dt: self._update_bar(model_key, current, total))
 
     def _update_bar(self, model_key, current, total):
-        percent = (current / total) * 100 if total > 0 else 0
+        percent = min(100, max(0, (current / total) * 100)) if total > 0 else 0
         self.ids.progress_bar.indeterminate = total <= 0
-        self.ids.progress_bar.value = percent
+        index = self.missing_models.index(model_key) if model_key in self.missing_models else 0
+        count = max(1, len(self.missing_models))
+        self.intro.set_progress(20 + 20 * (index + percent / 100) / count)
         mb_curr = current / (1024*1024)
         mb_tot = total / (1024*1024)
-        self.ids.details_label.text = f"{model_key}\n{mb_curr:.0f}MB / {mb_tot:.0f}MB ({percent:.0f}%)"
+        self.ids.details_label.text = (f"{model_key}\n{mb_curr:.0f} MB / {mb_tot:.0f} MB" if total > 0
+                                      else f"{model_key}\n{mb_curr:.0f} MB scaricati")
         
         # Pulse the status label to show activity
-        self.ids.status_label.text = f"Download al {percent:.0f}%"
+        self.ids.status_label.text = f"Download al {percent:.0f}%" if total > 0 else 'Scarico il modello…'
 
     def on_download_complete(self, success, error_msg):
         Clock.schedule_once(lambda dt: self._handle_complete(success, error_msg))

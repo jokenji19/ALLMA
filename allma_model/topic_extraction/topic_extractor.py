@@ -29,11 +29,12 @@ class TopicExtractor:
         """
         try:
             # Vettorizza il testo
-            text_vector = self.vectorizer.fit_transform([text])
+            local_vectorizer = SimpleTfidf(max_features=1000)
+            text_vector = local_vectorizer.fit_transform([text])
             
             # Estrai le parole chiave più rilevanti
-            feature_array = np.array(self.vectorizer.get_feature_names_out())
-            tfidf_sorting = np.argsort(text_vector.toarray()).flatten()[::-1]
+            feature_array = np.array(local_vectorizer.get_feature_names_out())
+            tfidf_sorting = np.argsort(text_vector).flatten()[::-1]
             
             # Prendi le prime N parole come topic
             n_words = 3
@@ -57,14 +58,9 @@ class TopicExtractor:
             keywords: Lista di parole chiave associate
         """
         self.topics.append((topic, keywords))
-        # Aggiorna i vettori dei topic
-        if self.topic_vectors is None:
-            self.topic_vectors = self.vectorizer.fit_transform([" ".join(keywords)])
-        else:
-            self.topic_vectors = np.vstack([
-                self.topic_vectors,
-                self.vectorizer.transform([" ".join(keywords)])
-            ])
+        # All known topics must share a vocabulary, including new terms.
+        self.topic_vectors = self.vectorizer.fit_transform([
+            ' '.join(words) for _, words in self.topics])
 
     def find_similar_topic(self, text: str, threshold: float = 0.5) -> Optional[str]:
         """

@@ -1,102 +1,55 @@
-"""
-Device temperature monitoring for Android
-Reads CPU and battery temperature sensors
-"""
-
+"""Read identified Android thermal sensors; never fabricate temperatures."""
 from kivy.utils import platform
+import glob
 import logging
+import math
+import os
+import time
+
 
 class TemperatureMonitor:
-    """Monitor device temperature on Android"""
-    
     def __init__(self):
         self.is_android = platform == 'android'
-        
-        if self.is_android:
-            logging.info("✅ TemperatureMonitor initialized (Android)")
-    
+        self.cpu_source = None
+
     def get_temperatures(self):
-        """
-        Get current device temperatures
-        
-        Returns:
-            dict: {'cpu': float, 'battery': float} in Celsius
-        """
+        result = {'cpu': None, 'battery': None,
+                  'cpu_source': 'unavailable', 'battery_source': 'unavailable',
+                  'sampled_at': time.time()}
         if not self.is_android:
-            # Fallback for desktop testing
-            import random
-            return {
-                'cpu': round(random.uniform(35, 55), 1),
-                'battery': round(random.uniform(30, 40), 1)
-            }
-        
+            return result
         try:
-            # ROBUST METHOD: Use Sticky Intent for Battery
             from jnius import autoclass
-            Intent = autoclass('android.content.Intent')
-            IntentFilter = autoclass('android.content.IntentFilter')
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            
-            activity = PythonActivity.mActivity
-            filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-            battery_status = activity.registerReceiver(None, filter)
-            
-            if battery_status:
-                raw_temp = battery_status.getIntExtra("temperature", 0)
-                battery_temp = raw_temp / 10.0
-            else:
-                battery_temp = 25.0 # Fallback
-            
-            # CPU temperature: Try reading from thermal zones or estimate
-            cpu_temp = self._get_cpu_temperature(battery_temp)
-            
-            return {
-                'cpu': round(cpu_temp, 1),
-                'battery': round(battery_temp, 1)
-            }
-            
-        except Exception as e:
-            logging.error(f"Error getting temperature: {e}")
-            return {
-                'cpu': 0.0,
-                'battery': 0.0
-            }
-    
-    def _get_cpu_temperature(self, battery_temp):
-        """
-        Read CPU temperature from thermal zone files
-        Android exposes these in /sys/class/thermal/
-        """
-        try:
-            # Common thermal zone paths for CPU
-            thermal_paths = [
-                '/sys/class/thermal/thermal_zone0/temp',
-                '/sys/class/thermal/thermal_zone1/temp',
-                '/sys/devices/virtual/thermal/thermal_zone0/temp',
-                # Some Samsung specific
-                '/sys/class/thermal/thermal_zone7/temp', # Often CPU on newer SOCs
-            ]
-            
-            for path in thermal_paths:
-                try:
-                    import os
-                    if os.path.exists(path):
-                        with open(path, 'r') as f:
-                            content = f.read().strip()
-                            if content:
-                                temp_raw = int(content)
-                                # Temperature is in millidegrees, convert to Celsius
-                                temp_celsius = temp_raw / 1000.0
-                                
-                                # Sanity check (20-100°C range)
-                                if 20 <= temp_celsius <= 100:
-                                    return temp_celsius
-                except (FileNotFoundError, ValueError, PermissionError):
+            intent = autoclass('android.content.Intent')
+            intent_filter = autoclass('android.content.IntentFilter')
+            activity = autoclass('org.kivy.android.PythonActivity').mActivity
+            status = activity.registerReceiver(None, intent_filter(intent.ACTION_BATTERY_CHANGED))
+            if status:
+                raw = status.getIntExtra('temperature', -1)
+                if 0 < raw <= 1000:
+                    result['battery'] = raw / 10.0
+                    result['battery_source'] = 'android_battery_intent'
+        except Exception as error:
+            logging.debug('Battery temperature unavailable: %s', error)
+        result['cpu'] = self._get_cpu_temperature(result['battery'])
+        if result['cpu'] is not None:
+            result['cpu_source'] = self.cpu_source
+        return result
+
+    def _get_cpu_temperature(self, battery_temp=None):
+        self.cpu_source = None
+        for zone in sorted(glob.glob('/sys/class/thermal/thermal_zone*')):
+            try:
+                with open(os.path.join(zone, 'type')) as stream:
+                    sensor_type = stream.read().strip().lower()
+                # thermal_zone0 is not necessarily CPU: accept identified SoC sensors.
+                if not any(label in sensor_type for label in ('cpu', 'soc', 'ap_therm', 'cluster')):
                     continue
-            
-            # Fallback: CPU usually 5-15°C hotter than battery during processing
-            return battery_temp + 10.0
-            
-        except Exception as e:
-            logging.warning(f"Could not read CPU temperature: {e}")
-            return battery_temp + 8.0
+                with open(os.path.join(zone, 'temp')) as stream:
+                    value = float(stream.read().strip()) / 1000.0
+                if math.isfinite(value) and 0 < value <= 125:
+                    self.cpu_source = 'thermal:' + sensor_type
+                    return round(value, 1)
+            except (OSError, ValueError):
+                continue
+        return None
