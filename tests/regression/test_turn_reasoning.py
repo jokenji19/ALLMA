@@ -2,6 +2,7 @@ from types import SimpleNamespace as T
 from unittest.mock import Mock
 import threading
 import time
+import shutil
 
 import pytest
 
@@ -62,7 +63,7 @@ def test_reference_normalization_preserves_original_request_and_quoted_user_data
 def test_unresolved_turn_ui_and_edit_preserve_user_draft():
     import subprocess
     from pathlib import Path
-    subprocess.run(['/opt/homebrew/opt/node@24/bin/node','tests/regression/unresolved_turn_checks.cjs'],
+    subprocess.run([shutil.which('node') or 'node','tests/regression/unresolved_turn_checks.cjs'],
         cwd=Path(__file__).resolve().parents[2],check=True,capture_output=True,text=True)
 
 

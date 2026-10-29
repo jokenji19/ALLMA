@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace as T
 from unittest.mock import Mock
 import json
+import shutil
 import sqlite3
 import threading
 import time
@@ -402,7 +403,7 @@ def test_consent_not_in_portable_backup_or_android_allowlists():
 
 def test_ui_preference_and_citations_use_core_confirmation_and_safe_text():
     import subprocess
-    subprocess.run(['/opt/homebrew/opt/node@24/bin/node','tests/regression/web_reference_checks.cjs'],cwd=ROOT,check=True,capture_output=True,text=True)
+    subprocess.run([shutil.which('node') or 'node','tests/regression/web_reference_checks.cjs'],cwd=ROOT,check=True,capture_output=True,text=True)
 
 
 def test_isolated_android_diagnostic_preserves_user_grant_and_never_loads_a_model(tmp_path,monkeypatch):

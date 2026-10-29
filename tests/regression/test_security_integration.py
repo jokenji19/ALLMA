@@ -2,6 +2,7 @@
 import ast
 import copy
 import json
+import shutil
 import logging
 import pickle
 import subprocess
@@ -243,5 +244,5 @@ def test_cancel_is_prompt_even_before_http_headers_and_late_output_is_discarded(
 
 
 def test_ui_uses_chat_envelopes_and_never_reenables_saved_browser_dream_preference():
-    subprocess.run(['/opt/homebrew/opt/node@24/bin/node',str(ROOT/'tests/regression/security_ui_checks.cjs')],
+    subprocess.run([shutil.which('node') or 'node',str(ROOT/'tests/regression/security_ui_checks.cjs')],
                    cwd=ROOT,check=True,capture_output=True,text=True)

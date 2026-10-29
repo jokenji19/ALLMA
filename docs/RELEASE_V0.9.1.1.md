@@ -13,10 +13,13 @@ Aggiornamento del 29 ottobre 2026. Versione Android `0.9.1.1`, versionCode `1025
 - Ricerca Internet opzionale e disattivabile: consenso, rinuncia per singolo turno, fonti pubbliche distinte dai ricordi, indicatore visivo del suo utilizzo, accessi limitati e cancellabili.
 - Protezione del collegamento fra interfaccia e motore, delle risorse WebView, dei download e della memoria visiva; eliminazione del caricamento automatico di vecchi file pickle.
 - Migliore avvio iniziale e diagnostiche estese, con cause di interruzione distinte e campioni termici espliciti.
+- Test JavaScript indipendenti dai percorsi del Mac, per la verifica su ambienti GitHub/Linux.
 
 ## Verifiche e limiti
 
 La suite completa locale del 29 ottobre ha superato 3.296 casi senza fallimenti, con 15 esclusioni già presenti. Dopo la correzione del rapporto diagnostico sono stati verificati nuovamente 84 casi dedicati, di cui tre nuovi: **3.299 casi distinti superati**, nessun fallimento. I test ripetuti non sono sommati due volte. I conteggi misurano scenari software e non l'intelligenza o l'affidabilità universale.
+
+La preparazione della release ha inoltre ripetuto 146 controlli di build, aggiornamento e dialogo, poi 179 controlli sui percorsi portabili, sulle fonti e sulla revisione: tutti superati. Queste ripetizioni non aumentano il totale dei casi distinti.
 
 La build applicativa 102592 contiene lo stesso codice funzionale di questa release: qui sono aggiornati nome e numero di versione. L'APK è ricompilata e verificata prima della pubblicazione. Il più recente collaudo del dialogo con il modello reale è stato fermato prima delle richieste dalla protezione termica Android: zero risposte eseguite, non un test di qualità superato. Restano validi i risultati Android documentati delle precedenti prove specifiche, con i rispettivi dispositivi e protocolli.
 
