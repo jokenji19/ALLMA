@@ -53,7 +53,7 @@ class Document(HTMLParser):
 def test_sidebar_destinations_are_internal_pages_and_all_benchmark_choices_remain():
     doc=Document();doc.feed((ROOT/'assets/web/index.html').read_text())
     assert len(doc.ids)==len(set(doc.ids))
-    assert set(doc.screens)=={'settings','memory','dream','voice','profile','diagnostics'}
+    assert set(doc.screens)=={'settings','memory','dream','voice','profile','diagnostics','learning'}
     assert not doc.popups
     assert {'model-choice','backup-auto','notification-toggle','dream-mode-toggle','benchmark-start','decider-toggle','voice-mic-btn'}<=set(doc.ids)
     assert len(doc.options)==len(set(doc.options))

@@ -8,6 +8,8 @@ from collections import defaultdict
 import logging
 import copy
 import json
+import sqlite3
+import inspect
 from pathlib import Path
 import numpy as np
 from allma_model.utils.text_processing import SimpleTfidf, cosine_similarity
@@ -26,6 +28,7 @@ def synchronized(method):
 
 def learning_transaction(method):
     """Copy map roots; mutators copy only the topic/user they actually change."""
+    signature=inspect.signature(method)
     @wraps(method)
     def call(self, *args, **kwargs):
         with self._lock:
@@ -34,6 +37,15 @@ def learning_transaction(method):
             previous = {key: getattr(self, key) for key in fields}
             dirty = self._index_dirty
             checkpoint = self.delivery_checkpoint
+            transaction=self._learning_transaction
+            if self._store is not None:
+                if transaction is not None:raise RuntimeError('Nested learning mutation is not supported')
+                values=signature.bind(self,*args,**kwargs).arguments
+                if 'unit' in values:topic=values['unit'].topic
+                elif 'interaction' in values:topic=_interaction_topic(values['interaction'])
+                else:topic=values['topic']
+                if method.__name__=='add_response_variants':topic=topic.lower().strip()
+                self._learning_transaction=(topic,values.get('user_id'),previous)
             for key, value in previous.items():
                 setattr(self, key, copy.copy(value))
             try:
@@ -44,7 +56,17 @@ def learning_transaction(method):
                 self._index_dirty = dirty
                 self.delivery_checkpoint = checkpoint
                 raise
+            finally:
+                self._learning_transaction=transaction
     return call
+
+
+def _interaction_topic(interaction):
+    topic=interaction.get('topic') or ''
+    if not topic:
+        words=interaction.get('input','').lower().split()
+        topic=next((word for word in words if len(word)>3 and word not in {'want','need','help','please','could','would'}),'general')
+    return topic.lower().strip()
 
 
 class ConfidenceLevel(Enum):
@@ -81,10 +103,28 @@ class KnowledgeState:
     last_updated: datetime
     metadata: Dict = field(default_factory=dict)
 
+def decode_learning_unit(topic, row):
+    if (not isinstance(topic, str) or not topic or not isinstance(row, dict)
+            or row.get('topic') != topic or not isinstance(row.get('content'), str)
+            or not isinstance(row.get('source'), str) or not isinstance(row.get('metadata', {}), dict)
+            or type(row.get('confidence')) is not int):
+        raise ValueError('Invalid learning unit')
+    return LearningUnit(topic, row['content'], row['source'], ConfidenceLevel(row['confidence']),
+        datetime.fromisoformat(row['timestamp']), row.get('metadata', {}))
+
+
+def decode_learning_feedback(item):
+    if not isinstance(item, list) or len(item) not in (2, 3):
+        raise ValueError('Invalid feedback history')
+    if len(item) == 3:
+        return (FeedbackType(item[0]), item[1], datetime.fromisoformat(item[2]))
+    return (item[0], datetime.fromisoformat(item[1]))
+
+
 class IncrementalLearner:
     """Sistema di apprendimento incrementale."""
     
-    def __init__(self, storage_path: str = None):
+    def __init__(self, storage_path: str = None, *, legacy_path=None):
         """Inizializza il sistema di apprendimento."""
         self.knowledge_base = {}  # topic -> List[LearningUnit]
         self.knowledge_states: Dict[str, KnowledgeState] = {}
@@ -102,57 +142,150 @@ class IncrementalLearner:
         self.responses_pool: Dict[str, List[str]] = {}  # topic → [variant1, variant2, ...]
         # Persistenza su disco
         self.storage_path = storage_path
+        self._store=None
+        self._learning_transaction=None
         self.load_error = None
         self._index_dirty = False
         self.delivery_checkpoint = 0
+        if storage_path and Path(storage_path).suffix=='.db':
+            from .learning_store import LearningStore
+            self._store=LearningStore(storage_path,legacy_path or Path(storage_path).with_suffix('.json'),self._normalize_payload)
         if self.storage_path:
             self.load_state()
         
     @synchronized
+    def flush_state(self) -> None:
+        """Wait for synchronous learning commits without rewriting their snapshot.
+
+        Every public mutation commits before returning and holds this same lock.
+        Direct edits to exported objects still require an explicit save_state().
+        A failed load remains an error rather than an apparently successful flush.
+        """
+        if self.load_error is not None:
+            raise StateRecoveryRequired('Archivio di apprendimento da recuperare prima di salvare') from self.load_error
+        if self._store is not None:self._store.check_current_generation()
+
+    @synchronized
     def save_state(self) -> None:
-        """Serializza knowledge_states e success_counters su JSON per la persistenza."""
+        """Commit the active API delta, or an explicit full save for manual edits."""
         if not self.storage_path:
             return
         if self.load_error is not None:
             raise StateRecoveryRequired('Archivio di apprendimento da recuperare prima di salvare') from self.load_error
         try:
-            data = {
-                "schema_version": 2,
-                "delivery_checkpoint": self.delivery_checkpoint,
-                "knowledge_base": {t: [{
-                    "topic": u.topic, "content": u.content, "source": u.source,
-                    "confidence": u.confidence.value, "timestamp": u.timestamp.isoformat(),
-                    "metadata": u.metadata} for u in units]
-                    for t, units in self.knowledge_base.items()},
-                "knowledge_states": {
-                    t: {
-                        "topic": s.topic,
-                        "content": s.content,
-                        "confidence": s.confidence.value,
-                        "sources": list(s.sources),
-                        "last_updated": s.last_updated.isoformat(),
-                        "feedback_history": [
-                            [v.value if isinstance(v, Enum) else v.isoformat() if isinstance(v, datetime) else v for v in row]
-                            for row in s.feedback_history],
-                        "improvement_areas": sorted(s.improvement_areas),
-                        "metadata": s.metadata
-                    }
-                    for t, s in self.knowledge_states.items()
-                },
-                "success_counters": self.success_counters,
-                "responses_pool": self.responses_pool,
-                "user_progress": {u: {
-                    "topics": sorted(p["topics"]),
-                    "confidence_levels": {k.value: v for k, v in p["confidence_levels"].items()},
-                    "recent_learning": p["recent_learning"],
-                    "improvement_areas": sorted(p["improvement_areas"])
-                } for u, p in self.user_progress.items()}
-            }
-            atomic_write_json(self.storage_path, data)
+            if self._store is not None:
+                if self._learning_transaction is not None:
+                    self._store.apply(self,self._learning_transaction)
+                    topic, user, _ = self._learning_transaction
+                    # In-memory invalidation cannot fail after the durable commit.
+                    # Unrelated manual overlays remain available for explicit save.
+                    for name in ('knowledge_base','knowledge_states','success_counters','responses_pool'):
+                        mapping = getattr(self, name)
+                        if hasattr(mapping, 'committed'):mapping.committed(topic)
+                    if hasattr(self.user_progress, 'committed') and user is not None:self.user_progress.committed(user)
+                else:
+                    self._store.replace(self._snapshot())
+                    for name in ('knowledge_base','knowledge_states','success_counters','responses_pool','user_progress'):
+                        mapping = getattr(self, name)
+                        if hasattr(mapping, 'full_committed'):mapping.full_committed()
+            else:atomic_write_json(self.storage_path,self._snapshot())
             logging.info(f"[IncrementalLearner] State saved ({len(self.knowledge_states)} topics).")
         except Exception as e:
             logging.warning('[IncrementalLearner] save_state failed: %s', type(e).__name__)
             raise
+    def _normalize_payload(self,data):
+        from types import SimpleNamespace
+        states,base,progress,counters,pools,checkpoint=self._decode_snapshot(data)
+        return type(self)._snapshot(SimpleNamespace(knowledge_states=states,knowledge_base=base,
+            user_progress=progress,success_counters=counters,responses_pool=pools,delivery_checkpoint=checkpoint))
+
+    def _snapshot(self):
+        return {
+            "schema_version": 2,
+            "delivery_checkpoint": self.delivery_checkpoint,
+            "knowledge_base": {t: [{
+                "topic": u.topic, "content": u.content, "source": u.source,
+                "confidence": u.confidence.value, "timestamp": u.timestamp.isoformat(),
+                "metadata": u.metadata} for u in units]
+                for t, units in self.knowledge_base.items()},
+            "knowledge_states": {
+                t: {
+                    "topic": s.topic,
+                    "content": s.content,
+                    "confidence": s.confidence.value,
+                    "sources": list(s.sources),
+                    "last_updated": s.last_updated.isoformat(),
+                    "feedback_history": [
+                        [v.value if isinstance(v, Enum) else v.isoformat() if isinstance(v, datetime) else v for v in row]
+                        for row in s.feedback_history],
+                    "improvement_areas": sorted(s.improvement_areas),
+                    "metadata": s.metadata
+                }
+                for t, s in self.knowledge_states.items()
+            },
+            "success_counters": dict(self.success_counters),
+            "responses_pool": dict(self.responses_pool),
+            "user_progress": {u: {
+                "topics": sorted(p["topics"]),
+                "confidence_levels": {k.value: v for k, v in p["confidence_levels"].items()},
+                "recent_learning": list(p["recent_learning"]),
+                "improvement_areas": sorted(p["improvement_areas"])
+            } for u, p in self.user_progress.items()}
+        }
+
+    def _decode_snapshot(self, data):
+        checkpoint = data.get('delivery_checkpoint', 0) if isinstance(data, dict) else 0
+        if type(checkpoint) is not int or not 0 <= checkpoint < 2 ** 53:
+            raise ValueError('Invalid learning checkpoint')
+        if not isinstance(data, dict) or type(data.get('schema_version', 1)) is not int or data.get('schema_version', 1) not in (1, 2) or (not isinstance(data.get('knowledge_states'), dict)):
+            raise ValueError('Invalid learning schema')
+        states, base = ({}, {})
+        for topic, row in data['knowledge_states'].items():
+            if not isinstance(topic, str) or not topic or (not isinstance(row, dict)) or (row.get('topic') != topic) or (not isinstance(row.get('content'), str)) or (not isinstance(row.get('metadata', {}), dict)) or (type(row.get('confidence')) is not int):
+                raise ValueError('Invalid knowledge state')
+            sources = row.get('sources', [])
+            areas = row.get('improvement_areas', [])
+            if not isinstance(sources, list) or not isinstance(areas, list) or any((not isinstance(v, str) for v in sources + areas)):
+                raise ValueError('Invalid knowledge sources')
+            history = []
+            for item in row.get('feedback_history', []):
+                history.append(decode_learning_feedback(item))
+            states[topic] = KnowledgeState(topic, row['content'], ConfidenceLevel(row['confidence']), set(sources), history, set(areas), datetime.fromisoformat(row['last_updated']), row.get('metadata', {}))
+        if 'knowledge_base' in data:
+            if not isinstance(data['knowledge_base'], dict):
+                raise ValueError('Invalid knowledge base')
+            for topic, rows in data['knowledge_base'].items():
+                if not isinstance(topic, str) or not topic or (not isinstance(rows, list)):
+                    raise ValueError('Invalid knowledge units')
+                units = []
+                for row in rows:
+                    units.append(decode_learning_unit(topic, row))
+                base[topic] = units
+        else:
+            for topic, state in states.items():
+                base[topic] = [LearningUnit(topic, state.content, next(iter(sorted(state.sources)), 'legacy'), state.confidence, state.last_updated, dict(state.metadata))]
+        progress = defaultdict(self._progress_factory)
+        for user, row in data.get('user_progress', {}).items():
+            if not isinstance(user, str) or not isinstance(row, dict):
+                raise ValueError('Invalid user progress')
+            value = progress[user]
+            for key in ('topics', 'improvement_areas'):
+                entries = row.get(key, [])
+                if not isinstance(entries, list) or any((not isinstance(v, str) for v in entries)):
+                    raise ValueError('Invalid progress topics')
+                value[key] = set(entries)
+            recent = row.get('recent_learning', [])
+            if not isinstance(recent, list) or any((not isinstance(v, dict) or not all((k in v for k in ('topic', 'confidence', 'timestamp'))) for v in recent)):
+                raise ValueError('Invalid recent learning')
+            value['recent_learning'] = recent
+            for key, count in row.get('confidence_levels', {}).items():
+                if type(count) is not int or count < 0:
+                    raise ValueError('Invalid confidence count')
+                value['confidence_levels'][ConfidenceLevel(int(key))] = count
+        counters, pools = (data.get('success_counters', {}), data.get('responses_pool', {}))
+        if not isinstance(counters, dict) or any((not isinstance(k, str) or type(v) is not int or v < 0 for k, v in counters.items())) or (not isinstance(pools, dict)) or any((not isinstance(k, str) or not isinstance(v, list) or any((not isinstance(t, str) for t in v)) for k, v in pools.items())):
+            raise ValueError('Invalid learning counters or variants')
+        return (states, base, progress, counters, pools, checkpoint)
 
     @staticmethod
     def _progress_factory():
@@ -165,85 +298,19 @@ class IncrementalLearner:
         if not self.storage_path:
             return True
         path = Path(self.storage_path)
-        if not path.exists():
+        if self._store is None and not path.exists():
             return self.load_error is None
         try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-            checkpoint = data.get('delivery_checkpoint', 0) if isinstance(data, dict) else 0
-            if type(checkpoint) is not int or not 0 <= checkpoint < 2**53:
-                raise ValueError('Invalid learning checkpoint')
-            if (not isinstance(data, dict) or type(data.get('schema_version', 1)) is not int
-                    or data.get('schema_version', 1) not in (1, 2)
-                    or not isinstance(data.get('knowledge_states'), dict)):
-                raise ValueError('Invalid learning schema')
-            states, base = {}, {}
-            for topic, row in data['knowledge_states'].items():
-                if (not isinstance(topic, str) or not topic or not isinstance(row, dict)
-                        or row.get('topic') != topic or not isinstance(row.get('content'), str)
-                        or not isinstance(row.get('metadata', {}), dict)
-                        or type(row.get('confidence')) is not int):
-                    raise ValueError('Invalid knowledge state')
-                sources = row.get('sources', [])
-                areas = row.get('improvement_areas', [])
-                if (not isinstance(sources, list) or not isinstance(areas, list)
-                        or any(not isinstance(v, str) for v in sources + areas)):
-                    raise ValueError('Invalid knowledge sources')
-                history = []
-                for item in row.get('feedback_history', []):
-                    if not isinstance(item, list) or len(item) not in (2, 3):
-                        raise ValueError('Invalid feedback history')
-                    if len(item) == 3:
-                        history.append((FeedbackType(item[0]), item[1], datetime.fromisoformat(item[2])))
-                    else:
-                        history.append((item[0], datetime.fromisoformat(item[1])))
-                states[topic] = KnowledgeState(topic, row['content'], ConfidenceLevel(row['confidence']),
-                    set(sources), history, set(areas), datetime.fromisoformat(row['last_updated']), row.get('metadata', {}))
-            if 'knowledge_base' in data:
-                if not isinstance(data['knowledge_base'], dict):
-                    raise ValueError('Invalid knowledge base')
-                for topic, rows in data['knowledge_base'].items():
-                    if not isinstance(topic, str) or not topic or not isinstance(rows, list):
-                        raise ValueError('Invalid knowledge units')
-                    units = []
-                    for row in rows:
-                        if (not isinstance(row, dict) or row.get('topic') != topic
-                                or not isinstance(row.get('content'), str) or not isinstance(row.get('source'), str)
-                                or not isinstance(row.get('metadata', {}), dict) or type(row.get('confidence')) is not int):
-                            raise ValueError('Invalid learning unit')
-                        units.append(LearningUnit(topic, row['content'], row['source'], ConfidenceLevel(row['confidence']),
-                            datetime.fromisoformat(row['timestamp']), row.get('metadata', {})))
-                    base[topic] = units
+            if self._store is not None:
+                views, checkpoint = self._store.load_paged()
+                states, base, progress, counters, pools = views
             else:
-                for topic, state in states.items():
-                    base[topic] = [LearningUnit(topic, state.content, next(iter(sorted(state.sources)), 'legacy'),
-                        state.confidence, state.last_updated, dict(state.metadata))]
-            progress = defaultdict(self._progress_factory)
-            for user, row in data.get('user_progress', {}).items():
-                if not isinstance(user, str) or not isinstance(row, dict):
-                    raise ValueError('Invalid user progress')
-                value = progress[user]
-                for key in ('topics', 'improvement_areas'):
-                    entries = row.get(key, [])
-                    if not isinstance(entries, list) or any(not isinstance(v, str) for v in entries):
-                        raise ValueError('Invalid progress topics')
-                    value[key] = set(entries)
-                recent = row.get('recent_learning', [])
-                if not isinstance(recent, list) or any(not isinstance(v, dict) or not all(k in v for k in ('topic','confidence','timestamp')) for v in recent):
-                    raise ValueError('Invalid recent learning')
-                value['recent_learning'] = recent
-                for key, count in row.get('confidence_levels', {}).items():
-                    if type(count) is not int or count < 0:
-                        raise ValueError('Invalid confidence count')
-                    value['confidence_levels'][ConfidenceLevel(int(key))] = count
-            counters, pools = data.get('success_counters', {}), data.get('responses_pool', {})
-            if (not isinstance(counters, dict) or any(not isinstance(k, str) or type(v) is not int or v < 0 for k,v in counters.items())
-                    or not isinstance(pools, dict) or any(not isinstance(k,str) or not isinstance(v,list)
-                       or any(not isinstance(t,str) for t in v) for k,v in pools.items())):
-                raise ValueError('Invalid learning counters or variants')
-        except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
+                data = json.loads(path.read_text(encoding='utf-8'))
+                states, base, progress, counters, pools, checkpoint = self._decode_snapshot(data)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError,sqlite3.Error,StateRecoveryRequired) as error:
             self.load_error = error
             try:
-                preserve_invalid_file(path)
+                if self._store is None:preserve_invalid_file(path)
             except OSError:
                 logging.warning('[IncrementalLearner] Cannot preserve invalid archive')
             logging.warning('[IncrementalLearner] Archive unavailable: %s', type(error).__name__)
@@ -440,6 +507,8 @@ class IncrementalLearner:
         """
         if not query.strip():
             return []
+        if self._store is not None:
+            return self._store.related_units(query, threshold, user_id)
         self._ensure_index()
         if not self.topic_vectors:
             return []
@@ -543,13 +612,7 @@ class IncrementalLearner:
         
         # Usa il topic fornito dal chiamante (già estratto con topic_extractor)
         # Fallback: prima parola significativa dal testo
-        topic = interaction.get('topic') or ''
-        if not topic:
-            words = input_text.lower().split()
-            topic = next((word for word in words 
-                         if len(word) > 3 and word not in {'want', 'need', 'help', 'please', 'could', 'would'}), 
-                        'general')
-        topic = topic.lower().strip()
+        topic = _interaction_topic(interaction)
         
         # Crea una nuova unità di apprendimento
         unit = LearningUnit(
@@ -684,10 +747,10 @@ class IncrementalLearner:
                 
         # Se non trova nulla, cerca nei topic simili
         if not knowledge:
-            for t, units in self.knowledge_base.items():
+            for t in self.knowledge_base:
                 similarity = self._calculate_similarity(topic, t)
                 if similarity > 0.5:  # Soglia di similarità più alta per topic diretti
-                    for unit in units:
+                    for unit in self.knowledge_base[t]:
                         if not self._belongs_to_user(unit, user_id):
                             continue
                         knowledge.append({

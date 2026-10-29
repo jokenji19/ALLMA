@@ -15,8 +15,11 @@ def retrieve_user_memory(memory, user_id, message):
     is evidence of what a user said, not independent verification of world facts.
     """
     if getattr(memory, 'vector_engine', None) is not None:
-        raw = memory.vector_engine.search(user_id=user_id, query=message, top_k=3,
-                                         use_expansion=True, allowed_roles=('user',), exclude_query_replays=True)
+        if callable(getattr(memory,'search_user_reports',None)):
+            raw=memory.search_user_reports(user_id,message,top_k=3)
+        else:
+            raw = memory.vector_engine.search(user_id=user_id, query=message, top_k=3,
+                                             use_expansion=True, allowed_roles=('user',), exclude_query_replays=True)
     else:
         raw = []
         for score, record in memory.retrieve_relevant_context(message, user_id=user_id, max_results=3, exclude_query_replays=True):

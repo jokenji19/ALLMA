@@ -4,11 +4,14 @@ Plain state-first prompt and temperature follow Mapika/decider-0.8b v1.
 The Q4 checkpoint is a third-party conversion; its confidence needs local validation.
 """
 from dataclasses import dataclass
-import hashlib
+from contextlib import nullcontext
+import logging
 import math
 from pathlib import Path
 import threading
 import time
+from allma_model.utils.model_integrity import verified_models
+from allma_model.llm.native_backend import native_work
 
 
 DECIDER_MODEL = {
@@ -41,24 +44,43 @@ class LocalDecisionEngine:
         self.n_ctx = n_ctx
         self.min_confidence, self.min_margin = min_confidence, min_margin
         self._native = None
+        self._native_guard = None
+        self.backend_info = {'kind':'cpu','reason':'not_loaded'}
+        self.load_metrics = {}
         self._lock = threading.Lock()
 
+    @native_work
     def load(self):
         with self._lock:
             if self._native is not None:
                 return
+            start = time.perf_counter()
             if self.path.stat().st_size != DECIDER_MODEL['size_bytes']:
                 raise ValueError('Decider size mismatch')
-            with self.path.open('rb') as handle:
-                if hashlib.file_digest(handle, 'sha256').hexdigest() != DECIDER_MODEL['sha256']:
-                    raise ValueError('Decider checksum mismatch')
+            if not verified_models.valid(self.path, DECIDER_MODEL):
+                raise ValueError('Decider checksum mismatch or file changed')
+            verified = time.perf_counter()
             factory = self.factory
+            from allma_model.llm.native_backend import BackendChoice
+            choice = BackendChoice(reason='decision_cpu')
             if factory is None:
+                from allma_model.llm.decision_backend import prepare_android_backend
+                choice = prepare_android_backend()
                 from llama_cpp import Llama
                 factory = Llama
-            native = factory(model_path=str(self.path), n_ctx=self.n_ctx, n_batch=self.n_ctx,
-                             n_threads=2, n_threads_batch=2, n_gpu_layers=0,
-                             logits_all=False, verbose=False)
+                if choice.device_ids is not None and not getattr(factory,'_allma_explicit_devices',False):
+                    raise RuntimeError('Bundled runtime lacks Decider device isolation')
+            prepared = time.perf_counter()
+            arguments = dict(model_path=str(self.path), n_ctx=self.n_ctx, n_batch=self.n_ctx,
+                             n_threads=2, n_threads_batch=2, logits_all=False, verbose=False)
+            try:
+                with choice.guard.operation() if choice.guard else nullcontext():
+                    native = factory(**dict(arguments, **choice.kwargs))
+            except Exception:
+                if choice.kind!='hexagon':raise
+                choice = choice.cpu_fallback('npu_model_initialization_failed')
+                native = factory(**dict(arguments, **choice.kwargs))
+            loaded = time.perf_counter()
             try:
                 self._labels = []
                 for label in 'ABCDEFGH':
@@ -68,11 +90,23 @@ class LocalDecisionEngine:
                     self._labels.append(ids[0])
                 if len(set(self._labels)) != 8:
                     raise ValueError('Duplicate decision label tokens')
+                self._native_guard = choice.guard
+                self.backend_info = {'kind':choice.kind,'reason':choice.reason}
                 self._native = native
+                finished = time.perf_counter()
+                self.load_metrics = {'verification_ms': (verified-start)*1000,
+                                     'backend_ms': (prepared-verified)*1000,
+                                     'model_ms': (loaded-prepared)*1000,
+                                     'labels_ms': (finished-loaded)*1000,
+                                     'total_ms': (finished-start)*1000}
+                logging.info('[DeciderBackend] backend=%s reason=%s',choice.kind,choice.reason)
+                logging.info('[DeciderLoad] backend=%s verification_ms=%.1f backend_ms=%.1f model_ms=%.1f labels_ms=%.1f total_ms=%.1f',
+                             choice.kind, *self.load_metrics.values())
             except Exception:
                 native.close()
                 raise
 
+    @native_work
     def decide(self, state, question, options, *, cancel_event=None):
         if not isinstance(state, str) or len(state) > 8000:
             raise ValueError('Decision state must be text up to 8000 characters')
@@ -92,6 +126,10 @@ class LocalDecisionEngine:
             native = self._native
             if native is None:
                 return Decision(None, {}, 'unavailable', 0)
+            if self.backend_info.get('kind')=='hexagon':
+                from allma_model.llm.decision_backend import android_thermal_status
+                if android_thermal_status() not in (0,1):
+                    return Decision(None, {}, 'thermal_pause', 0)
             # Match the upstream two-piece tokenization, without a chat template.
             head = native.tokenize(('Context:\n' + state).encode(), add_bos=False, special=False)
             suffix = '\n\nQuestion: ' + question + '\nOptions:'
@@ -102,18 +140,18 @@ class LocalDecisionEngine:
                 return Decision(None, {}, 'context_limit', 0)
             # Explicit native memory clearing also supports wrappers whose
             # reset() only resets the Python token counter.
-            if self.factory is None:
-                import llama_cpp as L
-                L.llama_memory_clear(L.llama_get_memory(native._ctx.ctx), True)
-            native.reset()
-            if cancel_event is not None and cancel_event.is_set():
-                return Decision(None, {}, 'cancelled', 0)
-            native.eval(tokens)
-            # With logits_all=False, current llama-cpp-python does not populate
-            # Python scores. Read the final output row from the native context.
-            row = native._ctx.get_logits()
-            logits = [float(row[token]) / 1.03
-                      for token in self._labels[:len(options)]]
+            with self._native_guard.operation() if self._native_guard else nullcontext():
+                if self.factory is None:
+                    import llama_cpp as L
+                    L.llama_memory_clear(L.llama_get_memory(native._ctx.ctx), True)
+                native.reset()
+                if cancel_event is not None and cancel_event.is_set():
+                    return Decision(None, {}, 'cancelled', 0)
+                native.eval(tokens)
+                # Copy the bounded label scores while the native guard is held.
+                row = native._ctx.get_logits()
+                logits = [float(row[token]) / 1.03
+                          for token in self._labels[:len(options)]]
             if not all(math.isfinite(value) for value in logits):
                 return Decision(None, {}, 'invalid_scores', (time.perf_counter()-start)*1000)
             weights = [math.exp(value - max(logits)) for value in logits]
@@ -129,8 +167,13 @@ class LocalDecisionEngine:
         finally:
             self._lock.release()
 
+    @native_work
     def close(self):
         with self._lock:
             if self._native is not None:
-                self._native.close()
-                self._native = None
+                try:
+                    with self._native_guard.operation() if self._native_guard else nullcontext():
+                        self._native.close()
+                finally:
+                    self._native = None
+                    self._native_guard = None

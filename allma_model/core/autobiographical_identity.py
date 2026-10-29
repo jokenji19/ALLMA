@@ -22,10 +22,10 @@ def normalized(text):
 
 
 def user_events(memory, user_id):
-    with memory.lock:
-        return [m for m in memory.messages if m.role == 'user'
-                and (m.user_id or m.metadata.get('user_id')) == user_id
-                and m.metadata.get('is_valid') is not False]
+    from allma_model.memory_system.paged_history import HistorySelection
+    return HistorySelection(memory.messages,lambda m:m.role=='user'
+        and (m.user_id or m.metadata.get('user_id'))==user_id
+        and m.metadata.get('is_valid') is not False)
 
 
 def declared_name(text):
@@ -46,6 +46,12 @@ def grounded_reply(message, memory, user_id, profile=None):
                  'dimmi il tuo nome', 'chi sei', 'tu come ti chiami',
                  'ricordi come ti chiami', 'what is your name', "what's your name"}:
         return f'Mi chiamo {ORIGIN.name}.', 'origin_identity', []
+    if query in {'cosa significa allma', 'che cosa significa allma',
+                 'cosa vuol dire allma', 'allma cosa significa'}:
+        return (f'{ORIGIN.name} è il mio nome. Il modello linguistico collegato è un componente del sistema, '
+                'separato dalla mia identità e dai ricordi delle nostre conversazioni. '
+                'Non attribuisco al nome un significato esteso senza una fonte documentata.',
+                'origin_identity', [])
     from allma_model.utils.personal_facts import personal_reply
     personal = personal_reply(message, events, user_id, profile, query=query)
     if personal is not None:
@@ -61,14 +67,12 @@ def grounded_reply(message, memory, user_id, profile=None):
         subject = match.group(1).strip()
         words = re.findall(r'\w+', subject)
         with memory.lock:
-            documented = [m for m in memory.messages
-                          if (m.user_id or m.metadata.get('user_id')) == user_id
-                          and history_eligible(m)
-                          and m.metadata.get('source') not in
-                          {'no_evidence', 'conversation_event', 'clarification'}]
-        found = [m for m in documented if not re.search(r'abbiamo.*parlato|ti ho.*parlato', normalized(m.content)) and words and all(re.search(r'\b' + re.escape(w) + r'\b', normalized(m.content)) for w in words)]
-        if found:
-            evidence = found[-1]
+            evidence=next((m for m in reversed(memory.messages)
+                if (m.user_id or m.metadata.get('user_id'))==user_id and history_eligible(m)
+                and m.metadata.get('source') not in {'no_evidence','conversation_event','clarification'}
+                and not re.search(r'abbiamo.*parlato|ti ho.*parlato',normalized(m.content))
+                and words and all(re.search(r'\b'+re.escape(w)+r'\b',normalized(m.content)) for w in words)),None)
+        if evidence is not None:
             speaker = 'un tuo messaggio' if evidence.role == 'user' else 'una mia risposta'
             return (f'Sì, trovo {speaker} del {evidence.timestamp:%d/%m/%Y}: «{evidence.content}».',
                     'conversation_event', [evidence.content])
@@ -79,8 +83,17 @@ def grounded_reply(message, memory, user_id, profile=None):
     return None
 
 
+def delivery_visible(metadata):
+    """Legacy messages remain visible; new initiative drafts await host acceptance."""
+    if metadata.get('source') != 'proactive' or 'proactive_delivery' not in metadata:
+        return True
+    delivery = metadata['proactive_delivery']
+    return (isinstance(delivery, dict) and type(delivery.get('version')) is int
+            and delivery['version'] == 1 and delivery.get('state') == 'queued')
+
+
 def history_eligible(message, *, allow_incomplete=False):
-    if message.metadata.get('is_valid') is False:
+    if message.metadata.get('is_valid') is False or not delivery_visible(message.metadata):
         return False
     if (message.role != 'user' and not allow_incomplete
             and message.metadata.get('generation', {}).get('status') == 'truncated_answer'):
@@ -112,7 +125,8 @@ def system_instruction(memory_variant="attributed"):
         f'Il tuo nome è {ORIGIN.name}, unico dato autobiografico originario. '
         'Sei il sistema ALLMA: il modello linguistico è un tuo componente. '
         'Il modello fornisce linguaggio e conoscenza generale, non identità né ricordi. '
-        'Esperienze, preferenze e stati personali richiedono eventi documentati; senza prove, dillo. '
+        'Le tue esperienze, preferenze e i tuoi stati personali richiedono eventi documentati: riferisci solo quelli disponibili. '
+        'Il messaggio attuale documenta ciò che l’utente esprime; accoglilo come sua dichiarazione. '
         + ('Le dichiarazioni dell’utente non sono fatti verificati. ' if memory_variant == 'baseline' else
            'I ricordi documentano ciò che l’utente ha detto: puoi riferirlo senza certificarne la verità esterna. ')
         + 'Distingui te dall’utente e la conoscenza generale dalle esperienze condivise. '

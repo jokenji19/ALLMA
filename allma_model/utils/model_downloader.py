@@ -1,5 +1,4 @@
 """Verified, resumable downloads. Only complete models get their final filename."""
-import hashlib
 import logging
 import os
 import re
@@ -8,12 +7,13 @@ import time
 
 import requests
 from kivy.utils import platform
+from allma_model.utils.model_integrity import verified_models
 
 
 class ModelDownloader:
     _locks = {}
     _locks_guard = threading.Lock()
-    _session_verified = {}
+    _session_verified = verified_models.verified
 
     def __init__(self, models_dir=None):
         self.logger = logging.getLogger(__name__)
@@ -32,11 +32,7 @@ class ModelDownloader:
 
     @staticmethod
     def _fingerprint(path, info):
-        stat = os.stat(path)
-        if stat.st_size != info['size_bytes']:
-            return None
-        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns,
-                stat.st_ctime_ns, info['sha256'])
+        return verified_models.fingerprint(path, info)
 
     def local_status(self, path, info):
         """Metadata-only inventory: presence is not a successful integrity check."""
@@ -51,26 +47,7 @@ class ModelDownloader:
 
     def _valid(self, path, info):
         """Reuse verified bytes across instances, only within this app process."""
-        path = os.path.abspath(path)
-        try:
-            fingerprint = self._fingerprint(path, info)
-            if fingerprint is None:
-                return False
-            if self._verified.get(path) == fingerprint:
-                return True
-            digest = hashlib.sha256()
-            with open(path, 'rb') as handle:
-                for chunk in iter(lambda: handle.read(1024 * 1024), b''):
-                    digest.update(chunk)
-            if digest.hexdigest() != info['sha256']:
-                return False
-            # Do not certify a file changed while hashing.
-            if self._fingerprint(path, info) != fingerprint:
-                return False
-            self._verified[path] = fingerprint
-            return True
-        except (OSError, KeyError):
-            return False
+        return verified_models.valid(path, info)
 
     def check_models_missing(self):
         # This method is deliberately read-only, including unknown/custom models.

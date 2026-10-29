@@ -1,4 +1,4 @@
-"""Fixed 20 preservation challenges. Synthetic archives, native crypto on Android."""
+"""Fixed 28 preservation challenges. Synthetic archives, native crypto on Android."""
 from datetime import datetime
 import json
 from pathlib import Path
@@ -169,7 +169,106 @@ def logical_order(path):
     require(second==first+1 and first==1792230000000001,'Logical order changed')
 
 
+def preferences(root):
+    values={'model_binding.json':{'version':1,'model_name':'chosen.gguf','reasoning':True},
+            'notifications.json':{'version':1,'enabled':True,'last_sent':{'message':1000}}}
+    for name,value in values.items():(root/name).write_text(json.dumps(value))
+    return values
+
+
+def portable_install(path):
+    from allma_model.utils.runtime_storage import prepare_runtime_storage
+    source=Path(prepare_runtime_storage(path/'source'));seed(source);preferences(source)
+    store=StateBackups(source);store.create();encrypted=path/'portable.allma';store.export(encrypted,PASSWORD)
+    target=Path(prepare_runtime_storage(path/'target'));seed(target,text='Before restore')
+    StateBackups(target).stage_encrypted_restore(encrypted,PASSWORD)
+    prepare_runtime_storage(target.parent)
+    return source,target
+
+
+@case('portable','encrypted_install','An encrypted export restores preferences and exact history into a separate installation')
+def portable_encrypted(path):
+    source,target=portable_install(path)
+    for name in ('allma_memory.json','cognitive_state.json','model_binding.json','notifications.json'):
+        require((source/name).read_bytes()==(target/name).read_bytes(),'Portable state changed: '+name)
+    require(not list(target.rglob('*.gguf')),'Model weights copied')
+    from allma_model.llm.model_binding import saved_model_selection
+    models=target.parent/'models';models.mkdir();(models/'chosen.gguf').write_bytes(b'GGUF')
+    selected,reasoning=saved_model_selection(models,target/'model_binding.json')
+    require(selected.name=='chosen.gguf' and reasoning is True,'Local model choice lost')
+
+
+@case('portable','missing_motor','An unavailable saved model requires selection without replacing it or guessing another motor')
+def portable_missing_motor(path):
+    from allma_model.llm.model_binding import saved_model_selection,ModelSelectionRequired
+    source,target=portable_install(path);models=target.parent/'models';models.mkdir()
+    (models/'different.gguf').write_bytes(b'GGUF')
+    try:saved_model_selection(models,target/'model_binding.json')
+    except ModelSelectionRequired:pass
+    else:raise AssertionError('Unrequested model selected')
+    require((target/'model_binding.json').read_bytes()==(source/'model_binding.json').read_bytes(),'Missing choice discarded')
+
+
+@case('portable','notification_permission','Restored app consent does not grant Android notification permission or send a notice')
+def portable_notification_permission(path):
+    from unittest.mock import Mock
+    from allma_model.ui.system_notifications import SystemNotifications
+    _,target=portable_install(path)
+    native=Mock(allowed=Mock(return_value=False),post=Mock(return_value=True))
+    notices=SystemNotifications(target/'notifications.json',native,clock=lambda:2000)
+    require(notices.enabled and not notices.status()['active'],'System grant fabricated')
+    require(not notices.publish('message'),'Notification sent without system permission')
+    native.request.assert_not_called();native.post.assert_not_called()
+    native.allowed.return_value=True
+    require(notices.publish('message'),'Restored app preference lost after system permission granted')
+
+
+for filename,invalid in [('model_binding.json',{'version':1,'model_name':'../outside.gguf','reasoning':True}),
+                         ('notifications.json',{'version':1,'enabled':'true','last_sent':{}})]:
+    def run(path,filename=filename,invalid=invalid):
+        root=path/'allma_state';seed(root);preferences(root);store=StateBackups(root);store.create()
+        old=store.latest();original=old.read_bytes();index=store.catalog.read_bytes()
+        (root/filename).write_text(json.dumps(invalid))
+        try:store.create()
+        except ValueError:pass
+        else:raise AssertionError('Invalid portable preference certified')
+        require(store.latest()==old and old.read_bytes()==original and store.catalog.read_bytes()==index,'Last verified backup changed')
+    case('portable','reject_'+filename.split('.')[0],'An invalid portable preference cannot replace a verified snapshot')(run)
+
+
+@case('portable','older_snapshot','A backup without portable preferences restores without resurrecting bundled or previous settings')
+def portable_older_snapshot(path):
+    from allma_model.utils.runtime_storage import prepare_runtime_storage
+    source=Path(prepare_runtime_storage(path/'source'));seed(source);store=StateBackups(source);store.create()
+    target=Path(prepare_runtime_storage(path/'target'));seed(target);preferences(target)
+    stage_restore(target,store.latest());legacy=path/'legacy';seed(legacy);preferences(legacy)
+    prepare_runtime_storage(target.parent,legacy)
+    require(not (target/'model_binding.json').exists() and not (target/'notifications.json').exists(),'Old preferences merged into restored state')
+
+
+@case('portable','legacy_settings','Moving preferences to durable storage preserves newer current choices')
+def portable_legacy(path):
+    from allma_model.utils.runtime_storage import prepare_runtime_storage
+    legacy=path/'legacy';seed(legacy);preferences(legacy)
+    target=Path(prepare_runtime_storage(path/'device',legacy))
+    require((target/'notifications.json').read_bytes()==(legacy/'notifications.json').read_bytes(),'Legacy consent lost')
+    changed={'version':1,'model_name':'new.gguf','reasoning':False}
+    (target/'model_binding.json').write_text(json.dumps(changed))
+    prepare_runtime_storage(target.parent,legacy)
+    require(json.loads((target/'model_binding.json').read_text())==changed,'Newer local choice overwritten')
+
+
+@case('portable','notification_clock','A clock rollback permits one delivery and then reapplies the cooldown')
+def portable_clock(path):
+    from unittest.mock import Mock
+    from allma_model.ui.system_notifications import SystemNotifications
+    seed(path);preferences(path)
+    native=Mock(allowed=Mock(return_value=True),post=Mock(return_value=True))
+    notices=SystemNotifications(path/'notifications.json',native,clock=lambda:100)
+    require(notices.publish('message') and not notices.publish('message'),'Clock rollback disabled notifications or cooldown')
+
+
 def run_battery(output,*,scope='Host runtime; synthetic preservation data',cancel_event=None,progress_callback=None):
-    require(len(CASES)==20,'Unexpected preservation plan size')
-    return run_challenges(output,CASES,version='preservation-v1',scope=scope,cancel_event=cancel_event,
+    require(len(CASES)==28,'Unexpected preservation plan size')
+    return run_challenges(output,CASES,version='preservation-v2',scope=scope,cancel_event=cancel_event,
                           progress_callback=progress_callback,harness_path=__file__)

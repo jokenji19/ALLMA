@@ -1,0 +1,24 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const source=fs.readFileSync('assets/web/script_v24.js','utf8');
+const block=source.slice(source.indexOf('window.modelUI = {'),source.indexOf('// Populate the composer immediately'));
+const nodes={};
+const document={getElementById(id){return nodes[id] ||= {value:'',textContent:'',disabled:false,hidden:true,
+    replaceChildren(...children){this.children=children;},removeAttribute(){}};},createElement(){return {};}};
+const calls=[];
+const window={pyBridge:{postMessage(text){calls.push(JSON.parse(text));}},appNav:{go(route){calls.push(route);}}};
+vm.runInNewContext(block,{window,document});
+const models=[{key:'base',name:'Base',available:true,verified:false,active:false,size_bytes:10,quantization:'Q4'}];
+window.modelUI.update({phase:'ready',models,selection_required:true,selection_message:'Scegli un modello locale.'});
+assert.equal(nodes['model-status'].textContent,'Scegli un modello locale.');
+assert.equal(nodes['model-apply'].disabled,false);
+assert.equal(calls.filter(x=>x==='settings/model').length,1);
+window.modelUI.update({phase:'ready',models,selection_required:true});
+assert.equal(calls.filter(x=>x==='settings/model').length,1);
+window.modelUI.apply();
+assert.equal(calls.at(-1).action,'apply_model');
+assert.equal(calls.at(-1).key,'base');
+window.modelUI.update({phase:'ready',models:[{...models[0],active:true}],selection_required:false});
+assert.equal(nodes['composer-model-name'].textContent,'Base');
+assert.equal(nodes['model-apply'].disabled,true);
+assert.equal(window.modelUI.selectionRequired,false);
+assert.equal(window.modelUI.recoveryShown,false);

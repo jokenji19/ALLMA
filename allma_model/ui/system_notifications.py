@@ -4,6 +4,7 @@ import threading
 import time
 from pathlib import Path
 from allma_model.utils.persistence import atomic_write_json
+from allma_model.utils.operational_preferences import validate_notification_preference,MAX_BYTES
 
 
 class AndroidNotificationBackend:
@@ -96,10 +97,10 @@ class SystemNotifications:
             backend = AndroidNotificationBackend() if platform == 'android' else None
         self.backend = backend
         try:
-            data = json.loads(self.path.read_text())
-            self.enabled = data.get('enabled') is True
-            self.last_sent = {k: v for k, v in data.get('last_sent', {}).items()
-                              if k in self.events and type(v) in (int, float)}
+            if self.path.stat().st_size>MAX_BYTES:raise ValueError('Oversized notification preference')
+            data = validate_notification_preference(json.loads(self.path.read_text()))
+            self.enabled = data['enabled']
+            self.last_sent = dict(data.get('last_sent', {}))
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
@@ -148,7 +149,7 @@ class SystemNotifications:
                 return False
             now = self.clock()
             last = self.last_sent.get(kind)
-            if last is not None and not (explicit_test and kind == 'test') and now - last < 600:
+            if last is not None and not (explicit_test and kind == 'test') and 0 <= now - last < 600:
                 return False
             if not self.backend.post(*self.events[kind]):
                 return False

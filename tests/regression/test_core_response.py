@@ -19,12 +19,16 @@ def core(tmp_path, monkeypatch):
 def prepare_proactive(core, answer='Posso offrirti un confronto, se ti va.'):
     from types import SimpleNamespace
     from datetime import timedelta
+    import time
     conversation=core.start_conversation('active-user')
     core.conversational_memory.store_message(conversation,'Sono felice di aver finito il trasloco.',
         {},role='user',user_id='active-user')
     core.conversational_memory.messages[-1].timestamp=datetime.now()-timedelta(hours=8)
     core._current_user_id='active-user'; core.dream_enabled=True
     core.output_callback=Mock()
+    core.system_monitor.get_metabolic_state=Mock(side_effect=lambda: SimpleNamespace(
+        is_tired=False, energy_level=.9, is_charging=True, battery_temp_celsius=35.,
+        is_power_save=False, is_valid=True, source='synthetic', observed_at=time.monotonic()))
     core.proactive_agency.check_initiative=Mock(return_value=SimpleNamespace(should_contact=True))
     class Engine:
         binding=SimpleNamespace(sampling=lambda: {})
@@ -71,6 +75,29 @@ def test_host_identity_fast_path_does_not_invoke_decider(core):
     core.decision_runtime.route.assert_not_called()
 
 
+def test_literal_question_navigation_skips_models_and_persists_reference(core):
+    conversation=core.start_conversation('u')
+    core.decision_runtime.route=Mock(side_effect=AssertionError('No model for literal navigation'))
+    core.conversational_memory.store_message(conversation,'Prima domanda?',{},role='user',user_id='u')
+    core.conversational_memory.store_message(conversation,'Seconda domanda?',{},role='user',user_id='u')
+    reply=core.process_message('u',conversation,'Cosa ti ho chiesto prima?')
+    assert reply.content == 'Mi hai chiesto: «Seconda domanda?».'
+    assert reply.metadata['source'] == 'conversation_question_recall'
+    assert reply.metadata['generation']['llm_used'] is False
+    assert core.conversational_memory.messages[-1].metadata['conversation_reference'] == reply.metadata['conversation_reference']
+    core.decision_runtime.route.assert_not_called()
+
+
+def test_name_meaning_describes_allma_separately_from_llm(core):
+    conversation=core.start_conversation('u')
+    core.decision_runtime.route=Mock(side_effect=AssertionError('No model for origin identity'))
+    reply=core.process_message('u',conversation,'Cosa significa ALLMA?')
+    assert reply.is_valid and reply.metadata['source']=='origin_identity'
+    assert 'è il mio nome' in reply.content
+    assert 'separato dalla mia identità' in reply.content
+    core.decision_runtime.route.assert_not_called()
+
+
 def test_fabricated_source_verification_is_not_validated_or_learned(core):
     conversation=core.start_conversation('u')
     core._llm=Mock();core._llm.generate.return_value='Le informazioni sopra sono confermate da fonti storiche.'
@@ -79,7 +106,7 @@ def test_fabricated_source_verification_is_not_validated_or_learned(core):
     result=core.process_message('u',conversation,'Spiega la storia del Risorgimento.')
     assert not result.is_valid
     assert result.metadata['generation']['status']=='unbacked_source_claim'
-    assert 'non effettuate' in result.content
+    assert result.content == '' and result.metadata['delivery_state'] == 'unresolved'
     core.answer_recall.observe.assert_not_called()
 
 
@@ -152,8 +179,10 @@ def test_proactive_is_cancelled_when_app_pauses_during_generation(core):
 
 def test_proactive_respects_temperature_and_uses_attributed_emotion(core):
     from types import SimpleNamespace
+    import time
     prepare_proactive(core)
-    core.system_monitor.get_metabolic_state=Mock(return_value=SimpleNamespace(is_tired=False,battery_temp_celsius=40))
+    core.system_monitor.get_metabolic_state=Mock(return_value=SimpleNamespace(is_tired=False,battery_temp_celsius=40,
+        energy_level=.9, is_charging=True, is_power_save=False, is_valid=True, source='synthetic', observed_at=time.monotonic()))
     assert core.check_proactive_trigger()['status']=='energy_deferred'
     core.proactive_agency.check_initiative.assert_not_called()
     core.system_monitor.get_metabolic_state.return_value.battery_temp_celsius=35
@@ -238,8 +267,8 @@ def test_empty_budget_failure_is_not_reported_as_offline_and_metrics_survive(cor
     core._llm.generate.return_value = ''
     core._llm.get_generation_meta.return_value = {'finish_reason': 'length', 'completion_tokens': 512}
     response = core.process_message('budget_user', conversation, 'Spiega il principio di entropia')
-    assert 'limite' in response.content
-    assert 'raggiungibile' not in response.content
+    assert response.content == '' and response.metadata['delivery_state'] == 'unresolved'
+    assert response.metadata['turn_review']['attempts'] == 1
     assert response.is_valid is False
     assert response.metadata['generation']['status'] == 'budget_exhausted'
     assert response.metadata['generation']['completion_tokens'] == 512
@@ -317,7 +346,7 @@ def test_personal_requests_and_hallucinated_names_remain_guarded(core):
     result = core.process_message('u', conversation, 'Spiega il funzionamento della bicicletta', stream_callback=events.append)
     assert result.is_valid is False
     assert all('Sophia' not in e['content'] for e in events if e['type'] == 'answer')
-    assert 'ALLMA' in result.content
+    assert result.content == '' and result.metadata['delivery_state'] == 'unresolved'
 
 
 def test_hot_device_reduces_actual_budget_and_reserves_answer_tokens(core):
@@ -497,7 +526,7 @@ def test_repetition_from_backend_is_invalid_and_never_learned(core):
     response=core.process_message('u',conversation,'Spiega come funziona la respirazione')
     assert not response.is_valid
     assert response.metadata['generation']['status']=='repetition'
-    assert 'ripetitiva' in response.content and 'ghiandole' not in response.content
+    assert response.content == '' and response.metadata['delivery_state'] == 'unresolved'
     core.incremental_learner.learn_from_interaction.assert_not_called()
     assert core.answer_recall.records=={}
     assert core.conversational_memory.messages[-1].metadata['is_valid'] is False
@@ -549,14 +578,14 @@ def test_borrowed_user_experience_is_rejected_not_learned(core):
     core._llm.get_generation_meta.return_value = {'finish_reason':'stop'}
     core.incremental_learner.learn_from_interaction = Mock()
     response = core.process_message('u',conversation,'Sono felice per il nuovo lavoro e preoccupata per il primo giorno.')
-    assert response.is_valid
-    assert response.metadata['source'] == 'grounded_emotional_recovery'
-    assert response.metadata['recovery']['model_answer_valid'] is False
+    assert not response.is_valid and response.content == ''
+    assert response.metadata['delivery_state'] == 'unresolved'
+    assert 'recovery' not in response.metadata
     assert response.content != core._llm.generate.return_value
     assert response.metadata['generation']['status'] == 'subject_mismatch'
     core.incremental_learner.learn_from_interaction.assert_not_called()
     assert not core.answer_recall.records
-    core._llm.generate.assert_called_once()
+    assert core._llm.generate.call_count == 2
 
 
 @pytest.mark.parametrize('candidate', [
@@ -574,7 +603,7 @@ def test_indirect_shared_experience_is_blocked_and_not_learned(core, candidate):
     assert response.metadata['generation']['status'] == 'subject_mismatch'
     core.incremental_learner.learn_from_interaction.assert_not_called()
     assert not core.answer_recall.records
-    core._llm.generate.assert_called_once()
+    assert core._llm.generate.call_count == 2
 
 
 @pytest.mark.parametrize('enabled,synthetic', [(False,True),(True,False),(True,True)])
@@ -613,12 +642,13 @@ def test_mixed_emotion_recovery_never_learns_rejected_model_answer(core):
     result = core.process_message('recovery-user', conversation,
         'Sono felice per il nuovo lavoro e preoccupata per domani. Rispondimi in due frasi.',
         stream_callback=events.append)
-    assert result.is_valid and result.metadata['source'] == 'grounded_emotional_recovery'
-    assert result.metadata['recovery']['model_answer_valid'] is False
+    assert not result.is_valid and result.content == ''
+    assert result.metadata['delivery_state'] == 'unresolved'
+    assert 'recovery' not in result.metadata
     assert result.metadata['generation']['status'] == 'subject_mismatch'
     core.incremental_learner.learn_from_interaction.assert_not_called()
     assert not core.answer_recall.records
-    core._llm.generate.assert_called_once()
+    assert core._llm.generate.call_count == 2
     answers = ''.join(e['content'] for e in events if e['type'] == 'answer')
     assert answers == result.content
     assert core.conversational_memory.messages[-1].content == result.content
@@ -699,7 +729,8 @@ def test_cross_turn_duplicate_is_not_streamed_or_learned(core):
     assert 'L’utente segnala una ripetizione' in core._llm.generate.call_args.kwargs['prompt']
     core.incremental_learner.learn_from_interaction.assert_not_called()
     assert not core.answer_recall.records
-    core._llm.generate.assert_called_once()
+    assert core._llm.generate.call_count == 2
+    assert response.metadata['turn_review']['attempts'] == 2
     assert not core.conversational_memory.messages[-1].metadata['is_valid']
 
 
@@ -711,18 +742,19 @@ def test_rephrased_checkin_after_user_answer_is_validated_before_stream(core):
         {'identity_policy':POLICY_VERSION,'is_valid':True},'assistant','u')
     core._llm=Mock()
     def generate(**kwargs):
-        kwargs['callback']('</think>Sto bene, grazie. Come ti va?')
+        if kwargs.get('callback'):
+            kwargs['callback']('</think>Sto bene, grazie. Come ti va?')
         return 'Sto bene, grazie. Come ti va?'
     core._llm.generate.side_effect=generate
     core._llm.get_generation_meta.return_value={'finish_reason':'stop'}
     events=[]
     result=core.process_message('u',conversation,'Sto bene, grazie.',stream_callback=events.append)
     assert not result.is_valid
-    assert result.metadata['generation']['status']=='dialogue_repetition'
+    assert result.metadata['generation']['status']=='subject_mismatch'
     assert result.metadata['generation']['delivery_reason']=='answered_checkin_validation'
     assert 'Come ti va?' not in ''.join(e['content'] for e in events if e['type']=='answer')
     assert 'Non reiterare domande sul benessere' in core._llm.generate.call_args.kwargs['prompt']
-    core._llm.generate.assert_called_once()
+    assert core._llm.generate.call_count == 2
 
 
 def test_self_description_dialogue_and_clarification_need_no_model(core):
@@ -750,7 +782,8 @@ def test_identitary_notice_is_not_reported_as_completed_model_answer(core):
     core._llm.get_generation_meta.return_value = {'finish_reason': 'stop'}
     result = core.process_message('guard-user', conversation, 'Parlami delle tue esperienze personali')
     assert not result.is_valid
-    assert result.metadata['source'] == 'identity_guard_notice'
+    assert result.metadata['source'] == 'model_generated'
+    assert result.content == '' and result.metadata['delivery_state'] == 'unresolved'
     assert result.metadata['generation']['status'] == 'unsupported_personal_claim'
     assert result.metadata['output_guard']['reason'] == 'unsupported_personal_claim'
 
@@ -828,7 +861,7 @@ def test_sentence_contract_and_model_sampling_are_applied_before_display(core):
     assert options['thought_budget']>0
     assert 'Non consumare il ragionamento' in options['prompt']
     core.incremental_learner.learn_from_interaction.assert_not_called()
-    core._llm.generate.assert_called_once()
+    assert core._llm.generate.call_count == 2
 
 
 def test_emotional_reflection_cannot_break_requested_sentence_count(core):
@@ -1227,10 +1260,7 @@ class MemoryProbeEngine:
 def test_operational_memory_cycle_is_real_and_results_enter_native_prompt(core):
     conversation=core.start_conversation('u')
     core.decision_runtime.route=Mock(return_value={'status':'selected','choice':'memory'})
-    core.conversational_memory.vector_engine=Mock()
-    core.conversational_memory.vector_engine.search.return_value=[{
-        'content':'La passeggiata a Portovenere mi ha rilassato.',
-        'metadata':{'role':'user','user_id':'u'},'score':.8,'timestamp':'2026-10-15T10:00:00'}]
+    core.conversational_memory.store_message('previous','La passeggiata a Portovenere mi ha rilassato.',{},'user','u')
     core._llm=MemoryProbeEngine('Mi avevi parlato della passeggiata a Portovenere.')
     result=core.process_message('u',conversation,'Quale passeggiata mi aveva rilassato?')
     action=result.metadata['decision']['action_cycle']
@@ -1257,10 +1287,7 @@ def test_short_request_keeps_memory_observation_even_with_simple_prompt(core):
     conversation=core.start_conversation('u')
     core._analyze_query_complexity=Mock(return_value='SIMPLE')
     core.decision_runtime.route=Mock(return_value={'status':'selected','choice':'memory'})
-    core.conversational_memory.vector_engine=Mock()
-    core.conversational_memory.vector_engine.search.return_value=[{
-        'content':'La passeggiata a Portovenere mi ha rilassato.',
-        'metadata':{'role':'user','user_id':'u'},'score':.8,'timestamp':'2026-10-15T10:00:00'}]
+    core.conversational_memory.store_message('previous','La passeggiata a Portovenere mi ha rilassato.',{},'user','u')
     core._llm=MemoryProbeEngine('Mi avevi parlato di Portovenere.')
     result=core.process_message('u',conversation,'Quale passeggiata mi aveva rilassato?')
     assert result.metadata['decision']['action_cycle']['record_count']==1
@@ -1272,10 +1299,9 @@ def test_short_request_keeps_memory_observation_even_with_simple_prompt(core):
 def test_native_prompt_distinguishes_retrieved_memory_origin(core,origin,expected):
     conversation=core.start_conversation('u')
     core.decision_runtime.route=Mock(return_value={'status':'selected','choice':'memory'})
-    core.conversational_memory.vector_engine=Mock()
-    core.conversational_memory.vector_engine.search.return_value=[{
-        'content':'Dato sintetico: il codice di prova è LUNA-483.',
-        'metadata':{'role':'user','user_id':'u','conversation_id':origin},'score':.8}]
+    # Empty legacy origin is a valid stored string and still means unknown.
+    core.conversational_memory.store_message(origin or '',
+        'Dato sintetico: il codice di prova è LUNA-483.',{},'user','u')
     core._llm=MemoryProbeEngine('Il codice che avevi indicato è LUNA-483.')
     core.process_message('u',conversation,'Quale codice di prova ti avevo indicato?')
     assert expected in str(core._llm.messages)
@@ -1284,12 +1310,11 @@ def test_native_prompt_distinguishes_retrieved_memory_origin(core,origin,expecte
 
 def test_real_vector_retrieval_keeps_original_report_after_many_repeated_questions(core):
     conversation=core.start_conversation('u')
-    vector=core.conversational_memory.vector_engine
+    memory=core.conversational_memory
     query='Quale codice di prova ti avevo indicato?'
-    vector.add('u','Dato sintetico: il codice di prova è LUNA-483.',
-               metadata={'role':'user','user_id':'u','conversation_id':'previous'})
+    memory.store_message('previous','Dato sintetico: il codice di prova è LUNA-483.',{},'user','u')
     for i in range(12):
-        vector.add('u',query,metadata={'role':'user','user_id':'u','conversation_id':str(i)})
+        memory.store_message(str(i),query,{},'user','u')
     core.decision_runtime.route=Mock(return_value={'status':'selected','choice':'memory'})
     core._llm=MemoryProbeEngine('Il codice che avevi indicato è LUNA-483.')
     result=core.process_message('u',conversation,query)
@@ -1502,11 +1527,16 @@ def test_general_dialogue_prompt_replaces_obsolete_personal_sources(core):
                     'Il mio colore preferito ora è verde.', 'Non usare più il mio nome.'):
         core.process_message('u',cid,message)
     core.decision_runtime.route=Mock(return_value={'status':'selected','choice':'memory'})
-    core.conversational_memory.vector_engine=Mock()
-    core.conversational_memory.vector_engine.search.return_value=[
-        {'content':'Mi chiamo Ada.','metadata':{'role':'user','user_id':'u'},'score':.99},
-        {'content':'Il mio colore preferito è blu.','metadata':{'role':'user','user_id':'u'},'score':.98},
-        {'content':'La passeggiata al mare mi ha rilassato.','metadata':{'role':'user','user_id':'u'},'score':.9}]
+    memory=core.conversational_memory
+    memory.store_message('previous','La passeggiata al mare mi ha rilassato.',{},'user','u')
+    from allma_model.core.history_projection import source_key
+    records=[]
+    for text,score in [('Mi chiamo Ada.',.99),('Il mio colore preferito è blu.',.98),
+                       ('La passeggiata al mare mi ha rilassato.',.9)]:
+        row=next(m for m in memory.messages if m.role=='user' and m.content==text)
+        records.append({'content':text,'metadata':{'role':'user','user_id':'u'},'score':score,
+                        'source_key':source_key(row._archive_key),'timestamp':row.timestamp.isoformat()})
+    memory.vector_engine.search=Mock(return_value=records)
     core._llm=MemoryProbeEngine('Per il tuo disegno puoi partire dal verde.')
     result=core.process_message('u',cid,'Consigliami un colore per il mio disegno basandoti sulle mie preferenze.')
     prompt=str(core._llm.messages)

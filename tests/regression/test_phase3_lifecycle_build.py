@@ -40,7 +40,8 @@ def test_pause_cancels_generation_saves_and_restores_dream_setting():
     app.chat_screen.chat_session.cancel.assert_called_once()
     core.set_dream_mode.assert_called_with(False, persist=False)
     core.conversational_memory.save_memory.assert_called_once()
-    core.incremental_learner.save_state.assert_called_once()
+    core.incremental_learner.flush_state.assert_called_once()
+    core.incremental_learner.save_state.assert_not_called()
     core.dream_enabled = False
     app.on_pause()  # A repeated pause must not overwrite the enabled preference.
     app.on_resume()
@@ -64,7 +65,8 @@ def test_build_hash_includes_service_manifest_and_native_libs(tmp_path, monkeypa
     spec.loader.exec_module(helper)
     monkeypatch.setattr(helper, 'ROOT', tmp_path)
     previous = helper.compute_hash()
-    for name in ['service.py', 'AndroidManifest.xml', 'libs_custom/lib.so']:
+    for name in ['service.py', 'AndroidManifest.xml', 'libs_custom/lib.so',
+                 'libs/android_src/org/allma/runtime/NativeProcessHealth.java']:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('changed')

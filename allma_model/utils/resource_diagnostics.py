@@ -27,8 +27,10 @@ class ResourceDiagnostics:
         except (ImportError, OSError, AttributeError):
             pass
         try:
-            temperature = monitor.get_metabolic_state().battery_temp_celsius
-            if isinstance(temperature, (int, float)) and math.isfinite(temperature) and temperature > 0:
+            from allma_model.core.system_monitor import current_power_reading
+            state = monitor.get_metabolic_state()
+            temperature = state.battery_temp_celsius
+            if current_power_reading(state) and isinstance(temperature, (int, float)) and math.isfinite(temperature) and temperature > 0:
                 result['temp'] = temperature
         except Exception:
             pass

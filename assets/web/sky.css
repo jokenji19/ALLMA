@@ -69,7 +69,8 @@ button:focus-visible, select:focus-visible, textarea:focus-visible, summary:focu
 .reasoning-container .generation-timer { display: none; }
 .reasoning-container.open .generation-timer { display: flex; font: 11px Inter,sans-serif; color: var(--text-secondary); margin: 10px 0; }
 #chat-notice { font-size: 12px; line-height: 1.5; color: var(--text-secondary); padding: 0 20px; }
-#chat-notice:empty, .chat-caption { display: none; }
+#chat-notice:empty { display: none; }
+.chat-caption { display:flex;justify-content:center;flex:none;min-height:22px;padding:2px 16px 0; }
 #input-area { background: var(--paper); border: 0; box-shadow: none; padding: 8px max(12px,calc((100% - 744px)/2)) max(12px,var(--native-bottom,env(safe-area-inset-bottom,0px))); gap: 0; backdrop-filter: none; -webkit-backdrop-filter: none; }
 .capsule, body.dark-mode .capsule { display: grid; grid-template-columns: minmax(0,1fr) 40px 40px; align-items: end; height: auto; min-height: 112px; min-width: 0; padding: 15px 12px 10px 16px; gap: 7px 6px; border: 1px solid var(--border-color); border-radius: 22px; background: var(--surface); box-shadow: var(--input-shadow); }
 .capsule:focus-within { border-color: var(--text-secondary); box-shadow: var(--input-shadow); }

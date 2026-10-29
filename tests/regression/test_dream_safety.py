@@ -1,6 +1,7 @@
 from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock
+import time
 
 from allma_model.core.dream_system.dream_manager import DreamManager
 from allma_model.core.dream_system.tree_of_thoughts import TreeOfThoughts
@@ -9,7 +10,8 @@ from allma_model.core.dream_system.tree_of_thoughts import TreeOfThoughts
 def manager(tmp_path):
     monitor = Mock()
     monitor.get_metabolic_state.return_value = SimpleNamespace(
-        is_charging=True, energy_level=.9, battery_temp_celsius=30)
+        is_charging=True, energy_level=.9, battery_temp_celsius=30,
+        is_valid=True, observed_at=time.monotonic(), source='synthetic', is_power_save=False)
     memory = Mock()
     memory.get_interactions.return_value = [{'content': 'Oggi abbiamo parlato di Roma.'}]
     return DreamManager(memory, Mock(), system_monitor=monitor,

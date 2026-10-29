@@ -1,5 +1,6 @@
 """Compatibility API over the canonical ALLMA core; no second cognitive state."""
 from copy import deepcopy
+from allma_model.memory_system.paged_history import recent_rows
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -27,9 +28,9 @@ class AllmaAndroidBridge:
 
     def _emotional_state(self, user_id):
         with self.allma.conversational_memory.lock:
-            records = [m for m in self.allma.conversational_memory.messages
-                       if (m.user_id or m.metadata.get('user_id')) == user_id
-                       and m.metadata.get('is_valid') is not False and m.metadata.get('emotion_analysis')]
+            records = recent_rows(self.allma.conversational_memory.messages,1,predicate=lambda m:
+                (m.user_id or m.metadata.get('user_id'))==user_id
+                and m.metadata.get('is_valid') is not False and m.metadata.get('emotion_analysis'))
         return deepcopy(records[-1].metadata['emotion_analysis']) if records else {
             'primary_emotion':'neutral', 'confidence':0., 'source':'no_evidence'}
 
@@ -129,8 +130,8 @@ class AllmaAndroidBridge:
         if type(limit) is not int or limit < 0:
             raise ValueError('Limite non valido')
         with self.allma.conversational_memory.lock:
-            messages = [m for m in self.allma.conversational_memory.messages
-                        if (m.user_id or m.metadata.get('user_id')) == user_id]
+            messages = recent_rows(self.allma.conversational_memory.messages,limit,predicate=lambda m:
+                (m.user_id or m.metadata.get('user_id'))==user_id)
             return [{'text':m.content,'timestamp':m.timestamp.isoformat(),'sender':m.role,
                      'metadata':deepcopy(m.metadata)} for m in (messages[-limit:] if limit else [])]
 

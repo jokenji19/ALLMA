@@ -3,6 +3,8 @@
 from __future__ import annotations
 from allma_model.utils.generation_control import GenerationCancelled, check_cancelled
 from allma_model.utils.repetition_guard import repetition_start
+from .native_backend import native_operation, native_work
+from .cpu_cancellation import CPUCancellation
 
 import os
 import logging
@@ -25,7 +27,7 @@ class MobileGemmaWrapper:
     Ottimizzato per Android/Mobile.
     """
 
-    def __init__(self, models_dir: str, model_name: str = _DEFAULT_MODEL_NAME, n_ctx: int = 2048, system_monitor=None, reasoning=None):  # Optimized: was 2048, keeping for performance
+    def __init__(self, models_dir: str, model_name: str = _DEFAULT_MODEL_NAME, n_ctx: int = 2048, system_monitor=None, reasoning=None, backend_preference=None):
         """
         Inizializza il wrapper mobile.
         
@@ -35,6 +37,9 @@ class MobileGemmaWrapper:
             n_ctx: Context window size
             system_monitor: Istanza per Adaptive Metabolic Coupling (V6.4)
         """
+        if backend_preference not in (None, 'cpu'):
+            raise ValueError('Only explicit CPU diagnostics may override backend selection')
+        self.backend_preference = backend_preference
         self.models_dir = models_dir
         self.model_path = os.path.join(models_dir, model_name)
         self.n_ctx = n_ctx
@@ -68,425 +73,90 @@ class MobileGemmaWrapper:
                 self.close()
                 raise
 
+    @native_work
     def _load(self):
-        """Carica il modello con llama.cpp"""
-        logging.info(f"[MobileGemma] Loading model from {self.model_path} ...")
+        """Load the matched runtime once and keep CPU as a recoverable backend."""
+        from contextlib import nullcontext
+        from .native_backend import BackendChoice, prepare_android_backend
+        self._native_guard = None
+        self.backend_info = {'kind': 'cpu', 'reason': 'not_loaded'}
         try:
-            import sys
-            import os
-            import ctypes
-            
-            # --- CRITICAL: PRE-LOAD libggml.so GLOBALLY ---
-            # llama-cpp-python usually fails because it can't find symbols from libggml.so
-            private_root = os.environ.get("ANDROID_PRIVATE", "/data/data/org.allma.allma_prime/files/app")
-            
-            # Handle p4a structure variations
-            if private_root.endswith("/app"):
-                 base_internal = private_root
-            else:
-                 base_internal = os.path.join(private_root, "app")
-
-            # PRIORITIZE INTERNAL LIBGGML (Vulkan/Optimized)
-            internal_ggml = os.path.join(base_internal, "_python_bundle", "site-packages", "llama_cpp", "libggml.so")
-            fallback_ggml = os.path.join(private_root, "libggml.so")
-            candidate_dirs = [
-                os.path.dirname(internal_ggml),
-                os.path.join(base_internal, "site-packages", "llama_cpp"),
-                os.path.join(private_root, "site-packages", "llama_cpp"),
-                os.path.dirname(fallback_ggml),
-            ]
-            
-            target_ggml = None
-            if os.path.exists(internal_ggml):
-                 target_ggml = internal_ggml
-                 print(f"[MobileGemma] Found INTERNAL libggml.so at {internal_ggml}", flush=True)
-            elif os.path.exists(fallback_ggml):
-                 target_ggml = fallback_ggml
-                 print(f"[MobileGemma] Found fallback libggml.so at {fallback_ggml}", flush=True)
-            else:
-                for d in candidate_dirs:
-                    if not d or not os.path.exists(d):
-                        continue
-                    for name in ("libggml.so", "libggml-base.so"):
-                        p = os.path.join(d, name)
-                        if os.path.exists(p):
-                            target_ggml = p
-                            print(f"[MobileGemma] Found libggml at {p}", flush=True)
-                            break
-                    if target_ggml:
-                        break
-                    for f in os.listdir(d):
-                        if f.startswith("libggml") and f.endswith(".so"):
-                            target_ggml = os.path.join(d, f)
-                            print(f"[MobileGemma] Found libggml variant: {target_ggml}", flush=True)
-                            break
-                    if target_ggml:
-                        break
-            
-            if target_ggml:
-                ggml_dir = os.path.dirname(target_ggml)
-                print(f"[MobileGemma] Scanning for libggml dependencies in {ggml_dir}...", flush=True)
-                
-                # CRITICAL: Load backends (cpu, vulkan) FIRST
-                # dlopen fails if these aren't loaded when libggml.so is loaded
-                if os.path.exists(ggml_dir):
-                    for f in os.listdir(ggml_dir):
-                        if f.startswith("libggml-") and f.endswith(".so"):
-                            # RESTORED (Build 163-v23): We MUST load libggml-vulkan.so because libggml.so is linked against it.
-                            # We will disable actual GPU usage via env vars below.
-                            
-                            full_path = os.path.join(ggml_dir, f)
-                            try:
-                                ctypes.CDLL(full_path, mode=ctypes.RTLD_GLOBAL)
-                                print(f"[MobileGemma] Pre-loaded backend: {f}", flush=True)
-                            except Exception as e:
-                                print(f"[MobileGemma] WARN: Failed to load backend {f}: {e}", flush=True)
-
-                print(f"[MobileGemma] Pre-loading main libggml.so from {target_ggml}...", flush=True)
-                
-                # FORCE IGNORE VULKAN DEVICES (Virtual CPU Mode)
-                # This prevents llama.cpp from finding the GPU even if the library is loaded.
-                os.environ["GGML_VULKAN_DEVICE"] = "-1"
-                os.environ["GGML_VK_VISIBLE_DEVICES"] = ""
-                os.environ["GGML_VK_DISABLE_FUSION"] = "1" # Extra safety
-                
-                try:
-                    ctypes.CDLL(target_ggml, mode=ctypes.RTLD_GLOBAL)
-                    print("[MobileGemma] SUCCESS: libggml.so pre-loaded globally.", flush=True)
-                except Exception as e:
-                    print(f"[MobileGemma] WARNING: Failed to pre-load libggml.so: {e}", flush=True)
-            else:
-                print(f"[MobileGemma] CRITICAL: libggml not found (Checked: {internal_ggml}, {fallback_ggml})", flush=True)
-
-            logging.info(f"[MobileGemma] Initializing Llama with path={self.model_path}...")
-            print(f"[MobileGemma] PRINT DEBUG: Initializing Llama...", flush=True)
-            
-            # PERMANENT FIX: Respect main.py's smuggling and verify paths
-            import os
-            import ctypes
-            
-            # 0. Check if LLAMA_CPP_LIB is already set (by main.py)
-            env_lib = os.environ.get("LLAMA_CPP_LIB")
-            lib_path = None
-            
-            if env_lib and os.path.exists(env_lib):
-                print(f"[MobileGemma] Env LLAMA_CPP_LIB set to: {env_lib}", flush=True)
-                
-                # CRITICAL FIX: main.py might forcefully set this to 'files/libllama.so' (stale)
-                # If we found a better INTERNAL lib, we must override it.
-                is_stale_fallback = "files/libllama.so" in env_lib or "libllama.so" in env_lib and "app" not in env_lib
-                
-                if is_stale_fallback and target_ggml:
-                    # We have a valid internal ggml, so we should look for internal llama too
-                    internal_llama_dir = os.path.dirname(target_ggml)
-                    possible_internal_llama = os.path.join(internal_llama_dir, "libllama.so")
-                    
-                    if os.path.exists(possible_internal_llama):
-                        print(f"[MobileGemma] OVERRIDE: Ignoring stale env lib {env_lib}. Switching to internal: {possible_internal_llama}", flush=True)
-                        lib_path = possible_internal_llama
-                        os.environ["LLAMA_CPP_LIB"] = lib_path
-                    else:
-                        print(f"[MobileGemma] Stale env lib detected but no internal libllama found at {possible_internal_llama}. Using env.", flush=True)
-                        lib_path = env_lib
-                else:
-                    lib_path = env_lib
-            else:
-                print(f"[MobileGemma] env LLAMA_CPP_LIB is {env_lib} (missing or invalid), searching...", flush=True)
-                
-                # Possible locations for the library
-                private_root = os.environ.get("ANDROID_PRIVATE", "/data/data/org.allma.allma_prime/files/app")
-                
-                # Handle p4a structure variations (files/app vs just files)
-                if private_root.endswith("/app"):
-                     base_internal = private_root
-                else:
-                     base_internal = os.path.join(private_root, "app")
-
-                possible_paths = [
-                    # 1. Custom location in site-packages (CORRECT NEW VERSION - VULKAN)
-                    os.path.join(base_internal, "_python_bundle", "site-packages", "llama_cpp", "libllama.so"),
-                     # 2. Site-packages direct (alternative p4a)
-                    os.path.join(private_root, "site-packages", "llama_cpp", "libllama.so"),
-                    # 3. Standard Android native lib dir (Fallback)
-                    "/data/app/org.allma.allma_prime/lib/arm64/libllama.so",
-                    # 4. As a sibling to this file
-                    os.path.join(os.path.dirname(__file__), "libllama.so"),
-                ]
-                
-                # REMOVED: os.path.join(private_root, "libllama.so") - This location contains STALE 20MB lib!
-                
-                for p in possible_paths:
-                    if os.path.exists(p):
-                        lib_path = p
-                        size = os.path.getsize(p)
-                        print(f"[MobileGemma] Found libllama.so at {p} (Size: {size} bytes)", flush=True)
-                        break
-                
-                if not lib_path:
-                    search_roots = [base_internal, private_root]
-                    for root in search_roots:
-                        if not os.path.exists(root):
-                            continue
-                        for dirpath, dirnames, filenames in os.walk(root):
-                            if "libllama.so" in filenames:
-                                candidate = os.path.join(dirpath, "libllama.so")
-                                if "files/libllama.so" in candidate and "app" not in candidate:
-                                    continue
-                                lib_path = candidate
-                                size = os.path.getsize(candidate)
-                                print(f"[MobileGemma] Found libllama.so at {candidate} (Size: {size} bytes)", flush=True)
-                                break
-                        if lib_path:
-                            break
-            
-            if lib_path:
-                print(f"[MobileGemma] Resolved libllama.so at {lib_path}, setting env...", flush=True)
-                os.environ["LLAMA_CPP_LIB"] = lib_path
-                os.environ["LLAMA_CPP_LIB_PATH"] = os.path.dirname(lib_path)
-                
-                # --- OPENCL DIAGNOSTIC LOAD (Build 164-v2) ---
-                try:
-                    # 0. SEARCH FOR SYSTEM OPENCL
-                    system_opencl_paths = [
-                        "/vendor/lib64/libOpenCL.so",
-                        "/system/vendor/lib64/libOpenCL.so",
-                        "/system/lib64/libOpenCL.so",
-                        "/vendor/lib64/libOpenCL-pixel.so", # Pixel devices
-                        "/data/local/tmp/libOpenCL.so"      # Debug fallback
-                    ]
-                    
-                    loaded_opencl = False
-                    for ocl_path in system_opencl_paths:
-                        if os.path.exists(ocl_path):
-                            print(f"[MobileGemma] Found system OpenCL at {ocl_path}", flush=True)
-                            try:
-                                ctypes.CDLL(ocl_path)
-                                print(f"[MobileGemma] SUCCESS: Pre-loaded system {ocl_path}", flush=True)
-                                loaded_opencl = True
-                                break
-                            except Exception as e_ocl:
-                                print(f"[MobileGemma] Failed to load system {ocl_path}: {e_ocl}", flush=True)
-                    
-                    if not loaded_opencl:
-                         print(f"[MobileGemma] WARNING: System libOpenCL.so NOT FOUND or BLOCKED by Namespace.", flush=True)
-                         print(f"[MobileGemma] Using internal statically-linked OpenCL proxy...", flush=True)
-
-                    # 1. Try to load libggml-opencl.so from the same directory
-                    lib_dir = os.path.dirname(lib_path)
-                    opencl_lib = os.path.join(lib_dir, "libggml-opencl.so")
-                    
-                    if os.path.exists(opencl_lib):
-                        print(f"[MobileGemma] Found libggml-opencl.so at {opencl_lib}", flush=True)
-                        # We use RTLD_GLOBAL just in case libllama requires symbols from it
-                        ctypes.CDLL(opencl_lib, mode=ctypes.RTLD_GLOBAL)
-                        print(f"[MobileGemma] SUCCESS: Pre-loaded libggml-opencl.so via ctypes!", flush=True)
-                        logging.info("[MobileGemma] GPU Backend Loaded: OpenCL")
-                    else:
-                        print(f"[MobileGemma] WARNING: libggml-opencl.so NOT FOUND in {lib_dir}", flush=True)
-                        logging.warning("[MobileGemma] GPU Backend Missing: libggml-opencl.so")
-
-                except Exception as e:
-                    print(f"[MobileGemma] CRITICAL ERROR loading libggml-opencl.so: {e}", flush=True)
-                    logging.error(f"[MobileGemma] GPU Init Failed: {e}")
-                # ---------------------------------------------
-
-                try:
-                    ctypes.CDLL(lib_path)
-                    print(f"[MobileGemma] Pre-loaded {lib_path} successfully!", flush=True)
-                except Exception as e:
-                    print(f"[MobileGemma] FAILED to pre-load {lib_path}: {e}", flush=True)
-            else:
-                 print(f"[MobileGemma] CRITICAL WARNING: libllama.so NOT FOUND in any known path. Search paths: {possible_paths}", flush=True)
-
-            # --- LAZY IMPORT ---
-            try:
-                from llama_cpp import Llama
-                print("[MobileGemma] Llama class imported successfully!", flush=True)
-            except ImportError as e:
-                print(f"[MobileGemma] ImportError for Llama class: {e}", flush=True)
-                logging.error(f"ImportError detail: {e}")
-                
-                # ATTEMPT RECOVERY: CLEAR CONFLICTS
-                try:
-                    if "LLAMA_CPP_LIB" in os.environ:
-                        print(f"[MobileGemma] Clearing LLAMA_CPP_LIB ({os.environ['LLAMA_CPP_LIB']}) and retrying...", flush=True)
-                        del os.environ["LLAMA_CPP_LIB"]
-                    
-                    import importlib
-                    import llama_cpp
-                    importlib.reload(llama_cpp)
-                    
-                    from llama_cpp import Llama
-                    print("[MobileGemma] RECOVERY SUCCESS: Llama class imported after reset.", flush=True)
-
-                    try:
-                        import ctypes
-                        import llama_cpp.llama_cpp as _llama_cpp
-
-                        if not getattr(Llama, "_allma_light_cache_patched", False):
-                            class _ALLMALightState:
-                                def __init__(self, input_ids, n_tokens: int, llama_state: bytes, llama_state_size: int):
-                                    self.input_ids = input_ids
-                                    self.n_tokens = n_tokens
-                                    self.llama_state = llama_state
-                                    self.llama_state_size = llama_state_size
-
-                            def _save_state_light(self):
-                                state_size = _llama_cpp.llama_get_state_size(self._ctx.ctx)
-                                llama_state = (ctypes.c_uint8 * int(state_size))()
-                                n_bytes = _llama_cpp.llama_copy_state_data(self._ctx.ctx, llama_state)
-                                llama_state_compact = (ctypes.c_uint8 * int(n_bytes))()
-                                ctypes.memmove(llama_state_compact, llama_state, int(n_bytes))
-                                return _ALLMALightState(
-                                    input_ids=self.input_ids.copy(),
-                                    n_tokens=self.n_tokens,
-                                    llama_state=bytes(llama_state_compact),
-                                    llama_state_size=int(n_bytes),
-                                )
-
-                            def _load_state_light(self, state):
-                                self.input_ids = state.input_ids.copy()
-                                self.n_tokens = int(state.n_tokens)
-                                LLamaStateArrayType = ctypes.c_uint8 * int(state.llama_state_size)
-                                llama_state = LLamaStateArrayType.from_buffer_copy(state.llama_state)
-                                if _llama_cpp.llama_set_state_data(self._ctx.ctx, llama_state) != int(state.llama_state_size):
-                                    raise RuntimeError("Failed to set llama state data")
-
-                            Llama.save_state = _save_state_light
-                            Llama.load_state = _load_state_light
-                            Llama._allma_light_cache_patched = True
-                    except Exception:
-                        pass
-                    
-                    # Limit threads based on environment
-                    max_threads = 4 if getattr(self, 'models_dir', "").startswith("/data") else 8
-                    
-                    self.llm = Llama(
-                        model_path=self.model_path,
-                        n_ctx=self.n_ctx,
-                        n_threads=max_threads, 
-                        n_gpu_layers=0, # DEBUG: Force CPU to check if Vulkan is crashing
-                        verbose=True
-                    )
-                    # If successful, we don't go to the main init block below, 
-                    # but we need to ensure self.llm is set.
-                    # Actually, better to just let it fall through or raise.
-                    
-                except Exception as e2:
-                    print(f"[MobileGemma] RECOVERY FAILED: {e2}", flush=True)
-                    # CRITICAL: Re-raise the ORIGINAL error to show in UI
-                    raise e
-
+            force_cpu = getattr(self, 'backend_preference', None) == 'cpu'
+            choice = prepare_android_backend(self.model_path, force_cpu=True) if force_cpu else prepare_android_backend(self.model_path)
+            from llama_cpp import Llama
+            if choice.device_ids is not None and not getattr(Llama, '_allma_explicit_devices', False):
+                raise RuntimeError('Bundled runtime lacks explicit device isolation')
             try:
                 import ctypes
-                import llama_cpp.llama_cpp as _llama_cpp
-
-                if not getattr(Llama, "_allma_light_cache_patched", False):
-                    class _ALLMALightState:
-                        def __init__(self, input_ids, n_tokens: int, llama_state: bytes, llama_state_size: int):
+                import llama_cpp.llama_cpp as native
+                if not getattr(Llama, '_allma_light_cache_patched', False):
+                    class LightState:
+                        def __init__(self, input_ids, n_tokens, llama_state, llama_state_size):
                             self.input_ids = input_ids
                             self.n_tokens = n_tokens
                             self.llama_state = llama_state
                             self.llama_state_size = llama_state_size
 
-                    def _save_state_light(self):
-                        state_size = _llama_cpp.llama_get_state_size(self._ctx.ctx)
-                        llama_state = (ctypes.c_uint8 * int(state_size))()
-                        n_bytes = _llama_cpp.llama_copy_state_data(self._ctx.ctx, llama_state)
-                        llama_state_compact = (ctypes.c_uint8 * int(n_bytes))()
-                        ctypes.memmove(llama_state_compact, llama_state, int(n_bytes))
-                        return _ALLMALightState(
-                            input_ids=self.input_ids.copy(),
-                            n_tokens=self.n_tokens,
-                            llama_state=bytes(llama_state_compact),
-                            llama_state_size=int(n_bytes),
-                        )
+                    def save_state(instance):
+                        size = native.llama_get_state_size(instance._ctx.ctx)
+                        state = (ctypes.c_uint8 * int(size))()
+                        used = native.llama_copy_state_data(instance._ctx.ctx, state)
+                        if not 0 < int(used) <= int(size):
+                            raise RuntimeError('Invalid llama state size')
+                        return LightState(instance.input_ids.copy(), instance.n_tokens,
+                                          ctypes.string_at(ctypes.addressof(state), int(used)), int(used))
 
-                    def _load_state_light(self, state):
-                        self.input_ids = state.input_ids.copy()
-                        self.n_tokens = int(state.n_tokens)
-                        LLamaStateArrayType = ctypes.c_uint8 * int(state.llama_state_size)
-                        llama_state = LLamaStateArrayType.from_buffer_copy(state.llama_state)
-                        if _llama_cpp.llama_set_state_data(self._ctx.ctx, llama_state) != int(state.llama_state_size):
-                            raise RuntimeError("Failed to set llama state data")
+                    def load_state(instance, state):
+                        instance.input_ids = state.input_ids.copy()
+                        instance.n_tokens = int(state.n_tokens)
+                        buffer = (ctypes.c_uint8 * int(state.llama_state_size)).from_buffer_copy(state.llama_state)
+                        if native.llama_set_state_data(instance._ctx.ctx, buffer) != int(state.llama_state_size):
+                            raise RuntimeError('Failed to restore llama state')
 
-                    Llama.save_state = _save_state_light
-                    Llama.load_state = _load_state_light
+                    Llama.save_state = save_state
+                    Llama.load_state = load_state
                     Llama._allma_light_cache_patched = True
-            except Exception:
+            except (AttributeError, ImportError):
                 pass
 
-            # PERFORMANCE OPTIMIZATION (2026-02-02):
-            # Real-world testing revealed unacceptable slowness (20-40s responses).
-            # Root causes:
-            # 1. n_ctx=4096 creates massive overhead (exponential slowdown)
-            # 2. n_threads=4 uses only 50% of S25 Ultra's 8 cores
-            # 3. n_batch=128 underutilizes GPU bandwidth
-            #
-            # New "Performance Mode" config:
-            # - Halve context (4096→2048): -50% memory, +70% speed
-            # - Double threads (4→8): use all cores, +40% speed  
-            # - Double batch (128→256): better GPU utilization, +20% speed
-            #
-            # Expected: 2-3x total speedup (20-40s → 7-15s)
-            # Trade-off: Shorter conversation memory (10 exchanges → 5-7)
-            
-            # VULKAN RESTORATION (Build 163-v18)
-            # OpenCL blocked by Android Namespace (clns-9).
-            # Reverting to Vulkan with STABILITY FLAGS to prevent crash.
-            
-            # CPU FALLBACK (Build 163-v21)
-            # Vulkan Shaders rejected by Adreno 830 Driver (Pipeline create failed).
-            # Forcing CPU mode to guarantee stability.
-            
-            # --- FUTURE GPU ENABLEMENT (ADRENO 830) ---
-            # To re-enable GPU acceleration when drivers/llama.cpp are updated:
-            # 1. Uncomment the flags below.
-            # 2. Set n_gpu_layers = 99.
-            # 
-            # os.environ["GGML_VK_DISABLE_FUSION"] = "1"  # Stability
-            # os.environ["GGML_VK_DISABLE_F16"] = "1"      # Stability
-            # os.environ["GGML_VK_DISABLE_COOPMAT"] = "1"  # Stability
-            # ------------------------------------------
-
-            # Limit threads based on environment to avoid OS freezing
-            # If we're on android (/data/...), give 4 threads to LLM, keep 4 for OS/Async
-            is_mobile = getattr(self, '_is_android', True) # Assumed true if not explicitly mock
-            try:
-                if "/Users/" in self.model_path: is_mobile = False
-            except: pass
-            
-            safe_threads = 4 if is_mobile else 8
-            
-            # --- V6.4 ADAPTIVE METABOLIC COUPLING (OVERDRIVE INIT) ---
-            if is_mobile and getattr(self, 'system_monitor', None):
+            mobile = 'ANDROID_PRIVATE' in os.environ or '/Users/' not in self.model_path
+            threads = 4 if mobile else 8
+            if choice.kind == 'cpu' and mobile and self.system_monitor and not force_cpu:
                 try:
+                    from allma_model.core.system_monitor import current_power_reading
                     state = self.system_monitor.get_metabolic_state()
-                    # Overdrive: < 30C and charging
-                    if state.battery_temp_celsius > 0 and state.battery_temp_celsius < 30.0 and state.is_charging:
-                        safe_threads = 6
-                        print(f"[MobileGemma] 🚀 OVERDRIVE Attivato! Temp: {state.battery_temp_celsius}°C. Threads: {safe_threads}", flush=True)
-                    else:
-                        print(f"[MobileGemma] 🏎️ Comfort Mode. Temp: {state.battery_temp_celsius}°C. Threads: {safe_threads}", flush=True)
-                except Exception as e:
-                    print(f"[MobileGemma] Errore lettura SystemMonitor per Overdrive: {e}", flush=True)
-
-            self.llm = Llama(
-                model_path=self.model_path,
-                n_ctx=self.n_ctx,
-                n_threads=safe_threads,   # Hybrid Arch: leave cores for AsyncIO and OS
-                n_batch=512,        # Performance: High batch for CPU
-                n_gpu_layers=0,     # CPU FALLBACK: Disabled GPU to eliminate OpenCL dispatch latency
-                flash_attn=False,
-                use_mmap=True,
-                use_mlock=False,
-                verbose=True
-            )
-            
-            print(f"[MobileGemma] PRINT DEBUG: Llama Init Success! (CPU-ONLY MODE)", flush=True)
-            logging.info("[MobileGemma] Model loaded successfully.")
-        except Exception as e:
-            logging.error(f"[MobileGemma] Error loading model: {e}")
+                    if (current_power_reading(state) and state.is_power_save is False
+                            and 0 < state.battery_temp_celsius < 30.0 and state.is_charging):
+                        threads = 6
+                except Exception as error:
+                    logging.warning('[MobileGemma] Power reading unavailable: %s', error)
+            arguments = dict(model_path=self.model_path, n_ctx=self.n_ctx,
+                             n_threads=threads, n_batch=512, flash_attn=False,
+                             use_mmap=True, use_mlock=False, verbose=True)
+            if force_cpu:
+                arguments.update(n_threads=4, n_threads_batch=4, n_ubatch=256)
+            retry_cpu = False
+            try:
+                with choice.guard.operation('load') if choice.guard else nullcontext():
+                    self.llm = Llama(**arguments, **choice.kwargs)
+            except Exception as error:
+                if choice.kind != 'opencl':
+                    raise
+                logging.warning('[MobileGemma] GPU model initialization failed; retrying CPU: %s', error)
+                retry_cpu = True
+            if retry_cpu:
+                import gc
+                gc.collect()
+                choice = choice.cpu_fallback('gpu_model_initialization_failed')
+                self.llm = Llama(**arguments, **choice.kwargs)
+            self._native_guard = choice.guard
+            self.backend_info = {'kind': choice.kind, 'reason': choice.reason, 'driver': choice.driver}
+            self.backend_info['physical_batch'] = arguments.get('n_ubatch', choice.kwargs.get('n_ubatch', 512))
+            self.backend_info['batch_threads'] = arguments.get('n_threads_batch', choice.kwargs.get('n_threads_batch'))
+            logging.info('[NativeBackend] model=%s backend=%s reason=%s',
+                         os.path.basename(self.model_path), choice.kind, choice.reason)
+        except Exception as error:
+            logging.error('[MobileGemma] Error loading model: %s', error)
             self.llm = None
 
     def prepare_chat(self, messages, budget, reasoning=True):
@@ -498,6 +168,7 @@ class MobileGemmaWrapper:
                 self.binding = ModelBinding.from_native(self.llm, self.n_ctx)
             return self.binding.prepare(messages, lambda data: self.llm.tokenize(data, add_bos=False, special=True), budget, reasoning)
 
+    @native_work
     def close(self):
         with self.inference_lock:
             native, self.llm = self.llm, None
@@ -509,6 +180,7 @@ class MobileGemmaWrapper:
             if native is not None:
                 native.close()
 
+    @native_operation
     def generate(
         self,
         prompt: str,
@@ -568,8 +240,10 @@ class MobileGemmaWrapper:
                     thought_budget = None
 
             import time
+            from allma_model.ui.render_budget import gpu_render_budget
             lock_started = time.perf_counter()
-            with self.inference_lock:
+            with self.inference_lock, gpu_render_budget(
+                    enabled=getattr(self, 'backend_info', {}).get('kind') == 'opencl'), CPUCancellation(self, cancel_event) as native_cancel:
                 lock_wait_ms = (time.perf_counter()-lock_started)*1000
                 prepare_started = time.perf_counter()
                 check_cancelled(cancel_event)
@@ -578,6 +252,10 @@ class MobileGemmaWrapper:
                 stream_mode = callback is not None or cancel_event is not None
                 self.last_generation = {
                     "request_id": request_id,
+                    "backend": getattr(self, "backend_info", {}).get("kind", "cpu"),
+                    "physical_batch": getattr(self, "backend_info", {}).get("physical_batch"),
+                    "native_cpu_cancellation": native_cancel.supported,
+                    "render_budget_hz": 60 if getattr(self, "backend_info", {}).get("kind") == 'opencl' else None,
                     "max_tokens": max_tokens,
                     "temperature": temperature,
                     "top_p": top_p,
@@ -722,12 +400,14 @@ class MobileGemmaWrapper:
                     pacing_delay = 0.0  # Massima velocità, 0ms
                     if getattr(self, 'system_monitor', None):
                         try:
+                            from allma_model.core.system_monitor import current_power_reading
                             state = self.system_monitor.get_metabolic_state()
                             if state.battery_temp_celsius > 40.0:
                                 pacing_delay = 0.02  # Leggero underclock di sicurezza (20ms)
                                 # Avoid log spam on every generation, log only at start
                                 logging.info(f"[MobileGemma] 🥵 PACING TERMICO RIDOTTO: {state.battery_temp_celsius}°C. Pacing: {pacing_delay}s")
-                            elif state.battery_temp_celsius > 0 and state.battery_temp_celsius < 30.0 and state.is_charging:
+                            elif (current_power_reading(state) and state.is_power_save is False
+                                  and 0 < state.battery_temp_celsius < 30.0 and state.is_charging):
                                 pacing_delay = 0.0 # Overdrive Assoluto
                         except Exception as e:
                             logging.error(f"[MobileGemma] Thermal Pacing exception: {e}")
@@ -735,9 +415,14 @@ class MobileGemmaWrapper:
                     try:
                         for chunk in output:
                             check_cancelled(cancel_event)
-                            token = chunk["choices"][0]["text"]
+                            choice = chunk["choices"][0]
+                            token = choice["text"]
+                            native_finish = choice.get('finish_reason')
+                            if native_finish in ('stop', 'length'):
+                                self.last_generation['finish_reason'] = native_finish
+                                self.last_generation['finish_reason_source'] = 'native_stream'
                             generated_text += token
-                            if first_token_ts is None:
+                            if token and first_token_ts is None:
                                 first_token_ts = time.perf_counter()
                                 try:
                                     self.last_generation["ttft_ms"] = float((first_token_ts - gen_t0) * 1000.0)
@@ -748,6 +433,7 @@ class MobileGemmaWrapper:
                             if loop is not None:
                                 full_text = candidate[:loop]
                                 self.last_generation['finish_reason'] = 'repetition'
+                                self.last_generation['finish_reason_source'] = 'local_repetition_guard'
                                 break
                             full_text = candidate
                             if callback:
@@ -763,6 +449,7 @@ class MobileGemmaWrapper:
                     check_cancelled(cancel_event)
                     try:
                         self.last_generation["completion_tokens"] = int(len(self.llm.tokenize(generated_text.encode("utf-8"))))
+                        self.last_generation['token_count_source'] = 'retokenized'
                         if self.last_generation.get("prompt_tokens") is not None:
                             self.last_generation["total_tokens"] = int(self.last_generation["prompt_tokens"] + self.last_generation["completion_tokens"])
                     except Exception:
@@ -770,10 +457,13 @@ class MobileGemmaWrapper:
                     try:
                         ct = self.last_generation.get("completion_tokens")
                         mt = self.last_generation.get("max_tokens")
-                        if self.last_generation.get('finish_reason') != 'repetition' and ct is not None and mt is not None and mt != -1 and int(ct) >= int(mt) - 1:
-                            self.last_generation["finish_reason"] = "max_tokens"
-                        else:
-                            self.last_generation["finish_reason"] = self.last_generation.get("finish_reason") or "stop"
+                        if self.last_generation.get('finish_reason') is None:
+                            # Text can retokenize to fewer tokens than the live
+                            # stream: this fallback must not override native EOF.
+                            self.last_generation['finish_reason_source'] = 'retokenized_heuristic'
+                            self.last_generation['finish_reason'] = (
+                                'max_tokens' if ct is not None and mt is not None and mt != -1
+                                and int(ct) >= int(mt) - 1 else 'stop')
                     except Exception:
                         pass
                     try:
@@ -833,6 +523,15 @@ class MobileGemmaWrapper:
                     return clean_answer
 
         except GenerationCancelled:
+            if request_id:
+                previous = getattr(self, 'last_generation', {})
+                metadata = dict(previous) if isinstance(previous, dict) and previous.get('request_id') == request_id else {'request_id':request_id}
+                metadata.update(status='cancelled', finish_reason='cancelled')
+                if 'native_cancel' in locals():metadata['native_cpu_abort_fired'] = native_cancel.fired
+                self.last_generation = metadata
+                if not isinstance(getattr(self,'_generation_meta_by_id',None),dict):self._generation_meta_by_id = {}
+                self._generation_meta_by_id[request_id] = dict(metadata)
+                while len(self._generation_meta_by_id) > 32:self._generation_meta_by_id.pop(next(iter(self._generation_meta_by_id)))
             raise
         except Exception as e:
             logging.error(f"[MobileGemma] Inference error: {e}")

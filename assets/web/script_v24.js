@@ -105,10 +105,16 @@ window.newChatFailed = function () {
 
 // --- MESSAGING ---
 function sendMessage() {
+    if (window._nativeUpdateReply && window._nativeUpdateReply.reserved) return;
     if (chatBusy || newChatPending) return;
     window.chatNotice('');
     const text = messageInput.value.trim();
     if (text) {
+        const envelope = JSON.stringify({type: 'chat', text});
+        if (envelope.length > 128 * 1024) {
+            window.chatNotice('Il messaggio è troppo lungo. Dividilo in più parti.');
+            return;
+        }
         addMessage(text, 'user', null);
         messageInput.value = '';
         messageInput.blur();
@@ -116,13 +122,23 @@ function sendMessage() {
         if (window.pyBridge) {
             // Mostra la bolla con i pallini animati prima del primo token
             window.startStream();
-            window.pyBridge.postMessage(text);
+            window.pyBridge.postMessage(envelope);
         } else {
             console.warn("No PyBridge");
             setTimeout(() => addMessage("Test response", 'bot', "Thinking..."), 1000);
         }
     }
 }
+
+window.chatRejected = function (text) {
+    if (activeRequestId !== null) return;
+    if (currentStreamBubble) currentStreamBubble.content.closest('.message-wrapper')?.remove();
+    backendBusy = false;
+    finishStreamUI();
+    if (!messageInput.value && typeof text === 'string') messageInput.value = text;
+    updateComposer();
+    window.chatNotice('Messaggio non inviato. Puoi riprovare.');
+};
 
 // Only inert formatting is allowed in generated Markdown, including streamed text.
 function renderSafeMarkdown(target, text) {
@@ -237,7 +253,23 @@ function attachMessageCopy(wrapper, text = null) {
     button.hidden = !wrapper.copyText.trim();
 }
 
-function addMessage(text, sender, thoughtText) {
+function attachPlanReview(wrapper, review) {
+    if (!wrapper || !review || review.source !== 'host_count_coverage_v1'
+        || !['needs_review', 'not_automatically_checkable'].includes(review.status)) return;
+    const findings = Array.isArray(review.findings) ? review.findings : [];
+    const finding = findings.find(item => item && Number.isInteger(item.required) && Number.isInteger(item.guaranteed)
+        && item.guaranteed >= 0 && item.required > item.guaranteed && item.required <= 999);
+    if ((review.status === 'needs_review' && !finding) || wrapper.querySelector('.message-plan-review')) return;
+    const notice = document.createElement('div');
+    notice.className = 'message-plan-review';
+    notice.setAttribute('role', 'note');
+    notice.textContent = review.status === 'needs_review'
+        ? `Da rivedere: il criterio richiede ${finding.required} elementi controllati; un controllo nel piano ne garantisce ${finding.guaranteed}. Chiedimi una proposta corretta.`
+        : 'Questo piano richiede una tua valutazione: il controllo automatico non copre tutti i requisiti.';
+    wrapper.appendChild(notice);
+}
+
+function addMessage(text, sender, thoughtText, planReview = null, origin = null) {
     if (sender === 'bot') window.updateVoiceAnswer(text);
     const template = document.getElementById(sender === 'user' ? 'tmpl-user' : 'tmpl-bot');
     const clone = template.content.cloneNode(true);
@@ -259,6 +291,8 @@ function addMessage(text, sender, thoughtText) {
     }
 
     const wrapper = clone.querySelector('.message-wrapper');
+    if (sender === 'bot' && !String(text || '').trim()) attachUnresolvedTurn(wrapper, origin);
+    if (sender === 'bot') { attachPlanReview(wrapper, planReview); window.learningUI?.attachOrigin(wrapper, origin); }
     attachMessageCopy(wrapper, text);
     prepareConversation();
     chatContainer.appendChild(wrapper);
@@ -382,6 +416,7 @@ function drainBuffer() {
     isDraining = false;
     if (!currentStreamBubble || !currentStreamBubble.content || document.hidden) return;
     const changed = !!(responseBuffer || thoughtBuffer);
+    const needsScroll = !!responseBuffer || (thoughtBuffer && currentStreamBubble.reasoningContainer.classList.contains('open'));
     if (thoughtBuffer) {
         currentStreamBubble.reasoning.textContent += thoughtBuffer;
         thoughtBuffer = "";
@@ -393,7 +428,7 @@ function drainBuffer() {
     }
     if (changed) {
         lastStreamRender = performance.now();
-        scrollToBottom();
+        if (needsScroll) scrollToBottom();
     }
 }
 
@@ -424,6 +459,7 @@ function finishStreamUI() {
     }
     currentStreamBubble = null;
     streamStartTime = 0;
+    window.referenceActivity?.finish(activeRequestId);
     activeRequestId = null;
     setChatBusy(newChatPending || backendBusy);
 }
@@ -1482,6 +1518,7 @@ window.startStream = function (requestId = null) {
         lastRequestId = requestId;
     }
     setChatBusy(true);
+    window.referenceActivity?.begin(requestId);
     if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
         VoiceFX.setState('thinking');
         VoiceFX.bump(0.35);
@@ -1583,6 +1620,37 @@ window.streamChunk = function (text, isThought, requestId = null) {
     }
 };
 
+window.streamBatch = function (events) {
+    if (!Array.isArray(events)) return;
+    for (const event of events) {
+        if (Array.isArray(event) && typeof event[0] === 'string') {
+            window.streamChunk(event[0], event[1] === true, event[2]);
+        }
+    }
+};
+
+function attachUnresolvedTurn(wrapper, origin = null) {
+    if (!wrapper || wrapper.querySelector('.turn-unresolved')) return;
+    // An execution outcome belongs to UI, not to ALLMA's spoken answer.
+    const content = wrapper.querySelector('.content');
+    if (content) { content.textContent = ''; content.hidden = true; }
+    const state = document.createElement('div'); state.className = 'turn-unresolved';
+    state.setAttribute('role', 'status');
+    const label = document.createElement('span');
+    label.textContent = origin?.kind === 'incomplete' && typeof origin.label === 'string'
+        ? origin.label.slice(0, 120) : 'Risposta non completata';
+    if (origin?.kind === 'incomplete' && typeof origin.detail === 'string') label.title = origin.detail.slice(0, 600);
+    const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Modifica domanda';
+    edit.addEventListener('click', () => {
+        if (chatBusy || newChatPending || messageInput.value.trim()) return;
+        let previous = wrapper.previousElementSibling;
+        while (previous && !previous.classList.contains('user')) previous = previous.previousElementSibling;
+        const question = previous?.querySelector('.content, .message-bubble');
+        if (question) { messageInput.value = question.textContent; messageInput.focus(); }
+    });
+    state.append(label, edit); wrapper.appendChild(state);
+}
+
 function attachCompletionAction(wrapper, requestId) {
     if (!wrapper.querySelector('.message-completion')) {
         const notice = document.createElement('div'); notice.className = 'message-completion';
@@ -1599,8 +1667,9 @@ function attachCompletionAction(wrapper, requestId) {
     }
 }
 
-window.endStream = function (finalContent, requestId = null, status = null) {
+window.endStream = function (finalContent, requestId = null, status = null, planReview = null, origin = null) {
     if (requestId !== null && requestId !== activeRequestId) return;
+    const followFinal = !!currentStreamBubble && chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 140;
     window.updateVoiceAnswer(finalContent);
     if (window.brainView) window.brainView.answer(finalContent);
     if (currentStreamBubble && thoughtBuffer) {
@@ -1612,10 +1681,13 @@ window.endStream = function (finalContent, requestId = null, status = null) {
         currentStreamBubble.rawFullText = finalContent;
         // Final text is authoritative even if the token stream was revised.
         renderSafeMarkdown(currentStreamBubble.content, finalContent);
+        if (!finalContent.trim()) attachUnresolvedTurn(currentStreamBubble.content.closest('.message-wrapper'), origin);
     }
     if (status === 'truncated_answer' && currentStreamBubble && finalContent && finalContent.trim()) {
         attachCompletionAction(currentStreamBubble.content.closest('.message-wrapper'), requestId);
     }
+    if (currentStreamBubble) attachPlanReview(currentStreamBubble.content.closest('.message-wrapper'), planReview);
+    if (currentStreamBubble) window.learningUI?.attachOrigin(currentStreamBubble.content.closest('.message-wrapper'), origin);
     isBackendFinished = true;
     if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
         // Native recognizer and playback callbacks own the voice state.
@@ -1638,6 +1710,7 @@ window.endStream = function (finalContent, requestId = null, status = null) {
     if (responseBuffer.length === 0) {
         finishStreamUI();
     }
+    if (followFinal) scrollToBottom(true);
 };
 
 // --- SYNERGY GRAPH UPDATE ---
@@ -1658,70 +1731,47 @@ window.updateAllmaStatus = function (percentage, statusText) {
 };
 
 // --- SETTINGS LOGIC (Dream Mode) ---
-window.toggleDreamMode = function (checkbox) {
-    const isEnabled = checkbox.checked;
-    console.log("Dream Mode Toggled:", isEnabled);
-
-    // 1. Persistence
-    localStorage.setItem('dream_mode_enabled', isEnabled);
-
-    // 2. Helper Text Update (Optional feedback)
-
-    // 3. Send to Python
-    if (window.pyBridge) {
-        window.pyBridge.postMessage(JSON.stringify({
-            type: 'action',
-            action: 'toggle_dream_mode',
-            enabled: isEnabled
-        }));
-    }
+// The native archive is the sole authority. Never replay a browser preference.
+let dreamSettingsKnown = false;
+let dreamSettingsEnabled = false;
+let dreamSettingsTimer = null;
+window.receiveDreamSettings = function (state) {
+    if (!state || typeof state.enabled !== 'boolean') return;
+    clearTimeout(dreamSettingsTimer);
+    dreamSettingsKnown = true;
+    dreamSettingsEnabled = state.enabled;
+    const toggle = document.getElementById('dream-mode-toggle');
+    if (toggle) { toggle.checked = state.enabled; toggle.disabled = false; }
+    const notice = document.getElementById('dream-settings-status');
+    if (notice) notice.textContent = state.error || '';
 };
-
-// Initialize Settings State
-(function initSettings() {
-    // Dream Mode
-    const savedDream = localStorage.getItem('dream_mode_enabled');
-    const dreamToggle = document.getElementById('dream-mode-toggle');
-    if (dreamToggle) {
-        // Default to false if not set, or true if saved 'true'
-        dreamToggle.checked = (savedDream === 'true');
-
-        // Sync with Python on load (in case app restarted)
-        if (savedDream === 'true' && window.pyBridge) {
-            setTimeout(function () {
-                window.pyBridge.postMessage(JSON.stringify({
-                    type: 'action',
-                    action: 'toggle_dream_mode',
-                    enabled: true
-                }));
-            }, 1500);
-        }
+window.refreshDreamSettings = function () {
+    if (window.pyBridge) window.pyBridge.postMessage(JSON.stringify({type:'action',action:'dream_status'}));
+};
+window.toggleDreamMode = function (checkbox) {
+    const wanted = checkbox.checked;
+    checkbox.disabled = true;
+    if (!dreamSettingsKnown || !window.pyBridge) {
+        checkbox.checked = dreamSettingsEnabled;
+        checkbox.disabled = !dreamSettingsKnown;
+        window.refreshDreamSettings();
+        return;
     }
+    dreamSettingsTimer = setTimeout(() => {
+        checkbox.checked = dreamSettingsEnabled;
+        checkbox.disabled = false;
+        const notice = document.getElementById('dream-settings-status');
+        if (notice) notice.textContent = 'Conferma non ricevuta. Aggiorna le impostazioni.';
+        window.refreshDreamSettings();
+    }, 10000);
+    window.pyBridge.postMessage(JSON.stringify({type:'action',action:'toggle_dream_mode',enabled:wanted}));
+};
+(function initSettings() {
+    const toggle = document.getElementById('dream-mode-toggle');
+    if (toggle) { toggle.checked = false; toggle.disabled = true; window.refreshDreamSettings(); }
 })();
 
 // --- STATUS INDICATORS (Phase 17) ---
-function showDreamToast(message, emoji) {
-    // Rimuovi toast esistente se c'è
-    const existing = document.getElementById('dream-toast');
-    if (existing) existing.remove();
-
-    const toast = document.createElement('div');
-    toast.id = 'dream-toast';
-    toast.innerHTML = `<span class="dream-toast-emoji">${emoji}</span> ${message}`;
-    document.body.appendChild(toast);
-
-    // Triggera animazione entrata
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => toast.classList.add('visible'));
-    });
-
-    // Auto-dismiss dopo 4s
-    setTimeout(() => {
-        toast.classList.remove('visible');
-        setTimeout(() => toast.remove(), 400);
-    }, 4000);
-}
-
 window.updateStatus = function (key, active) {
     if (key === 'dreaming') {
         const indicator = document.getElementById('dream-indicator');
@@ -1730,7 +1780,6 @@ window.updateStatus = function (key, active) {
                 indicator.classList.remove('hidden');
                 indicator.classList.add('active', 'pulsing');
             }
-            showDreamToast('ALLMA sta esplorando nuove ipotesi...', '🌙');
         } else {
             if (indicator) {
                 indicator.classList.remove('active', 'pulsing');
@@ -1740,7 +1789,6 @@ window.updateStatus = function (key, active) {
                     }
                 }, 500);
             }
-            showDreamToast('Ciclo di riflessione terminato.', '☀️');
         }
     }
 };
@@ -2088,6 +2136,21 @@ window.updateDiagnostics = function (input) {
 
         if (!stats) return;
 
+        if (stats.backends) {
+            const names = {opencl: 'GPU · OpenCL', hexagon: 'NPU · Hexagon', cpu: 'CPU', not_loaded: 'non caricato'};
+            const reasons = {previous_gpu_operation_incomplete: 'protezione attiva dopo un’operazione GPU interrotta',
+                previous_npu_operation_incomplete: 'protezione attiva dopo un’operazione NPU interrotta',
+                package_update_recovered: 'ripristinato dopo un aggiornamento verificato',
+                measured_profile: 'profilo verificato', measured_decider_profile: 'profilo verificato',
+                unmeasured_soc: 'accelerazione non ancora verificata su questo dispositivo',
+                unmeasured_driver: 'driver non ancora verificato', not_loaded: 'si collega quando serve'};
+            for (const [key, label] of [['qwen', 'Conversazione'], ['decider', 'Decisore']]) {
+                const item = stats.backends[key] || {};
+                const target = document.getElementById(`diag-${key}-backend`);
+                if (target) target.textContent = `${label}: ${names[item.kind] || 'stato non disponibile'}${item.reason ? ' · ' + (reasons[item.reason] || item.reason) : ''}`;
+            }
+        }
+
         if (stats.resources) {
             updateBar('diag-cpu', stats.resources.cpu, '%', 100);
             updateBar('diag-ram', stats.resources.ram, ' MB', 4000);
@@ -2176,13 +2239,27 @@ document.addEventListener('visibilitychange', syncAmbientMotion);
 syncAmbientMotion();
 
 // One benchmark configuration shared by settings and diagnostics.
+// Maintenance is local and transient. The native gate is the authority;
+// disabling input here only keeps the installation state clear to the user.
+window.nativeUpdateState = function (state) {
+    window._nativeUpdateReply = state;
+    const input = document.getElementById('message-input');
+    if (input && state.reserved) {
+        input.disabled = true;
+        input.placeholder = 'Aggiornamento in preparazione…';
+    } else if (input && !chatBusy && !newChatPending) {
+        input.disabled = false;
+        input.placeholder = 'Scrivi ad ALLMA…';
+    }
+};
+
 window.openBenchmarkSettings = function () {
     if (window.appNav) window.appNav.go('diagnostics');
 };
 
 // The native model is replaceable; personal history belongs to ALLMA.
 window.modelUI = {
-    models: [], busy: false,
+    models: [], busy: false, selectionRequired: false, selectionMessage: '', recoveryShown: false,
     refresh() {
         if (!this.busy) window.pyBridge.postMessage(JSON.stringify({type:'action',action:'list_models'}));
     },
@@ -2194,6 +2271,7 @@ window.modelUI = {
         button.textContent = !model ? 'Verifico i modelli…' : model.active ? 'Modello in uso' : model.available ? 'Verifica e usa' : 'Scarica e usa';
         if (!this.busy && model) document.getElementById('model-status').textContent =
             `${model.active ? 'In uso' : model.available ? (model.verified ? 'Verificato' : 'Installato · verifica prima dell’uso') : 'Da scaricare'} · ${(model.size_bytes/1e9).toFixed(2)} GB · ${model.quantization} · ragionamento disponibile`;
+        if (!this.busy && this.selectionRequired) document.getElementById('model-status').textContent = this.selectionMessage;
     },
     apply() {
         if (this.busy) return;
@@ -2215,6 +2293,8 @@ window.modelUI = {
             const previousActive = (this.models.find(m => m.active) || {}).key;
             this.models = data.models || [];
             this.busy = !!data.busy;
+            this.selectionRequired = data.selection_required === true;
+            this.selectionMessage = data.selection_message || 'Scegli un modello per riprendere la conversazione.';
             choice.replaceChildren(...this.models.map(model => {
                 const option = document.createElement('option');
                 option.value = model.key;
@@ -2228,6 +2308,11 @@ window.modelUI = {
             choice.disabled = this.busy;
             progress.hidden = true;
             this.select();
+            if (this.selectionRequired && !this.recoveryShown && window.appNav) {
+                this.recoveryShown = true;
+                window.appNav.go('settings/model');
+            }
+            if (!this.selectionRequired) this.recoveryShown = false;
         } else if (data.phase === 'error') {
             this.busy = false;
             choice.disabled = false;

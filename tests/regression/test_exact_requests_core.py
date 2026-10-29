@@ -62,13 +62,13 @@ def test_pending_question_cannot_cross_conversation_or_user(core, same_user):
 def test_broken_evidence_cannot_silently_resume_another_literal(core):
     cid = core.start_conversation('u')
     core.process_message('u', cid, 'Quante volte compare "ana" in "banana"?')
-    original = core.conversational_memory.get_conversation_history
-    def tampered(conversation_id):
-        messages = original(conversation_id)
+    original = core.conversational_memory.recent_messages
+    def tampered(limit, **options):
+        messages = original(limit, **options)
         if messages and messages[-1].metadata.get('source') == 'text_count_clarification':
             messages[-1].metadata['evidence'][0]['needle_sha256'] = 'wrong'
         return messages
-    core.conversational_memory.get_conversation_history = tampered
+    core.conversational_memory.recent_messages = tampered
     core._llm.generate.return_value = 'Quale testo vuoi contare?'
     result = core.process_message('u', cid, 'Con le sovrapposizioni')
     assert result.metadata.get('source') != 'verified_text_count'

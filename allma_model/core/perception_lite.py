@@ -10,6 +10,16 @@ from typing import Dict, List, Optional
 from collections import defaultdict
 from dataclasses import dataclass
 import hashlib
+import re
+import unicodedata
+
+
+_URGENCY = re.compile(r'(?<!\w)(?:urgent[ei]?|urgently|subito|immediatamente|presto|veloc[ei]|rapid[oa]|ora|adesso|immediately|quickly|now|asap)(?!\w)')
+_QUOTED = re.compile(r'```.*?(?:```|$)|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|„[^“\n]*“|«[^»\n]*»|(?<!\w)\x27[^\x27\n]{2,}\x27(?!\w)', re.S)
+_META_URGENCY = re.compile(r'\b(?:traduci|translate|definisci|define|significa|significato|parola|word|termine|citazione)\b|\b(?:scrivi|descrivi|write|describe)\b.*\b(?:frase|storia|racconto|esempio|dialogo|sentence|story|example)\b')
+_REPORTED_URGENCY = re.compile(r'\b(?:dice|dicono|ha detto|scrive|racconta|chiede|says?|said|asks?)\b')
+_RESPONSE_TIMING = re.compile(r'\b(?:rispond(?:i|imi|ere)|risposta|spiegami|dimmi|aiutami|dammi|mi serve|ho bisogno|answer|respond|reply|help me|i need)\b')
+_RESPONSE_SPEED = re.compile(r'\b(?:risposta|spiegazione|aiuto|riassunto|reply|answer|response)\s+(?:(?:molto|pi[uù]|very|more)\s+)?$|\b(?:rispondi|rispondimi|rispondere)\s+(?:(?:molto|pi[uù])\s+)?$')
 
 
 @dataclass
@@ -176,27 +186,45 @@ class PerceptionSystemLite:
         return None
     
     def _detect_urgency(self, text: str) -> Optional[Dict]:
-        """Detects urgent/time-sensitive requests."""
-        urgency_markers = [
-            'urgente', 'subito', 'immediatamente', 'presto',
-            'veloce', 'rapido', 'ora', 'adesso', 'importante'
-        ]
-        
-        text_lower = text.lower()
-        urgency_level = sum(1 for marker in urgency_markers if marker in text_lower)
-        
-        if urgency_level >= 2:
-            return {
-                'level': 'high',
-                'suggestion': 'Prioritize speed over completeness'
-            }
-        elif urgency_level == 1:
-            return {
-                'level': 'medium',
-                'suggestion': 'Balance speed and quality'
-            }
-        
-        return None
+        """Bounded IT/EN evidence of urgency or requested response speed.
+
+        A time word or an adjective about an object is not a deadline for ALLMA.
+        Keep this an attributed signal; it does not authorize dropping content.
+        """
+        clean = unicodedata.normalize('NFKC', text if isinstance(text, str) else '')[:12000].casefold()
+        clean = _QUOTED.sub(lambda match: ' ' * len(match[0]), clean)
+        evidence = []
+        for clause in re.finditer(r'[^.!?;\n]+', clean):
+            chunk = clause[0]
+            for match in _URGENCY.finditer(chunk):
+                before = chunk[:match.start()]
+                local = re.split(r'\b(?:ma|per[oò]|invece|but|however|e|and)\b|,|:\s*', before)[-1]
+                if _META_URGENCY.search(before) or _REPORTED_URGENCY.search(local):
+                    continue
+                if re.search(r'\b(?:se|if|ipoteticamente|hypothetically)\b', local):
+                    continue
+                negatives = re.findall(r'\b(?:non|not|no|senza|never|without)\b', local)
+                if len(negatives) % 2 and not re.search(r'\b(?:non solo|not only)\b', local):
+                    continue
+                marker = match[0]
+                explicit = bool(re.fullmatch(r'urgent[ei]?|urgently|asap', marker))
+                if not explicit:
+                    if re.fullmatch(r'veloc[ei]|rapid[oa]|quickly', marker):
+                        requested = bool(_RESPONSE_SPEED.search(local))
+                    else:
+                        # Timing may precede or follow the request in this clause.
+                        requested = bool(_RESPONSE_TIMING.search(local) or
+                                         _RESPONSE_TIMING.match(chunk[match.end():].lstrip(' ,:')))
+                    if not requested:
+                        continue
+                evidence.append({'kind': 'urgency' if explicit else 'response_timing',
+                                 'start': clause.start() + match.start(),
+                                 'end': clause.start() + match.end()})
+        if not evidence:
+            return None
+        return {'level': 'high' if any(item['kind'] == 'urgency' for item in evidence) else 'medium',
+                'suggestion': 'Respect requested timing while preserving essential information',
+                'source': 'local_urgency_evidence_v2', 'evidence': evidence[:16]}
     
     def _extract_keywords(self, text: str, max_keywords: int = 5) -> List[str]:
         """Extracts important keywords from text."""

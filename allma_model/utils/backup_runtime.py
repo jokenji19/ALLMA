@@ -2,11 +2,11 @@
 from contextlib import contextmanager
 from pathlib import Path
 import logging
-import math
 import threading
 
 from .state_backup import StateBackups,BackupError,check_cancel
 from .state_restore import PENDING
+from .background_work import power_allows_backup
 
 
 class BackupRuntime:
@@ -60,9 +60,7 @@ class BackupRuntime:
         while not self.core._shutdown_event.wait(60):
             try:
                 if not getattr(self.core,'_llm_ready',False) or not self.store.due():continue
-                state=self.core.system_monitor.get_metabolic_state()
-                if (not math.isfinite(state.energy_level) or not math.isfinite(state.battery_temp_celsius)
-                        or state.energy_level<0.2 or not 0<state.battery_temp_celsius<=40):continue
+                if not power_allows_backup(self.core.system_monitor):continue
                 self.create()
                 logging.info('ALLMA_PRIVATE_BACKUP verified')
             except BackupError:

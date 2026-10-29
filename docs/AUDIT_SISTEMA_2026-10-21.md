@@ -1,5 +1,11 @@
 # Revisione del sistema ALLMA — 21 ottobre 2026
 
+Aggiornamento dopo la build 102547: la
+[revisione del 22 ottobre](AUDIT_AGGIORNATO_2026-10-22.md) aggiunge riproduzioni
+di divergenza fra cronologia e proiezione di ricerca, contesa fra lettura paginata
+e scrittura e costo delle scansioni periodiche. Riordina le priorità senza
+presentare i precedenti test superati come copertura di questi nuovi casi.
+
 ## Esito e perimetro
 
 La struttura attuale separa identità persistente, storia dell'utente, strumenti esatti e modello linguistico. Questa separazione è concreta e va conservata. Sono presenti verifiche di attribuzione, revoca, scrittura atomica, recupero dell'apprendimento e interruzione delle operazioni. Restano difetti riproducibili, costi che crescono con la storia e funzioni presenti ma poco sfruttate.
@@ -20,7 +26,40 @@ Evidenze: `/Users/erikahu/ALLMA/analisi/2026-10-21/audit-sistema/`.
 
 I 15 casi saltati riguardano un'immagine di prova assente, vecchie API di integrazione/progetti, una vecchia API di ragionamento e un percorso NLP non disponibile. Non vengono contati come successi. Il risultato dei test non è una percentuale di intelligenza o affidabilità universale.
 
-Nessun codice applicativo è stato modificato per questa revisione. I difetti seguenti sono da correggere; i test esistenti passati non li coprivano necessariamente.
+Nessun codice applicativo è stato modificato durante la revisione originaria. I difetti seguenti descrivono lo stato allora osservato; i test esistenti passati non li coprivano necessariamente.
+
+Aggiornamento successivo: F01 e F02 sono stati corretti nel codice e verificati
+con prove sintetiche sul Mac. Sono passati anche avvio, lettura reale del monitor
+e 60 scenari generali su Android, distinti dalle nuove prove di guasto sul Mac. Dettagli e
+limiti della consegna sono in [Correzioni runtime](CORREZIONI_RUNTIME_2026-10-21.md).
+Le riproduzioni iniziali sotto sono conservate come evidenza storica;
+Un intervento successivo ha corretto anche F05 nel percorso operativo: deposito
+SQLite delle risposte apprese e cache RAM limitata, con migrazione, revoche e backup
+verificati. Vedi [Conservazione delle risposte apprese](APPRENDIMENTO_PERSISTENTE_2026-10-21.md).
+Il 22 ottobre sono stati corretti la ricostruzione dopo ogni aggiunta di F04
+(e l'invalidazione dopo modifiche esterne) e il salvataggio per singolo turno di
+F03. In quell'intervento caricamento iniziale e paginazione di F03 restavano aperti.
+Vedi [Cronologia e indice incrementali](MEMORIA_INCREMENTALE_2026-10-22.md):
+2.187 test Mac superati, 15 saltati; dieci scenari nuovi e 60 generali su Android.
+Un ulteriore intervento ha ridotto il caricamento iniziale della memoria con
+validazione in lettura singola e sincronizzazione dell'indice in transazione;
+la cache di ricerca è differita. La cronologia allora restava completa in RAM.
+Vedi [Avvio della memoria](AVVIO_MEMORIA_2026-10-22.md).
+La build 102546 introduce la paginazione operativa di F03: pagine da 64 record,
+cache di 128 oggetti per collezione, lettori recenti limitati e accesso completo
+ai ricordi vecchi, comprese correzioni e revoche. Sono passati 2.223 test Mac,
+con 15 saltati, e su Android 25 scenari di memoria/avvio/paginazione e 60 generali.
+La verifica integrale all'avvio resta progressiva e proporzionale
+alla storia; esportazioni e riordinamenti espliciti possono materializzare la
+collezione. Stato Android e misure sono in
+[Memoria paginata](PAGINAZIONE_MEMORIA_2026-10-22.md).
+La build 102547 elimina inoltre le scansioni ripetute delle conversazioni per
+attribuire i messaggi vecchi senza proprietario esplicito. La validazione resta
+completa e usa gli stessi controlli per backup, pagine e salvataggi. Sono passati
+2.231 test Mac (15 saltati), 28 scenari specifici Android e 60 generali. Per misure,
+collaudo e limiti aggiornati, vedi
+[Verifica iniziale della storia](VALIDAZIONE_AVVIO_2026-10-22.md).
+F06–F18 restano da affrontare.
 
 ## Percorsi principali
 

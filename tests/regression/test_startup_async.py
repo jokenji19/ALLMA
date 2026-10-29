@@ -115,3 +115,13 @@ def test_native_model_load_failure_never_reports_ready_and_closes_core():
     queued[-1](0)
     assert view._accept_core.call_args.args[0] is None
     assert 'caricare il modello' in view._accept_core.call_args.args[1]
+
+
+def test_restored_missing_model_can_open_configuration_without_closing_memory():
+    core=Mock(_llm_ready=False,_model_selection_required=True)
+    ns,queued=methods(Mock(return_value=core))
+    view=SimpleNamespace(_startup_cancelled=Event(),_accept_core=Mock())
+    ns['_load_core'](view,'db','models',True)
+    core.close.assert_not_called()
+    queued[-1](0)
+    view._accept_core.assert_called_once_with(core,None)

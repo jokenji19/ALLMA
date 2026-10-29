@@ -6,6 +6,8 @@ import json
 import os
 import hashlib
 from allma_model.utils.persistence import atomic_write_json
+from allma_model.core.autobiographical_identity import delivery_visible
+from .history_changes import PersistedRow, HistoryChanges
 import re
 from collections import defaultdict, Counter
 from dataclasses import dataclass, asdict, is_dataclass
@@ -24,7 +26,7 @@ except ImportError:
 
 
 @dataclass
-class Conversation:
+class Conversation(PersistedRow):
     """Classe per rappresentare una conversazione."""
     id: str
     user_id: str
@@ -34,7 +36,7 @@ class Conversation:
     embeddings: Optional[np.ndarray] = None
 
 @dataclass
-class Message:
+class Message(PersistedRow):
     """Classe per rappresentare un messaggio."""
     conversation_id: str
     role: str  # "user" o "assistant"
@@ -46,16 +48,35 @@ class Message:
 class ConversationalMemory:
     """Sistema di memoria conversazionale."""
     
-    def __init__(self, load_persistent: bool = True, storage_dir: Optional[str] = None):
+    def __setattr__(self, name, value):
+        changes = self.__dict__.get('_changes')
+        if changes is not None and name in ('messages', 'conversations', 'user_data', 'trauma_log'):
+            with self.lock:
+                value = changes.replace(name, value, self.__dict__.get(name))
+                object.__setattr__(self, name, value)
+        else:
+            object.__setattr__(self, name, value)
+
+    def __init__(self, load_persistent: bool = True, storage_dir: Optional[str] = None,
+                 *, incremental: bool = False):
         """Inizializza il sistema di memoria conversazionale."""
         self.storage_dir = os.path.abspath(storage_dir or os.getcwd())
         self.memory_path = os.path.join(self.storage_dir, "allma_memory.json")
+        self._changes = None
+        self._history_store = None
+        archive = os.path.join(self.storage_dir, 'conversation_history.db')
+        # Once migrated, even legacy callers must read the authoritative DB.
+        if incremental or os.path.exists(archive) or os.path.exists(archive+'.init.lock'):
+            from .history_store import HistoryStore
+            self._history_store = HistoryStore(archive, self.memory_path)
+            self.memory_path = archive
         self.user_data = {}
         self.conversations: Dict[str, List[Conversation]] = defaultdict(list)
         self.vectorizer = SimpleTfidf()
         self.conversation_vectors = {}
         self.messages: List[Message] = []
         self._load_error = None
+        self._projection_stale = False
         self.trauma_log: List[Dict] = [] # AXIOM 3: Sedimentation
         
         # Concurrency safety
@@ -65,7 +86,8 @@ class ConversationalMemory:
         # V6 Sprint 3: Vector Engine (SQLite-backed)
         if _VECTOR_ENGINE_AVAILABLE:
             try:
-                self.vector_engine = VectorMemoryEngine(db_path=os.path.join(self.storage_dir, "data", "allma_vectors.db"))
+                self.vector_engine = VectorMemoryEngine(
+                    db_path=os.path.join(self.storage_dir, "data", "allma_vectors.db"), defer_index=True)
                 import logging
                 logging.getLogger(__name__).info(
                     f"[V6.3] VectorMemoryEngine attivo: {self.vector_engine.count()} memorie in DB."
@@ -77,27 +99,82 @@ class ConversationalMemory:
         else:
             self.vector_engine = None
         
-        if load_persistent:
+        if load_persistent or self._history_store is not None:
             self.load_memory()
-            self._index_messages()
+            if self._history_store is None:self._index_messages()
         
-    def _index_messages(self, messages=None):
+    def _index_messages(self, messages=None, *, touched=None):
         if self.vector_engine is None:
             return
-        for message in self.messages if messages is None else messages:
-            if not message.content.strip() or message.metadata.get('is_valid') is False:
+        if self._history_store is not None:
+            if any(self._changes.dirty.values()) or any(self._changes.deleted.values()):
+                from allma_model.utils.persistence import StateRecoveryRequired
+                raise StateRecoveryRequired('Save pending history edits before rebuilding its projection')
+            if messages is None or self._projection_stale:
+                self.vector_engine.sync_history(self._message_index_rows(self.messages),default=self._json_serial,
+                    guard=self._history_store.check_current_generation)
+            else:
+                messages=list(messages)
+                touched=touched if touched is not None else {row._archive_key for row in messages}
+                self.vector_engine.sync_history(self._message_index_rows(messages),touched,default=self._json_serial,
+                    guard=self._history_store.check_current_generation)
+            self._projection_stale=False
+            return
+        if messages is None:
+            self.vector_engine.add_many(self._message_index_rows(self.messages))
+            return
+        for record in self._message_index_rows(messages):
+            self.vector_engine.add(**record)
+
+    def _message_index_rows(self, messages, *, resolve_legacy=True):
+        owners=None
+        for message in messages:
+            if (not message.content.strip() or message.metadata.get('is_valid') is False
+                    or not delivery_visible(message.metadata)):
                 continue
             uid = message.user_id or message.metadata.get('user_id')
-            if not uid:
-                uid = next((u for u, cs in self.conversations.items()
-                            if any(c.id == message.conversation_id for c in cs)), None)
-            if not uid:
+            if not uid and resolve_legacy:
+                if owners is None:
+                    owners={}
+                    for user,conversations in self.conversations.items():
+                        for conversation in conversations:
+                            # A conflicting legacy identifier has no safe owner.
+                            prior=owners.setdefault(conversation.id,user)
+                            if prior!=user:owners[conversation.id]=None
+                uid=owners.get(message.conversation_id)
+                if not uid and self._history_store is not None:
+                    uid=self._history_store.conversation_owner(message.conversation_id)
+            if not isinstance(uid,str) or not uid:
                 continue  # Never guess the owner of legacy records.
-            key = hashlib.sha256(json.dumps([message.conversation_id, message.role,
-                message.timestamp.isoformat(), message.content], ensure_ascii=False).encode()).hexdigest()
-            self.vector_engine.add(uid, message.content, metadata={**message.metadata,
-                'role': message.role, 'conversation_id': message.conversation_id},
-                timestamp=message.timestamp, source_key=key)
+            if self._history_store is not None:
+                from allma_model.core.history_projection import source_key
+                token=getattr(message,'_archive_key',None)
+                if not token:continue
+                key=source_key(token)
+            else:
+                key = hashlib.sha256(json.dumps([message.conversation_id, message.role,
+                    message.timestamp.isoformat(), message.content], ensure_ascii=False).encode()).hexdigest()
+            yield {'user_id':uid,'content':message.content,'metadata':{**message.metadata,
+                   'role':message.role,'conversation_id':message.conversation_id,'user_id':uid},
+                   'timestamp':message.timestamp,'source_key':key}
+
+    def search_user_reports(self,user_id,message,top_k=3):
+        """Search once; only current, attributed history can become evidence."""
+        with self.lock:
+            if self._history_store is None:
+                return self.vector_engine.search(user_id=user_id,query=message,top_k=top_k,
+                    use_expansion=True,allowed_roles=('user',),exclude_query_replays=True)
+            if self._load_error is not None or self._history_store.read_error is not None:
+                from allma_model.utils.persistence import StateRecoveryRequired
+                raise StateRecoveryRequired('History must be recovered before searching user reports')
+            if self._projection_stale:self._index_messages()
+            with self._history_store.connect(readonly=True) as db:
+                db.execute('BEGIN');self._history_store._check_generation(db)
+                raw=self.vector_engine.search(user_id=user_id,query=message,top_k=top_k,
+                    use_expansion=True,allowed_roles=('user',),exclude_query_replays=True)
+                verified=self._history_store.verified_sources(db,raw,user_id)
+                if len(verified)!=len(raw):self._projection_stale=True
+                return verified
 
     def add_trauma_event(self, description: str, context: Dict = None) -> None:
         """
@@ -189,7 +266,7 @@ class ConversationalMemory:
         self.save_memory()
         
         # V6 Sprint 3: aggiungi anche al VectorEngine
-        if self.vector_engine is not None:
+        if self.vector_engine is not None and self._history_store is None:
             try:
                 self.vector_engine.add(
                     user_id=user_id,
@@ -363,24 +440,20 @@ class ConversationalMemory:
         if limit is not None and (type(limit) is not int or limit < 0):
             raise ValueError('Il limite deve essere un intero non negativo')
             
-        # Filtra i messaggi per conversation_id e timestamp
         with self.lock:
-            messages = [
-                msg for msg in self.messages
-                if msg.conversation_id == conversation_id and
-                (start_time is None or msg.timestamp >= start_time) and
-                (end_time is None or msg.timestamp <= end_time)
-            ]
-        
-        # Ordina per timestamp
-        messages = sorted(messages, key=lambda x: x.timestamp)
-        
-        # Return the newest window, keeping chronological order within it.
-        if limit is not None:
-            messages = messages[-limit:] if limit else []
-            
-        return messages
-        
+            selected=(msg for msg in self.messages
+                if msg.conversation_id==conversation_id and delivery_visible(msg.metadata)
+                and (start_time is None or msg.timestamp>=start_time)
+                and (end_time is None or msg.timestamp<=end_time))
+            if limit is None:return sorted(selected,key=lambda msg:msg.timestamp)
+            if limit==0:return []
+            # Preserve exact timestamp/tie ordering while retaining at most the
+            # requested window, even when the device clock moved backwards.
+            from heapq import nlargest
+            newest=nlargest(limit,enumerate(selected),key=lambda item:(item[1].timestamp,item[0]))
+            newest.sort(key=lambda item:(item[1].timestamp,item[0]))
+            return [row for _,row in newest]
+
     def analyze_conversation_patterns(
         self,
         user_id: str
@@ -600,7 +673,7 @@ class ConversationalMemory:
                 # part of the live history or of a later successful save.
                 self.messages.pop()
                 raise
-            self._index_messages([message])
+            if self._history_store is None:self._index_messages([message])
 
     def save_interaction(self, user_id: str, message: str, role: str):
         """Salva una interazione nella memoria."""
@@ -693,23 +766,29 @@ class ConversationalMemory:
         user_messages.sort(key=lambda m: m.timestamp, reverse=True)
         return user_messages[:limit]
 
-    def get_recent_history(self, limit: int = 10, user_id: str = None) -> List[Dict]:
-        """
-        Retrieves recent history in a dict format suitable for LLM context.
-        """
-        # If user_id is not provided, try to infer or get all (simplified for now)
-        # For mobile single user, we iterate all.
-        owned = [m for m in self.messages if user_id is None or m.user_id == user_id
-                 or (m.user_id is None and m.conversation_id in {c.id for c in self.conversations.get(user_id, [])})]
-        msgs = owned[-limit:] if limit > 0 else []
-        
-        history = []
-        for m in msgs:
-            history.append({
-                "role": m.role,
-                "content": m.content
-            })
-        return history
+    def message_count(self,user_id,role=None):
+        with self.lock:
+            if getattr(self,'_history_store',None) is not None:
+                if role is not None:return self._message_counts.get((user_id,role),0)
+                return sum(count for (owner,_),count in self._message_counts.items() if owner==user_id)
+            return sum((row.user_id or row.metadata.get('user_id'))==user_id and (role is None or row.role==role)
+                       for row in self.messages)
+
+    def recent_messages(self,limit=10,*,predicate=None):
+        """Latest matching rows, ordered chronologically, with bounded retention."""
+        from .paged_history import recent_rows
+        with self.lock:return recent_rows(self.messages,limit,predicate=predicate)
+
+    def get_recent_history(self,limit=10,user_id=None):
+        owned=None
+        def matches(row):
+            nonlocal owned
+            if user_id is None or row.user_id==user_id:return True
+            if row.user_id is not None:return False
+            if owned is None:owned={c.id for c in self.conversations.get(user_id,[])}
+            return row.conversation_id in owned
+        return [{'role':row.role,'content':row.content}
+                for row in self.recent_messages(limit,predicate=matches)]
 
     def create_conversation(self, user_id: str) -> str:
         """
@@ -843,6 +922,44 @@ class ConversationalMemory:
         with self.lock:
             if self._load_error is not None:
                 raise RuntimeError('Memory archive could not be loaded; preserving original file') from self._load_error
+            if self._history_store is not None:
+                highest=getattr(self,'_history_highwater',0)
+                for row in self._changes.dirty['messages'].values():
+                    for key in ('experience_update','delivery_update'):
+                        intent=row.metadata.get(key)
+                        if isinstance(intent,dict) and type(intent.get('sequence')) is int:
+                            highest=max(highest,intent['sequence'])
+                from collections import Counter
+                count_delta=Counter()
+                dirty=list(self._changes.dirty['messages'].values())
+                touched=set(self._changes.dirty['messages'])|self._changes.deleted['messages']
+                legacy_owners_changed=(bool(self._changes.dirty['conversations'] or self._changes.deleted['conversations']
+                                           or 'conversation_users' in self._changes.sections)
+                                       and any(owner is None and count for (owner,_),count in self._message_counts.items()))
+                for row in dirty:
+                    old=row.__dict__.get('_archive_count_key')
+                    if row.__dict__.get('_archive_persisted',False) and old is not None:count_delta[old]-=1
+                    uid=row.user_id or row.metadata.get('user_id')
+                    count_delta[(uid if isinstance(uid,str) else None,row.role)]+=1
+                for old in self._changes.deleted_counts.values():
+                    if old is not None:count_delta[old]-=1
+                self._history_store.commit(self._changes, self._json_serial)
+                for key,delta in count_delta.items():self._message_counts[key]=self._message_counts.get(key,0)+delta
+                for row in dirty:
+                    uid=row.user_id or row.metadata.get('user_id')
+                    row._archive_count_key=(uid if isinstance(uid,str) else None,row.role)
+                self._history_highwater=highest
+                if self.vector_engine is not None and (touched or legacy_owners_changed or self._projection_stale):
+                    try:
+                        # Recover a previously deferred batch in full. This flag
+                        # must not force a full scan on every ordinary insertion.
+                        if legacy_owners_changed:self._projection_stale=True
+                        self._index_messages(dirty,touched=touched)
+                    except Exception as error:
+                        self._projection_stale=True
+                        import logging
+                        logging.getLogger(__name__).warning('History saved; search projection deferred: %s',type(error).__name__)
+                return
             data = {
                 "conversations": {
                     uid: [
@@ -878,6 +995,47 @@ class ConversationalMemory:
         startup with a damaged archive cannot overwrite its recoverable data.
         """
         with self.lock:
+            if self._history_store is not None:
+                try:
+                    from .paged_history import PagedRows
+                    from .history_changes import ConversationGroups
+                    def ingest(records):
+                        from types import SimpleNamespace
+                        def messages():
+                            for kind,token,position,row,owner in records:
+                                if kind=='messages':
+                                    data=dict(row);data.setdefault('metadata',{});data.setdefault('user_id',None)
+                                    data['timestamp']=datetime.fromisoformat(data['timestamp'])
+                                    if not data['user_id']:data['user_id']=data['metadata'].get('user_id') or owner
+                                    data['_archive_key']=token
+                                    yield SimpleNamespace(**data)
+                        self.vector_engine.sync_history(self._message_index_rows(messages(),resolve_legacy=False),default=self._json_serial)
+                    plan=self._history_store.load_pages(ingest if self.vector_engine is not None else None)
+                    changes=HistoryChanges(self)
+                    messages=PagedRows(self._history_store,changes,'messages',Message,
+                        count=plan['counts'].get(('messages',None),0),last=plan['last'].get(('messages',None),-1))
+                    messages.preload(plan['recent'])
+                    groups=ConversationGroups({owner:PagedRows(self._history_store,changes,'conversations',Conversation,owner,
+                        count=plan['counts'].get(('conversations',owner),0),last=plan['last'].get(('conversations',owner),-1))
+                        for owner in plan['state']['conversation_users']},changes)
+                    candidate={'messages':messages,'conversations':groups,
+                        'user_data':changes.replace('user_data',plan['state']['user_data']),
+                        'trauma_log':changes.replace('trauma_log',plan['state']['trauma_log'])}
+                    changes.committed();changes.loading=False
+                    for name,value in candidate.items():object.__setattr__(self,name,value)
+                    self._changes=changes
+                    self.__dict__.pop('_activity_snapshots',None)
+                    self._history_highwater=plan['highwater']
+                    self._message_counts=plan['message_counts']
+                    self._projection_stale=bool(plan.get('index_deferred'))
+                    self.conversation_vectors = {}
+                    self._load_error = None
+                    return True
+                except Exception as error:
+                    self._load_error = error
+                    import logging
+                    logging.getLogger(__name__).error('History load failed; original archive protected: %s', error)
+                    return False
             if not os.path.exists(self.memory_path):
                 return False
             try:
@@ -914,6 +1072,7 @@ class ConversationalMemory:
                         timestamp=datetime.fromisoformat(row['timestamp']),
                         metadata=row['metadata'], user_id=row.get('user_id')))
                 self.conversations, self.messages = conversations, messages
+                self.__dict__.pop('_activity_snapshots',None)
                 self.user_data, self.trauma_log = users, traumas
                 self.conversation_vectors = {}
                 self._load_error = None

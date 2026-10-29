@@ -6,8 +6,9 @@ import tempfile
 from pathlib import Path
 
 STATE_FILES = (
-    'allma.db', 'allma_memory.json', 'allma_settings.json', 'allma_modules.db', 'answer_recall.json',
-    'incremental_cache/knowledge_states.json',
+    'allma.db', 'allma_memory.json', 'conversation_history.db', 'allma_settings.json', 'allma_modules.db', 'answer_recall.json', 'answer_recall.db',
+    'model_binding.json', 'notifications.json',
+    'incremental_cache/knowledge_states.json', 'incremental_cache/knowledge_states.db',
     'data/allma_vectors.db', 'data/dream_journal.json',
     'data/dream_journal.json.pending.json', 'data/dream_journal.json.processed.json', 'message_delivery.json',
     'data/dream_journal.json.reviews.db',

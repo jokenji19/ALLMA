@@ -1,0 +1,16 @@
+{
+  "release": "b11312",
+  "source_commit": "0c1e57098bba43ac29e6e3b677cdceebdd22334f",
+  "archive_sha256": "831a28efeb992108b84d54c5b7538388eba2978d567175e5cfd9843222c6c03d",
+  "source_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11312",
+  "architecture": "v79",
+  "role": "decider",
+  "files": {
+    "libggml-hexagon.so": "e45ea81707bb38a74ba828e3bb4fb29443bf714a8762fb536694651798b37810",
+    "libggml-htp-v79.so.bin": "63684ca64d6a9913fd2e4f0e1001dd212e87a17c8c23145553bddabbf89c907a"
+  },
+  "upstream_binary_sha256": {
+    "libggml-hexagon.so": "c41518fc003b2f46ceaccb0be968b990a572fea5f5860735507e0b18dd1d26f0",
+    "libggml-htp-v79.so": "63684ca64d6a9913fd2e4f0e1001dd212e87a17c8c23145553bddabbf89c907a"
+  }
+}

@@ -10,16 +10,16 @@ Perché NON FAISS / sqlite-vss:
 
 Architettura:
     SQLite DB (allma_vectors.db)
-      └─ tabella "memories": id, user_id, content, vector_blob, timestamp, metadata_json
+      └─ tabella "memories": id, user_id, content, vector_blob, timestamp, metadata
     
     RAM Index (self._index):
       vettori sparsi + liste inverse per termine, senza matrice documenti × vocabolario
 
 Consistenza:
     Il testo SQLite è la fonte autorevole. Il vocabolario e tutti i vettori
-    vengono ricostruiti al riavvio e alla prima ricerca dopo una modifica.
-    Il confronto dimensionale resta coerente; il costo della ricostruzione
-    cresce con il corpus e deve essere misurato sul dispositivo di destinazione.
+    vengono ricostruiti al riavvio e dopo modifiche o cancellazioni. Gli
+    inserimenti aggiungono solo le nuove righe; i punteggi usano le frequenze
+    aggiornate del corpus. SQLite resta la fonte autorevole.
 
 Uso:
     engine = VectorMemoryEngine(db_path="data/allma_vectors.db")
@@ -38,6 +38,7 @@ from collections import Counter
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple, NamedTuple
 import threading
+from contextlib import contextmanager
 from allma_model.utils.memory_concepts import words, concepts
 
 import numpy as np
@@ -191,6 +192,12 @@ class _LightTfidf:
             self.df[word] = self.df.get(word, 0) + 1
         self.n_docs += 1
 
+    def encode_counts(self, text):
+        counts = Counter(self._tokenize(text))
+        pairs = sorted((self.vocab[word], count) for word,count in counts.items() if word in self.vocab)
+        return SparseVector(np.fromiter((i for i,_ in pairs),dtype=np.int32,count=len(pairs)),
+                            np.fromiter((n for _,n in pairs),dtype=np.float32,count=len(pairs)))
+
     def vocab_size(self) -> int:
         return len(self.vocab)
 
@@ -247,7 +254,7 @@ class VectorMemoryEngine:
     CREATE INDEX IF NOT EXISTS idx_user ON memories(user_id);
     """
 
-    def __init__(self, db_path: str = "data/allma_vectors.db"):
+    def __init__(self, db_path: str = "data/allma_vectors.db", *, defer_index=False):
         self.db_path = db_path
         self._lock = threading.Lock()
         self._tfidf = _LightTfidf()
@@ -257,14 +264,28 @@ class VectorMemoryEngine:
         self._lexical_index = {}
         self._index_dirty = False
         self._concept_index = {}
+        self._cache_loaded = False
+        self._revision = None
+        self._destructive_revision = None
+        self._last_id = 0
 
         self._init_db()
-        self._load_state()
+        if defer_index:
+            from .incremental_vector_index import IncrementalVectorIndex
+            self._publish_index(IncrementalVectorIndex(_LightTfidf))
+        else:
+            self._load_state()
 
     # ── DB setup ──────────────────────────────────────────
 
-    def _conn(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path, check_same_thread=False)
+    @contextmanager
+    def _conn(self):
+        connection = sqlite3.connect(self.db_path, check_same_thread=False)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _init_db(self) -> None:
         import os
@@ -278,6 +299,23 @@ class VectorMemoryEngine:
             if "source_key" not in columns:
                 c.execute("ALTER TABLE memories ADD COLUMN source_key TEXT")
             c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_source ON memories(user_id, source_key)")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_memory_source_key ON memories(source_key)")
+            c.executescript('''
+                CREATE TABLE IF NOT EXISTS allma_index_revision (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    revision INTEGER NOT NULL, destructive INTEGER NOT NULL, total INTEGER NOT NULL);
+                INSERT OR IGNORE INTO allma_index_revision
+                    SELECT 1,0,0,COUNT(*) FROM memories;
+                CREATE TRIGGER IF NOT EXISTS allma_index_insert AFTER INSERT ON memories BEGIN
+                    UPDATE allma_index_revision SET revision=revision+1,total=total+1 WHERE singleton=1;
+                END;
+                CREATE TRIGGER IF NOT EXISTS allma_index_update AFTER UPDATE ON memories BEGIN
+                    UPDATE allma_index_revision SET revision=revision+1,destructive=destructive+1 WHERE singleton=1;
+                END;
+                CREATE TRIGGER IF NOT EXISTS allma_index_delete AFTER DELETE ON memories BEGIN
+                    UPDATE allma_index_revision SET revision=revision+1,destructive=destructive+1,total=total-1 WHERE singleton=1;
+                END;
+            ''')
 
     def _load_state(self) -> None:
         # Content is authoritative: old releases persisted incompatible vectors.
@@ -326,129 +364,101 @@ class VectorMemoryEngine:
             logger.debug(f"[VectorMemory] Added memory id={row_id} for user={user_id}")
             return row_id
 
-    def search(
-        self,
-        user_id: str,
-        query: str,
-        top_k: int = 5,
-        use_expansion: bool = True,
-        allowed_roles=None,
-        exclude_query_replays=False
-    ) -> List[Dict[str, Any]]:
-        """
-        Ricerca semantica: restituisce le `top_k` memorie più simili alla query.
+    def add_many(self, records):
+        """Reconcile attributed sources in one transaction without per-row opens.
 
-        Returns:
-            Lista di dict: {id, content, score, metadata, timestamp}
+        The generator is consumed inside the transaction: a malformed record or
+        interrupted batch cannot publish half the startup projection. Existing
+        sources keep their identifiers; unchanged rows do not dirty the index.
         """
+        def values():
+            for record in records:
+                yield (record['user_id'],record['content'],b'',
+                       record['timestamp'].isoformat(),json.dumps(record['metadata']),record['source_key'])
+        with self._lock:
+            with self._conn() as connection:
+                cursor=connection.executemany('''
+                    INSERT INTO memories(user_id,content,vector_blob,timestamp,metadata,source_key)
+                    VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,source_key) DO UPDATE SET
+                        content=excluded.content, timestamp=excluded.timestamp,
+                        metadata=excluded.metadata, vector_blob=excluded.vector_blob
+                    WHERE memories.content!=excluded.content OR memories.timestamp!=excluded.timestamp
+                        OR memories.metadata!=excluded.metadata
+                ''',values())
+                changed=cursor.rowcount
+            if changed:self._index_dirty=True
+        return changed
+
+    def sync_history(self,records,touched=None,*,default=None,guard=None):
+        from .history_projection import reconcile
+        return reconcile(self,records,touched,default=default,guard=guard)
+
+    def search(self, user_id, query, top_k=5, use_expansion=True,
+               allowed_roles=None, exclude_query_replays=False):
         if not query.strip() or top_k <= 0:
             return []
+        # Revision, scores and selected sources share one SQLite read snapshot.
+        with self._lock, self._conn() as connection:
+            connection.execute('BEGIN')
+            self._refresh_index(connection)
+            return self._search_snapshot(connection,user_id,query,top_k,
+                use_expansion,allowed_roles,exclude_query_replays)
 
-        with self._lock:
-            with self._conn() as c:
-                signature = c.execute("SELECT COUNT(*), MAX(id) FROM memories").fetchone()
-            if self._index_dirty or signature != getattr(self, '_signature', None):
-                self._rebuild_index()
-
-            # Filtra per user_id
-            user_entries = [(i,rid) for i,(rid,uid,_) in enumerate(self._index) if uid == user_id]
-            if not user_entries:
-                return []
-
-            ids = [rid for _,rid in user_entries]
-            user_positions = np.full(len(self._index),-1,dtype=np.intp)
-            user_positions[[i for i,_ in user_entries]] = np.arange(len(ids))
-
-            # Genera varianti della query (Query Expansion)
-            query_variants = QueryExpander.expand(query) if use_expansion else [query]
-            
-            # Max-Score Algorithm: Calcola i cosine_scores per ogni variante e prendi il massimo per ogni documento
-            max_scores = np.zeros(len(ids),dtype=np.float32)
-            
-            for qv in query_variants:
-                q_vec = self._tfidf.encode_sparse(qv)
-                scores_variant = np.zeros(len(ids),dtype=np.float32)
-                for term,weight in zip(q_vec.indices,q_vec.weights):
-                    positions,weights = self._lexical_index[int(term)]
-                    scoped_positions = user_positions[positions]
-                    mask = scoped_positions >= 0
-                    # One posting per document/term: no duplicate indices.
-                    scores_variant[scoped_positions[mask]] += weights[mask]*weight
-                
-                # Element-wise maximum
-                max_scores = np.maximum(max_scores, scores_variant)
-
-            max_scores = np.clip(max_scores, 0., 1.)
-            lexical_scores = max_scores.copy()
-            query_concepts = concepts(query) if use_expansion else frozenset()
-            concept_matches = {}
-            if query_concepts:
-                positions = {rid:i for i,rid in enumerate(ids)}
-                for concept in query_concepts:
-                    for rid in self._concept_index.get(concept, ()):
-                        if rid in positions:
-                            concept_matches.setdefault(rid, set()).add(concept)
-                for rid, matched in concept_matches.items():
-                    # A retrieval relevance estimate, not probability or truth.
-                    max_scores[positions[rid]] = max(max_scores[positions[rid]],
-                        .65 * len(matched)/len(query_concepts))
-
-            # Stable ordering; ties do not select a different source on restart.
-            top_indices = np.lexsort((-np.asarray(ids), -max_scores))
-            top_indices = [int(i) for i in top_indices if max_scores[i] > 0]
-
-        # Fetch da DB i record selezionati
+    def _search_snapshot(self, connection, user_id, query, top_k,
+                         use_expansion, allowed_roles, exclude_query_replays):
+        variants = QueryExpander.expand(query) if use_expansion else [query]
+        ids, max_scores = self._incremental.score(user_id, variants)
+        if not ids:
+            return []
+        lexical_scores = max_scores.copy()
+        query_concepts = concepts(query) if use_expansion else frozenset()
+        concept_matches = {}
+        if query_concepts:
+            positions = {rid:i for i,rid in enumerate(ids)}
+            for concept in query_concepts:
+                for rid in self._concept_index.get(concept, ()):
+                    if rid in positions:
+                        concept_matches.setdefault(rid, set()).add(concept)
+            for rid, matched in concept_matches.items():
+                max_scores[positions[rid]] = max(max_scores[positions[rid]],
+                    .65 * len(matched)/len(query_concepts))
+        top_indices = np.lexsort((-np.asarray(ids), -max_scores))
+        top_indices = [int(i) for i in top_indices if max_scores[i] > 0]
         selected_ids = [ids[i] for i in top_indices]
         results = []
-        try:
-            with self._conn() as c:
-              # Android SQLite may limit parameters to 999. Filter each batch
-              # before counting hits; irrelevant roles cannot consume top_k.
-              for start in range(0, len(selected_ids), 256):
-                batch = selected_ids[start:start+256]
-                placeholders = ",".join("?" * len(batch))
-                rows = c.execute(
-                    f"SELECT id, content, metadata, timestamp FROM memories WHERE user_id=? AND id IN ({placeholders})",
-                    [user_id, *batch]).fetchall()
-                row_map = {r[0]: r for r in rows}
-                for i, sid in zip(top_indices[start:start+256], batch):
-                    if sid not in row_map:
+        for start in range(0, len(selected_ids), 256):
+            batch = selected_ids[start:start+256]
+            placeholders = ','.join('?' * len(batch))
+            rows = connection.execute(
+                f'SELECT id, content, metadata, timestamp, source_key FROM memories WHERE user_id=? AND id IN ({placeholders})',
+                [user_id,*batch]).fetchall()
+            row_map = {row[0]:row for row in rows}
+            for i, identifier in zip(top_indices[start:start+256],batch):
+                row = row_map.get(identifier)
+                if row is None:
+                    continue
+                try:
+                    metadata = json.loads(row[2] or '{}')
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(metadata,dict):
+                    continue
+                if allowed_roles is not None and (metadata.get('role') not in allowed_roles or metadata.get('is_valid') is False):
+                    continue
+                if metadata.get('revoked') is True or metadata.get('status') in ('revoked','superseded'):
+                    continue
+                if exclude_query_replays:
+                    from allma_model.utils.memory_evidence import is_replayed_question
+                    if is_replayed_question(row[1],query):
                         continue
-                    r = row_map[sid]
-                    try:
-                        metadata = json.loads(r[2] or '{}')
-                    except (ValueError, TypeError):
-                        continue
-                    if not isinstance(metadata, dict):
-                        continue
-                    if allowed_roles is not None and (metadata.get('role') not in allowed_roles or metadata.get('is_valid') is False):
-                        continue
-                    if metadata.get('revoked') is True or metadata.get('status') in ('revoked','superseded'):
-                        continue
-                    if exclude_query_replays:
-                        from allma_model.utils.memory_evidence import is_replayed_question
-                        if is_replayed_question(r[1], query):
-                            continue
-                    results.append({
-                        "id": r[0],
-                        "content": r[1],
-                        "score": float(max_scores[i]),
-                        "metadata": metadata,
-                        "timestamp": r[3],
-                        "retrieval": {
-                            'kind':('hybrid' if lexical_scores[i] > 0 else 'concept')
-                                   if sid in concept_matches else 'lexical',
-                            'concept_matches': sorted(concept_matches.get(sid, ())),
-                            'world_truth_verified': False,
-                        },
-                    })
-                    if len(results) >= top_k:
-                        break
-                if len(results) >= top_k:
-                    break
-        except Exception as e:
-            logger.error(f"[VectorMemory] Search fetch error: {e}")
-
+                results.append({'id':row[0], 'content':row[1], 'score':float(max_scores[i]),
+                    'metadata':metadata, 'timestamp':row[3], 'source_key':row[4], 'retrieval':{
+                        'kind':('hybrid' if lexical_scores[i] > 0 else 'concept')
+                               if identifier in concept_matches else 'lexical',
+                        'concept_matches':sorted(concept_matches.get(identifier,())),
+                        'world_truth_verified':False}})
+                if len(results)>=top_k:
+                    return results
         return results
 
     def count(self, user_id: Optional[str] = None) -> int:
@@ -471,57 +481,64 @@ class VectorMemoryEngine:
     # ── Internal ──────────────────────────────────────────
 
     def release_cache(self):
-        """Drop reconstructible RAM state; return the retained record count."""
+        """Discard derived state; source records remain in SQLite."""
         with self._lock:
             count = self.count()
-            self._index = []
-            self._lexical_index = {}
-            self._concept_index = {}
-            self._tfidf = _LightTfidf()
+            from .incremental_vector_index import IncrementalVectorIndex
+            self._publish_index(IncrementalVectorIndex(_LightTfidf))
+            self._cache_loaded = False
             self._index_dirty = True
             return count
 
-    def _rebuild_index(self) -> None:
-        """
-        Re-encode tutti i vettori usando il vocabolario corrente.
-        Chiamato quando il vocab è cresciuto dopo un add().
-        Avviene in RAM senza toccare il DB (i blob nel DB vengono
-        aggiornati solo al prossimo checkpoint per non bloccare I/O).
-        """
-        logger.debug(f"[VectorMemory] Rebuilding index (vocab size={self._tfidf.vocab_size()})")
-        try:
-            with self._conn() as c:
-                rows = c.execute(
-                    "SELECT id, user_id, content FROM memories ORDER BY id"
-                ).fetchall()
+    def _publish_index(self, index):
+        self._incremental = index
+        self._index = index.entries
+        self._tfidf = index.tfidf
+        self._lexical_index = index.postings
+        self._concept_index = index.concepts
 
-            tfidf = _LightTfidf()
-            for _, _, content in rows:
-                tfidf.partial_fit(content)
-            new_index = []
-            concept_index = {}
-            postings = {}
-            for row_id, uid, content in rows:
-                vec = tfidf.encode_sparse(content)
-                position = len(new_index)
-                new_index.append((row_id, uid, vec))
-                for term,weight in zip(vec.indices,vec.weights):
-                    posting = postings.setdefault(int(term),([],[]))
-                    posting[0].append(position)
-                    posting[1].append(weight)
-                for concept in concepts(content):
-                    concept_index.setdefault(concept, set()).add(row_id)
-
-            # Content is authoritative; rebuilt vectors are a RAM cache.
-            # Do not rewrite every SQLite blob on each search/restart.
-            self._index = new_index
-            self._tfidf = tfidf
-            self._lexical_index = {term:(np.asarray(indices,dtype=np.intp),np.asarray(weights,dtype=np.float32))
-                                   for term,(indices,weights) in postings.items()}
-            self._concept_index = concept_index
+    def _refresh_index(self, connection):
+        revision, destructive, total = connection.execute(
+            'SELECT revision,destructive,total FROM allma_index_revision WHERE singleton=1').fetchone()
+        if not self._cache_loaded or destructive != self._destructive_revision:
+            self._rebuild_index(connection)
+            return
+        if revision == self._revision:
             self._index_dirty = False
-            self._signature = (len(rows), max((row[0] for row in rows), default=None))
-            logger.info(f"[VectorMemory] Index rebuilt: {len(self._index)} entries")
-        except Exception as e:
-            logger.error(f"[VectorMemory] Rebuild failed: {e}", exc_info=True)
-            raise
+            return
+        rows = connection.execute('SELECT id,user_id,content FROM memories WHERE id>? ORDER BY id',
+                                  (self._last_id,)).fetchall()
+        if len(self._index)+len(rows) != total:
+            self._rebuild_index(connection)
+            return
+        self._cache_loaded = False
+        self._incremental.append(rows)
+        self._last_id = rows[-1][0] if rows else self._last_id
+        self._revision = revision
+        self._signature = (total,self._last_id or None)
+        self._index_dirty = False
+        self._cache_loaded = True
+
+    def _rebuild_index(self, connection=None):
+        """Full recovery only at startup, after deletion/edit or cache release."""
+        if connection is None:
+            with self._conn() as reader:
+                reader.execute('BEGIN')
+                return self._rebuild_index_snapshot(reader)
+        return self._rebuild_index_snapshot(connection)
+
+    def _rebuild_index_snapshot(self, connection):
+        from .incremental_vector_index import IncrementalVectorIndex
+        self._cache_loaded = False
+        revision, destructive, total = connection.execute(
+            'SELECT revision,destructive,total FROM allma_index_revision WHERE singleton=1').fetchone()
+        rows = connection.execute('SELECT id,user_id,content FROM memories ORDER BY id').fetchall()
+        index = IncrementalVectorIndex(_LightTfidf)
+        index.append(rows)
+        self._publish_index(index)
+        self._last_id = rows[-1][0] if rows else 0
+        self._revision, self._destructive_revision = revision, destructive
+        self._signature = (total,self._last_id or None)
+        self._index_dirty = False
+        self._cache_loaded = True
+        logger.info('[VectorMemory] Index rebuilt: %d entries',len(rows))

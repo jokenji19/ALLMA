@@ -19,7 +19,10 @@ class ModelManager:
                                **self.downloader.local_status(os.path.join(self.core.models_dir, info['filename']), info),
                                active=info['filename'] == active and getattr(self.core, '_llm_ready', False))
                            for key, info in self.downloader.models.items()],
-                'busy': self._operation.locked()}
+                'busy': self._operation.locked(),
+                'selection_required':getattr(self.core,'_model_selection_required',False) is True,
+                'selection_message':getattr(self.core,'_mobile_llm_error',None)
+                    if getattr(self.core,'_model_selection_required',False) is True else None}
 
     def apply(self, key, notify):
         if key not in self.downloader.models:

@@ -118,7 +118,8 @@ def test_core_rejects_false_identity_before_answer_stream_and_learning(core):
     core.incremental_learner.learn_from_interaction = Mock()
     result = core.process_message('u', conv, 'Presentati brevemente', stream_callback=events.append)
     assert not result.is_valid
-    assert 'ALLMA' in result.content
+    assert result.content == ''
+    assert result.metadata['delivery_state'] == 'unresolved'
     assert not any('Luna' in e['content'] for e in events if e['type'] == 'answer')
     core.incremental_learner.learn_from_interaction.assert_not_called()
     assert core.conversational_memory.messages[-1].metadata['is_valid'] is False

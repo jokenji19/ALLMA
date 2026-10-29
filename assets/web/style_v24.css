@@ -160,6 +160,16 @@ html {
     align-items: flex-start;
 }
 
+.message-plan-review {
+    padding: 10px 12px;
+    border-left: 2px solid currentColor;
+    border-radius: 3px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    background: var(--bot-bg, transparent);
+}
+
 .message-bubble {
     padding: 14px 18px;
     border-radius: 20px;
@@ -2031,48 +2041,6 @@ body.dark-mode .temp-status {
     }
 }
 
-/* ============================================
-   DREAM TOAST NOTIFICATION
-   ============================================ */
-#dream-toast {
-    position: fixed;
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%) translateY(20px);
-    background: linear-gradient(135deg, rgba(12, 20, 34, 0.97), rgba(28, 22, 52, 0.97));
-    color: #E8EEF9;
-    border: 1px solid rgba(122, 167, 255, 0.35);
-    border-radius: 24px;
-    padding: 12px 22px;
-    font-size: 14px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    opacity: 0;
-    transition: opacity 0.35s ease, transform 0.35s ease;
-    z-index: 9999;
-    box-shadow: 0 8px 24px rgba(76, 141, 255, 0.25);
-    backdrop-filter: blur(10px);
-    white-space: nowrap;
-    pointer-events: none;
-}
-
-#dream-toast.visible {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-}
-
-.dream-toast-emoji {
-    font-size: 18px;
-    animation: dreamFloat 2s ease-in-out infinite;
-}
-
-@keyframes dreamFloat {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-4px); }
-}
-
 /* 🌙 icon pulsing quando sogna */
 #dream-indicator.pulsing {
     animation: dreamPulse 2s ease-in-out infinite;
@@ -2218,7 +2186,6 @@ body.dark-mode .dream-entry {
     .typing-dots span,
     #dream-indicator.active,
     #dream-indicator.pulsing,
-    .dream-toast-emoji,
     .temp-fill::after,
     .dream-entry,
     #voice-overlay.active .wave-blob {
@@ -2327,3 +2294,13 @@ body.dark-mode .message-bubble .content code {
     font: inherit; font-weight: 600; text-align: left; cursor: pointer;
 }
 .benchmark-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }
+/* Operational state, deliberately separate from a spoken assistant message. */
+.turn-unresolved { display:flex; align-items:center; flex-wrap:wrap; gap:12px; font-size:13px; color:var(--text-secondary, #888); padding:8px 0; }
+.turn-unresolved button { font:inherit; color:inherit; background:transparent; border:1px solid currentColor; border-radius:18px; padding:7px 12px; cursor:pointer; }
+
+/* Actual research activity, independent of permission to access the network. */
+.network-activity { display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:18px;color:var(--text-secondary); }
+.network-activity svg { width:14px;height:14px;opacity:.65; }
+.network-activity[data-state="online"] { color:#b15a3b; }
+.network-activity[data-state="online"] svg { opacity:1; }
+.message-reference-badge { display:block;width:fit-content;margin-top:9px;font-size:11px;line-height:1.5;color:var(--text-secondary); }

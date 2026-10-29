@@ -59,6 +59,7 @@ class CognitivePipeline:
         self,
         raw_text: str,
         identity_state: Optional[Any] = None,
+        *, preserve_text: bool = False,
     ) -> Tuple[str, list]:
         """
         Applica tutti i layer cognitivi in sequenza al testo grezzo dell'LLM.
@@ -66,6 +67,8 @@ class CognitivePipeline:
         Args:
             raw_text:       Output grezzo proveniente dall'LLM.
             identity_state: Snapshot dello stato identitario calcolato all'inizio del turno.
+            preserve_text: Valida senza modificare il testo; usato dalla chat
+                per mantenere coerenti anteprima, risposta finale e memoria.
 
         Returns:
             (processed_text, struct_violations): Testo finale + lista violazioni rilevate.
@@ -85,14 +88,19 @@ class CognitivePipeline:
             raise CognitiveValidationError('Structural validator unavailable')
         if self.structural_core:
             try:
+                before = text
                 text, is_valid, struct_violations = self.structural_core.validate(text)
                 if not is_valid:
                     raise CognitiveValidationError('Structural constraints not satisfied')
+                if preserve_text and text != before:
+                    raise CognitiveValidationError('Structural admission would alter delivered text')
             except Exception as e:
                 raise CognitiveValidationError('Structural validation failed') from e
 
         # --- LAYER 3: VOLITION MODULATOR (Corteccia Espressiva) ---
-        if self.volition_v5 and identity_state:
+        # Chat style is chosen before inference. Already delivered text is
+        # immutable; validation cannot silently rewrite its tone or paragraphs.
+        if self.volition_v5 and identity_state and not preserve_text:
             try:
                 text = self.volition_v5.apply(text, identity_state)
             except Exception as e:

@@ -1,0 +1,24 @@
+--- a/pythonforandroid/build.py
++++ b/pythonforandroid/build.py
+@@ -466,11 +466,19 @@
+             name = getattr(recipe, 'site_packages_name', None) or name
+         name = name.replace('.', '/')
+         site_packages_dir = self.get_site_packages_dir(arch)
+-        return (exists(join(site_packages_dir, name)) or
++        if (exists(join(site_packages_dir, name)) or
+                 exists(join(site_packages_dir, name + '.py')) or
+                 exists(join(site_packages_dir, name + '.pyc')) or
+                 exists(join(site_packages_dir, name + '.so')) or
+-                glob.glob(join(site_packages_dir, name + '-*.egg')))
++                glob.glob(join(site_packages_dir, name + '-*.egg'))):
++            return True
++        # Distribution names can differ from imports, e.g. Kivy-Garden -> garden.
++        from importlib.metadata import distributions
++        from packaging.utils import canonicalize_name
++        for distribution in distributions(path=[site_packages_dir]):
++            if canonicalize_name(distribution.metadata.get('Name','')) == canonicalize_name(name):
++                return True
++        return False
+ 
+     def not_has_package(self, name, arch=None):
+         return not self.has_package(name, arch)

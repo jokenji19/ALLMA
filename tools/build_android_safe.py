@@ -16,14 +16,21 @@ def iter_files():
         ROOT / "allma_model",
         ROOT / "assets",
         ROOT / "libs" / "recipes",
+        ROOT / "libs" / "patches",
+        ROOT / "libs" / "native_backend" / "hexagon",
+        ROOT / "libs" / "android_src",
         ROOT / "libs_custom",
         ROOT / "benchmarks",
     ]
     include_files = [
         ROOT / "main.py",
         ROOT / "buildozer.spec",
+        ROOT / "android-build-constraints.txt",
         ROOT / "pack_brain.py",
         ROOT / "tools" / "verify_android_apk.py",
+        ROOT / "tools" / "build_native_manifest.py",
+        ROOT / "libs" / "native_backend" / "AndroidManifest.xml",
+        ROOT / "libs" / "allma-native-manifest.aar",
         ROOT / "service.py",
         ROOT / "AndroidManifest.xml",
         ROOT / "benchmark_iq.py",
@@ -78,13 +85,14 @@ def save_state(state_path: Path, state: dict):
 
 
 def run_command(command: list):
-    result = subprocess.run(command, cwd=ROOT)
+    env=dict(os.environ)
+    env.setdefault('PIP_CONSTRAINT',str(ROOT/'android-build-constraints.txt'))
+    result = subprocess.run(command, cwd=ROOT, env=env)
     if result.returncode != 0:
         sys.exit(result.returncode)
 
 
-def android_toolchain_ready():
-    """Buildozer's clean command requires the p4a checkout as its cwd."""
+def android_toolchain_checkout():
     config = configparser.ConfigParser(interpolation=None)
     config.read(ROOT / 'buildozer.spec', encoding='utf-8')
     source = config.get('app', 'p4a.source_dir', fallback='').strip()
@@ -95,7 +103,21 @@ def android_toolchain_ready():
         checkout = build_dir / 'android/platform/python-for-android'
     if not checkout.is_absolute():
         checkout = ROOT / checkout
-    return checkout.is_dir()
+    return checkout
+
+
+def android_toolchain_ready():
+    """Buildozer's clean command requires the p4a checkout as its cwd."""
+    return android_toolchain_checkout().is_dir()
+
+
+def prepare_android_toolchain():
+    checkout=android_toolchain_checkout()
+    source=checkout/'pythonforandroid/build.py'
+    if not source.is_file() or 'from importlib.metadata import distributions' in source.read_text():
+        return
+    subprocess.run(['patch','--batch','-p1','-i',
+                    str(ROOT/'libs/patches/p4a-installed-distributions.patch')],cwd=checkout,check=True)
 
 
 def main():
@@ -105,7 +127,9 @@ def main():
 
     state_path = ROOT / ".buildozer" / "allma_build_state.json"
     if not args.dry_run:
+        prepare_android_toolchain()
         run_command([sys.executable, "pack_brain.py"])
+        run_command([sys.executable, "tools/build_native_manifest.py"])
     current_hash = compute_hash()
     previous_state = load_state(state_path)
     inputs_changed = previous_state is None or previous_state.get("hash") != current_hash

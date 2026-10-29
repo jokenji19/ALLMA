@@ -5,6 +5,7 @@ from allma_model.core.autobiographical_identity import identity_conflict, unsupp
 from .output_contract import borrowed_user_experience
 from .dialogue_continuity import wellbeing_question
 from .source_claims import unbacked_source_claim
+from .dialogue_output import project_answer
 
 
 class AnswerStream:
@@ -16,6 +17,7 @@ class AnswerStream:
         self.pending = ''
         self.rejected = False
         self.emitted = False
+        self.removed_intro = False
 
     def feed(self, text, final=False):
         if self.rejected:
@@ -63,6 +65,14 @@ class AnswerStream:
                 self.rejected = True
                 self.pending = ''
                 break
+            projection = project_answer(chunk, self.request)
+            if projection.removed:
+                self.removed_intro = self.removed_intro or not self.emitted
+                if not projection.text:
+                    continue
+                chunk = projection.text
+            if self.removed_intro and not self.emitted:
+                chunk = chunk.lstrip()
             if chunk:
                 self.emit({'type': 'answer', 'content': chunk})
                 self.emitted = self.emitted or bool(chunk.strip())

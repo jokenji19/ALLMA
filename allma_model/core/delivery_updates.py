@@ -16,6 +16,7 @@ import threading
 import uuid
 
 from allma_model.core.autobiographical_identity import POLICY_VERSION
+from allma_model.utils.persistence import StateRecoveryRequired
 
 EFFECTS = ('answer_recall', 'incremental_learning', 'knowledge_memory',
            'neuroplasticity', 'identity_state')
@@ -33,20 +34,29 @@ class DeliveryUpdates:
         self.needs_sync = True
         self.last_sequence = 0
         self._initialized = False
-        for name in ('answer_recall', 'incremental_learner', 'identity_engine_v5', 'neuroplasticity_v5', 'coalescence_processor'):
+        for name in ('answer_recall', 'incremental_learner', 'identity_engine_v5', 'neuroplasticity_v5', 'coalescence_processor', 'goal_progress'):
             component = getattr(core, name, None)
-            value = getattr(component, 'delivery_checkpoint', 0)
+            try:
+                value = getattr(component, 'delivery_checkpoint', 0)
+            except StateRecoveryRequired:
+                # Durable history supplies the sequence even when one component
+                # needs recovery. Its writes still fail closed in _apply.
+                value = 0
             if name == 'coalescence_processor':
                 value = getattr(component,'experience_checkpoint',0)
             if type(value) is int:
                 self.last_sequence = max(self.last_sequence, value)
         # Reconstruct the high-water mark even if the journal is temporarily
         # unavailable. Ordering is independent of calendar and clock rollback.
-        for record in self._records():
-            for key in ('experience_update','delivery_update'):
-                intent = record.metadata.get(key)
-                if isinstance(intent,dict) and type(intent.get('sequence')) is int:
-                    self.last_sequence = max(self.last_sequence,intent['sequence'])
+        memory=core.conversational_memory
+        if getattr(memory,'_history_store',None) is not None:
+            self.last_sequence=max(self.last_sequence,getattr(memory,'_history_highwater',0))
+        else:
+            for record in self._records():
+                for key in ('experience_update','delivery_update'):
+                    intent = record.metadata.get(key)
+                    if isinstance(intent,dict) and type(intent.get('sequence')) is int:
+                        self.last_sequence = max(self.last_sequence,intent['sequence'])
 
     def _next_sequence(self):
         if not self._initialized:
@@ -74,12 +84,19 @@ class DeliveryUpdates:
 
     @staticmethod
     def effects(intent):
-        return ('personality_growth',) if intent.get('kind')=='experience' else ('tool_learning',) if intent.get('kind')=='tool' else EFFECTS
+        if intent.get('kind') == 'experience':
+            return ('goal_tracking','personality_growth') if intent.get('goal_control') is not None else ('personality_growth',)
+        return ('tool_learning',) if intent.get('kind')=='tool' else EFFECTS
 
-    def prepare_user(self, user_id, conversation_id, text, response_context=None):
-        return {'version':1,'kind':'experience','event':uuid.uuid4().hex,'sequence':self._next_sequence(),
+    def prepare_user(self, user_id, conversation_id, text, response_context=None, *, goal_control=None):
+        intent = {'version':1,'kind':'experience','event':uuid.uuid4().hex,'sequence':self._next_sequence(),
                 'user':user_id,'conversation':conversation_id,'input_sha256':digest(text),
                 'response_context':deepcopy(response_context)}
+        if goal_control is not None:
+            from allma_model.agency_system.goal_progress import valid_control
+            if not valid_control(goal_control):raise ValueError('Invalid goal control')
+            intent['goal_control'] = deepcopy(goal_control)
+        return intent
 
     @staticmethod
     def eligible(record):
@@ -124,29 +141,34 @@ class DeliveryUpdates:
         if intent.get('kind')=='experience':
             if intent.get('response_context') is not None and not isinstance(intent['response_context'],dict):
                 raise ValueError('Invalid experience context')
+            if intent.get('goal_control') is not None:
+                from allma_model.agency_system.goal_progress import valid_control
+                if not valid_control(intent['goal_control']):raise ValueError('Invalid goal experience')
         elif (any(not isinstance(intent.get(k),str) or not intent[k]
                   for k in ('input_timestamp','answer_sha256','topic','recall_key'))
                 or not isinstance(intent.get('violations'),list)
                 or any(not isinstance(v,str) for v in intent['violations'])):
             raise ValueError('Invalid answer update reference')
 
-    def _enqueue(self, intent):
+    def _enqueue_in(self,db,intent):
         self.validate(intent)
-        self._ensure()
-        encoded = json.dumps(intent, sort_keys=True, ensure_ascii=False)
-        with sqlite3.connect(self.path) as db:
-            row = db.execute('SELECT intent FROM delivery_updates WHERE event=?',(intent['event'],)).fetchone()
-            if row is not None:
-                if row[0] != encoded:
-                    raise ValueError('Delivery event changed after storage')
-                return
+        encoded=json.dumps(intent,sort_keys=True,ensure_ascii=False)
+        row=db.execute('SELECT intent FROM delivery_updates WHERE event=?',(intent['event'],)).fetchone()
+        if row is not None:
+            if row[0]!=encoded:raise ValueError('Delivery event changed after storage')
+        else:
             db.execute('INSERT INTO delivery_updates(event,sequence,intent) VALUES (?,?,?)',
                        (intent['event'],intent['sequence'],encoded))
-        self.last_sequence = max(self.last_sequence,intent['sequence'])
+        self.last_sequence=max(self.last_sequence,intent['sequence'])
+
+    def _enqueue(self,intent):
+        self._ensure()
+        with sqlite3.connect(self.path) as db:self._enqueue_in(db,intent)
 
     def _records(self):
-        with self.core.conversational_memory.lock:
-            return list(self.core.conversational_memory.messages)
+        memory=self.core.conversational_memory
+        with memory.lock:
+            return memory.messages if getattr(memory,'_history_store',None) is not None else list(memory.messages)
 
     @contextmanager
     def _claim(self):
@@ -185,7 +207,19 @@ class DeliveryUpdates:
 
     def _apply(self, action, intent, source, answer):
         core, sequence = self.core, intent['sequence']
-        if action == 'personality_growth':
+        if action == 'goal_tracking':
+            from allma_model.utils.goal_dialogue import command
+            control = intent['goal_control']
+            if command(source.content) != control['request']:
+                raise ValueError('Goal control differs from durable user command')
+            if control['kind'] == 'adopt_plan':
+                from allma_model.agency_system.goal_plans import verify_saved
+                if not verify_saved(core.conversational_memory,intent['user'],control['selected_plan']):
+                    raise ValueError('Plan proposal has no matching durable source')
+            core.goal_progress.apply(intent['user'],control,
+                {'event':intent['event'],'conversation':intent['conversation'],'timestamp':source.timestamp.isoformat(),
+                 'input_sha256':intent['input_sha256'],'source':'user_report'},sequence)
+        elif action == 'personality_growth':
             core.coalescence_processor.observe_interaction(intent['user'],intent['event'],source.content,
                 response_context=intent.get('response_context'),experience_sequence=sequence)
         elif action == 'tool_learning':
@@ -239,12 +273,15 @@ class DeliveryUpdates:
                 records = None
                 if synchronize or self.needs_sync:
                     records = self._records()
-                    intents = [m.metadata['delivery_update'] for m in records
-                               if 'delivery_update' in m.metadata and self.eligible(m)]
-                    intents += [m.metadata['experience_update'] for m in records
-                                if m.role=='user' and 'experience_update' in m.metadata]
-                    for intent in sorted(intents,key=lambda i:i.get('sequence',0)):
-                        self._enqueue(intent)
+                    # The journal orders by sequence itself. Stream historical
+                    # intents into one transaction instead of retaining/sorting
+                    # every old intent and opening a DB per message.
+                    with sqlite3.connect(self.path) as db:
+                        for record in records:
+                            keys=[]
+                            if 'delivery_update' in record.metadata and self.eligible(record):keys.append('delivery_update')
+                            if record.role=='user' and 'experience_update' in record.metadata:keys.append('experience_update')
+                            for key in keys:self._enqueue_in(db,record.metadata[key])
                     self.needs_sync = False
                 with sqlite3.connect(self.path) as db:
                     rows = db.execute("SELECT event,intent,completed FROM delivery_updates WHERE state='pending' ORDER BY sequence LIMIT 32").fetchall()

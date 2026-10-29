@@ -6,8 +6,9 @@ separately. The response LLM can interpret context without a second inference.
 import math
 import re
 import unicodedata
+from . import emotion_languages as languages
 
-VERSION = 'emotion-evidence-v3'
+VERSION = 'emotion-evidence-v4'
 # family, valence, arousal, perceived control, lexical evidence
 LEXICON = {
     'joy': ('joy', .8, .6, .6, r'felic[ei]|content[oaie]|gioios[oaie]|happy|che bello|evviva|fantastico|ottimo|al settimo cielo|😊|😄'),
@@ -43,15 +44,15 @@ LEXICON = {
     'fatigue': ('neutral', -.2, .1, .4, r'stanc[oaie]|esaust[oaie]|sfinito|sfinita|tired|exhausted|😴'),
     'numbness': ('neutral', -.3, .1, .3, r'mi sento vuot[oa]|non sento (?:pi[uù] )?niente|intorpidit[oaie]|numb'),
 }
-PATTERNS = [(label, values, re.compile(r'(?<!\w)(?:' + values[4] + r')(?!\w)', re.I))
+PATTERNS = [(label, values, re.compile(r'(?<!\w)(?:' + values[4] + '|' + languages.EXTRA_LEXICON.get(label, r'(?!)') + r')(?!\w)', re.I))
             for label, values in LEXICON.items()]
 FAMILIES = {'neutral', 'joy', 'sadness', 'anger', 'fear', 'surprise', 'disgust', 'trust', 'anticipation'}
-SELF = re.compile(r'\b(?:io|sono|ero|mi sento|mi sentivo|mi|ho|provo|sento|i am|i feel|i.m)\b')
-OTHER = re.compile(r'\b(?:tu|lui|lei|loro|sei|ti senti|si sente|si sentiva|mia madre|mio padre|mia sorella|mio fratello|il mio amico|la mia amica|il protagonista|il personaggio|il paziente|he|she|they|you|his|her|their)\b|\b(?!io\b|i\b|non\b|not\b|oggi\b|questo\b)\w+\s+(?:è|era|sembra|is|was|feels)\b')
-GENERIC = re.compile(r'\b(?:spiega|definisci|traduci|tradurre|significa|significato|parola|frase|esempio|emozioni|le persone|nel romanzo|nel racconto|scrivi|disegna|mostra|aggiungi|translate|explain)\b')
-HYPOTHETICAL = re.compile(r'\b(?:se|quando|sarei|vorrei essere|potrei essere|immagina|if|whenever|wish i were)\b')
-PAST = re.compile(r'\b(?:ieri|prima|ero|mi sentivo|l.anno scorso|una volta|yesterday|i was)\b')
-PRESENT = re.compile(r'\b(?:ora|adesso|oggi|mi sento|sono|i feel|i am)\b')
+SELF = re.compile(r'\b(?:io|sono|ero|mi sento|mi sentivo|mi|ho|provo|sento|i am|i feel|i.m|' + languages.SELF_EXTRA + r')\b')
+OTHER = re.compile(r'\b(?:tu|lui|lei|loro|sei|ti senti|si sente|si sentiva|mia madre|mio padre|mia sorella|mio fratello|il mio amico|la mia amica|il protagonista|il personaggio|il paziente|he|she|they|you|his|her|their|' + languages.OTHER_EXTRA + r')\b|\b(?!(?:io|i|je|yo|ich|mir|non|not|no|ne|nicht|oggi|questo)\b)\w+\s+(?:è|era|sembra|is|was|feels|est|était|se sent|está|se siente|ist|war|fühlt sich)\b')
+GENERIC = re.compile(r'\b(?:spiega|definisci|traduci|tradurre|significa|significato|parola|frase|esempio|emozioni|le persone|nel romanzo|nel racconto|scrivi|disegna|mostra|aggiungi|translate|explain|' + languages.GENERIC_EXTRA + r')\b')
+HYPOTHETICAL = re.compile(r'\b(?:se|quando|sarei|vorrei essere|potrei essere|immagina|if|whenever|wish i were|' + languages.HYPOTHETICAL_EXTRA + r')\b')
+PAST = re.compile(r'\b(?:ieri|prima|ero|mi sentivo|l.anno scorso|una volta|yesterday|i was|' + languages.PAST_EXTRA + r')\b')
+PRESENT = re.compile(r'\b(?:ora|adesso|oggi|mi sento|sono|i feel|i am|' + languages.PRESENT_EXTRA + r')\b')
 
 
 def unit(value, default=0.):
@@ -63,7 +64,7 @@ def unit(value, default=0.):
 def analyze(text, learned_aliases=None):
     original = unicodedata.normalize('NFKC', text if isinstance(text, str) else '')[:12000]
     # Preserve offsets while excluding examples, quoted speech, and code.
-    clean = re.sub(r'```.*?(?:```|$)|"[^"\n]*"|“[^”\n]*”|«[^»\n]*»|(?<!\w)\x27[^\x27\n]{2,}\x27(?!\w)',
+    clean = re.sub(r'```.*?(?:```|$)|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|„[^“\n]*“|«[^»\n]*»|(?<!\w)\x27[^\x27\n]{2,}\x27(?!\w)',
                    lambda m: ' '*len(m[0]), original, flags=re.S).casefold()
     scores, evidence, other, negated, past = {}, [], [], [], []
     ambiguous = False
@@ -84,21 +85,26 @@ def analyze(text, learned_aliases=None):
                 before = chunk[:match.start()]
                 # Conjunctions bound negation and temporal changes; retain subject
                 # attribution from the surrounding clause for fragments.
-                scopes = re.split(r'\b(?:ma|però|invece|but|e|and)\b|,|:(?=\s*(?:io\s+)?(?:sono|mi sento|provo|sento|i am|i feel)\b)', before)
+                scopes = re.split(r'\b(?:ma|però|invece|but|e|and|' + languages.SCOPE_EXTRA + r')\b|,|:(?=\s*(?:io\s+)?(?:sono|mi sento|provo|sento|i am|i feel)\b)', before)
                 local = scopes[-1]
                 self_hits, other_hits, generic_hits = list(SELF.finditer(before)), list(OTHER.finditer(before)), list(GENERIC.finditer(before))
-                self_pos = self_hits[-1].start() if self_hits else -1
-                other_pos = other_hits[-1].start() if other_hits else -1
-                generic_pos = generic_hits[-1].start() if generic_hits else -1
+                # End offsets distinguish Spanish "mi hermana" from Italian
+                # first-person "mi": the longer attributed subject wins.
+                self_pos = self_hits[-1].end() if self_hits else -1
+                other_pos = other_hits[-1].end() if other_hits else -1
+                generic_pos = generic_hits[-1].end() if generic_hits else -1
                 first_person_phrase = bool(re.match(r'(?:mi |ho perso |non ce la faccio|non mi sento|non sento|ti (?:amo|voglio bene|ringrazio))', match[0]))
                 if pattern.pattern in personal_patterns and self_pos < 0:
                     continue  # An object bearing the learned word is not the user.
                 record = {'label': label, 'start': clause.start()+match.start(), 'end': clause.start()+match.end()}
                 if pattern.pattern in personal_patterns:
                     record['learned_alias'] = personal_patterns[pattern.pattern]
+                if languages.ambiguous_usage(match[0], local, self_pos >= 0 or other_pos >= 0):
+                    ambiguous = True
+                    continue
                 # An emotion inside a feared/wished/reported belief is not an
                 # assertion that the user experiences that emotion now.
-                if re.search(r'\b(?:ho paura|temo|spero|vorrei|crede\w*|credi\w*|creda\w*|pensa\w*|pensi\w*)\b.*\bche\b', local):
+                if re.search(r'\b(?:ho paura|temo|spero|vorrei|crede\w*|credi\w*|creda\w*|pensa\w*|pensi\w*)\b.*\bche\b|\b(?:espero|temo|souhaite|espère|crains)\b.*\bqu[e’\x27]|\b(?:hoffe|fürchte)\b.*\bdass\b', local):
                     unasserted.append(record)
                     continue
                 if match[0].startswith('mi manca'):
@@ -112,7 +118,7 @@ def analyze(text, learned_aliases=None):
                     other.append(record); continue
                 if not first_person_phrase and generic_pos > self_pos:
                     continue
-                if re.search(r'\b(?:traduci|tradurre|translate|parola|frase|scrivi|definisci|significato)\b', local):
+                if re.search(r'\b(?:traduci|tradurre|translate|parola|frase|scrivi|definisci|significato|' + languages.GENERIC_EXTRA + r')\b', local):
                     continue
                 if match[0] == 'a pezzi' and not re.search(r'\b(?:sono|ero|mi sento|mi sentivo|mi ha lasciato)\b', local):
                     continue  # Broken objects are not evidence of distress.
@@ -125,26 +131,26 @@ def analyze(text, learned_aliases=None):
                 # Negation over a complement can exceed a short token window.
                 # Preserve the operator across coordinated "né/nor" fragments.
                 long_negation = bool(re.search(r'\bnon\b.*\b(?:niente|nulla|nessuno)\b.*\b(?:sentire|essere|provo|sento)\b', local))
-                coordinated_negation = bool(re.search(r'\b(?:né|ne|nemmeno|neanche|neppure|nor|neither)\b', local)
-                                            and re.search(r'\b(?:non|not|né|neither)\b', before))
+                coordinated_negation = bool(re.search(r'\b(?:né|nemmeno|neanche|neppure|nor|neither|ni|weder|noch)\b', local)
+                                            and re.search(r'\b(?:non|not|né|neither|no|ne|ni|pas|weder)\b', before))
                 # Failure to inhibit an action is not negation of its emotion.
                 inability = bool(re.search(r'\bnon riesco a\b.*\b(?:smettere di|trattenere|evitare di)\b', local))
-                negatives = list(re.finditer(r'\b(?:non|not|senza|never|mai|no)\b', window))
-                non_only = re.search(r'\bnon (?:solo|soltanto)\b', window)
+                negatives = list(re.finditer(r'\b(?:non|not|senza|never|mai|no|' + languages.NEGATIVE_EXTRA + r')\b', window))
+                non_only = re.search(r'\b(?:non (?:solo|soltanto)|no solo|pas seulement|nicht nur)\b', window)
                 positive_mai = re.search(r'\bmai\b.*\bcos[iì]\b', window)
-                if long_negation or coordinated_negation or (negatives and len(negatives)%2 and not non_only and not positive_mai and not inability):
+                if ((long_negation or coordinated_negation) and not non_only) or (negatives and len(negatives)%2 and not non_only and not positive_mai and not inability):
                     negated.append(record); continue
                 if PAST.search(local) and not PRESENT.search(local):
                     past.append(record); continue
                 strength = .62
                 if self_pos >= 0 or first_person_phrase:
                     strength = .82
-                if re.search(r'\b(?:forse|magari|credo|sembra|maybe|perhaps)\b', local):
+                if re.search(r'\b(?:forse|magari|credo|sembra|maybe|perhaps|' + languages.UNCERTAIN_EXTRA + r')\b', local):
                     strength = .48; ambiguous = True
                 intensity = .55
-                if re.search(r'\b(?:molto|tantissimo|estremamente|davvero|troppo|very|extremely)\b', window):
+                if re.search(r'\b(?:molto|tantissimo|estremamente|davvero|troppo|very|extremely|' + languages.INTENSE_EXTRA + r')\b', window):
                     intensity = .85
-                if re.search(r'\b(?:poco|leggermente|appena|un po|slightly|a little)\b', window):
+                if re.search(r'\b(?:poco|leggermente|appena|un po|slightly|a little|' + languages.MILD_EXTRA + r')\b', window):
                     intensity = .3
                 # A negative continuation can make a positive interjection ironic.
                 if label == 'joy' and re.search(r'che bello|fantastico|ottimo', match[0]) and re.search(r'rotto|fallit|perso|guasto|ritardo|multa|crash', chunk[match.end():]):
@@ -171,7 +177,8 @@ def analyze(text, learned_aliases=None):
                 secondary_emotions={f: families[f] for f in ranked[1:]},
                 nuances={label: score for label, (score, _) in scores.items()},
                 valence=dims[0], arousal=dims[1], dominance=dims[2],
-                analysis={'version': VERSION, 'source': 'local_evidence', 'uncertain': ambiguous or not scores or confidence < .6,
+                analysis={'version': VERSION, 'source': 'local_evidence', 'lexicon_languages': list(languages.LANGUAGES),
+                          'uncertain': ambiguous or not scores or confidence < .6,
                           'mixed': len(scores)>1, 'evidence': evidence[:32], 'other_evidence': other[:16],
                           'negated': negated[:16], 'past_evidence': past[:16],
                           'unasserted_evidence': unasserted[:16],

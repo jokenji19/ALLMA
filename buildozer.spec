@@ -23,22 +23,22 @@ source.include_exts = py,png,jpg,kv,atlas,json,txt,zip,so,bin,html,css,js,woff2
 source.exclude_exts = spec
 
 # (list) List of directory to exclude (let empty to not exclude anything)
-source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer, unpacked_brain, tmp_llama_check, allma_model/tests, models, Library, htmlcov, _quarantine, incremental_cache, data, logs, benchmarks/reports
+source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .github, .git, .buildozer, unpacked_brain, tmp_llama_check, allma_model/tests, models, Library, htmlcov, _quarantine, incremental_cache, data, logs, benchmarks/reports, libs/recipes, libs_custom, libs/native_backend/hexagon
 
 # (list) List of exclusions using pattern matching
 # Removed *.txt exclusion to allow requirements.txt
-source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md,*.bak,allma_model.zip,allma_model/allma_diary.json,personality_state.json,beta_test_conversations.json,allma.db,allma_memory.json,allma_settings.json,allma_modules.db,answer_recall.json,incremental_cache/knowledge_states.json,data/allma_vectors.db,data/dream_journal.json,data/dream_journal.json.pending.json,data/dream_journal.json.processed.json,message_delivery.json,data/dream_journal.json.reviews.db,cognitive_state.json,allma_diary.json
+source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md,*.bak,allma_model.zip,allma_model/allma_diary.json,personality_state.json,beta_test_conversations.json,allma.db,allma_memory.json,conversation_history.db,conversation_history.db.init.lock,allma_settings.json,model_binding.json,notifications.json,allma_modules.db,answer_recall.json,answer_recall.db,answer_recall.db.init.lock,incremental_cache/knowledge_states.json,incremental_cache/knowledge_states.db,incremental_cache/knowledge_states.db.init.lock,data/allma_vectors.db,data/dream_journal.json,data/dream_journal.json.pending.json,data/dream_journal.json.processed.json,message_delivery.json,data/dream_journal.json.reviews.db,cognitive_state.json,allma_diary.json
 
 # (str) Application versioning (method 1)
-version = 0.9.1
-android.numeric_version = 102539
+version = 0.9.1.1
+android.numeric_version = 102593
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
 # NOTE: Heavy ML libraries (torch, transformers, llama-cpp-python) and numpy are excluded
 # These will be downloaded# (list) Application requirements
 # Build 136: Full Restoration (Standard + Graphics + Math)
-requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.1,sqlite3,requests,plyer,kivymd==1.2.0,pillow,numpy,llamacpp_android,diskcache,typing_extensions,jinja2,markupsafe,pytz
+requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.1,sqlite3,requests,plyer,kivymd==1.2.0,pillow,numpy,llamacpp_android,opencl_link,diskcache,typing_extensions,jinja2,markupsafe,pytz
 
 # (str) Python for android branch to use, if not master, useful to try new features
 p4a.branch = develop
@@ -52,7 +52,7 @@ p4a.branch = develop
 #garden_requirements =
 
 # (str) Presplash of the application
-#presplash.filename = %(source.dir)s/data/presplash.png
+presplash.filename = %(source.dir)s/assets/android/presplash.png
 
 # (str) Icon of the application
 icon.filename = icon.png
@@ -77,11 +77,11 @@ android.softinput_mode = adjustPan
 # red, blue, green, black, white, gray, cyan, magenta, yellow, lightgray,
 # darkgray, grey, lightgrey, darkgrey, aqua, fuchsia, lime, maroon, navy,
 # olive, purple, silver, teal.
-android.presplash_color = #FFFFFF
+android.presplash_color = #FAF9F5
 
 # (list) Permissions
 android.add_src = libs/android_src
-android.add_aars = libs/sherpa-onnx-1.12.20-arm64.aar
+android.add_aars = libs/sherpa-onnx-1.12.20-arm64.aar, libs/allma-native-manifest.aar
 android.gradle_dependencies = org.jetbrains.kotlin:kotlin-stdlib:1.9.25
 android.add_gradle_repositories = flatDir { dirs 'libs' }
 android.add_resources = assets/android/drawable/ic_allma_notification.xml:drawable/ic_allma_notification.xml, assets/android/xml/allma_backup_rules.xml:xml/allma_backup_rules.xml, assets/android/xml/allma_extraction_rules.xml:xml/allma_extraction_rules.xml

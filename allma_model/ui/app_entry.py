@@ -119,7 +119,7 @@ class AllmaInternalApp(MDApp):
                     self._dream_before_pause = core.dream_enabled
                 self._paused = True
                 core.set_dream_mode(False, persist=False)
-                core.incremental_learner.save_state()
+                core.incremental_learner.flush_state()
                 # 1. Force Save Memory
                 core = self.chat_screen.core
                 if core.conversational_memory:

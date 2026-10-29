@@ -3,10 +3,15 @@
     <cloud-backup disableIfNoEncryptionCapabilities="true">
         <include domain="file" path="allma_state/allma.db" />
         <include domain="file" path="allma_state/allma_memory.json" />
+        <include domain="file" path="allma_state/conversation_history.db" />
         <include domain="file" path="allma_state/allma_settings.json" />
+        <include domain="file" path="allma_state/model_binding.json" />
+        <include domain="file" path="allma_state/notifications.json" />
         <include domain="file" path="allma_state/allma_modules.db" />
         <include domain="file" path="allma_state/answer_recall.json" />
+        <include domain="file" path="allma_state/answer_recall.db" />
         <include domain="file" path="allma_state/incremental_cache/knowledge_states.json" />
+        <include domain="file" path="allma_state/incremental_cache/knowledge_states.db" />
         <include domain="file" path="allma_state/data/dream_journal.json" />
         <include domain="file" path="allma_state/data/dream_journal.json.pending.json" />
         <include domain="file" path="allma_state/data/dream_journal.json.processed.json" />
@@ -19,10 +24,15 @@
     <device-transfer>
         <include domain="file" path="allma_state/allma.db" />
         <include domain="file" path="allma_state/allma_memory.json" />
+        <include domain="file" path="allma_state/conversation_history.db" />
         <include domain="file" path="allma_state/allma_settings.json" />
+        <include domain="file" path="allma_state/model_binding.json" />
+        <include domain="file" path="allma_state/notifications.json" />
         <include domain="file" path="allma_state/allma_modules.db" />
         <include domain="file" path="allma_state/answer_recall.json" />
+        <include domain="file" path="allma_state/answer_recall.db" />
         <include domain="file" path="allma_state/incremental_cache/knowledge_states.json" />
+        <include domain="file" path="allma_state/incremental_cache/knowledge_states.db" />
         <include domain="file" path="allma_state/data/dream_journal.json" />
         <include domain="file" path="allma_state/data/dream_journal.json.pending.json" />
         <include domain="file" path="allma_state/data/dream_journal.json.processed.json" />

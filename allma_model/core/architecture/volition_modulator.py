@@ -28,6 +28,16 @@ class VolitionModulator:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
+    def guidance(self, identity_state) -> str:
+        """Express state as a pre-generation style hint, preserving uncertainty."""
+        if identity_state is None:
+            return ''
+        strategy = self._decide_strategy(identity_state)
+        return {
+            MODULATION_DIRECT: 'Esprimi il punto principale in modo diretto, mantenendo incertezze e condizioni.',
+            MODULATION_SIMPLIFY: 'Usa una formulazione semplice, mantenendo i termini necessari e le incertezze.',
+        }.get(strategy, '')
+
     def apply(self, text: str, identity_state: 'IdentityState') -> str:
         """
         Applica la modulazione volontaria al testo validato.

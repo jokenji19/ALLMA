@@ -258,7 +258,7 @@ def test_invalid_recall_checkpoint_preserves_original_and_blocks_replay(tmp_path
     assert path.read_bytes()==before and not recall.records
 
 
-@pytest.mark.parametrize('action',['incremental_learning','personality_growth','tool_learning'])
+@pytest.mark.parametrize('action',['incremental_learning','personality_growth','tool_learning','goal_tracking','goal_plan_step','goal_plan_review'])
 def test_abrupt_process_exit_after_component_save_can_recover(tmp_path,action):
     # Deliberately bypass finally/close: persisted receipts must be sufficient.
     script='''
@@ -272,11 +272,25 @@ core._llm.generate.return_value='La luce bianca contiene diversi colori.'
 core._llm.get_generation_meta.return_value={'finish_reason':'stop'}
 original=core.delivery_updates._ack
 def ack(event,completed):
+    if (sys.argv[2]=='goal_plan_review' and completed[-1]=='goal_tracking'
+            and core.goal_progress.report(core.goal_progress.delivery_checkpoint).get('status')=='review_required'):os._exit(73)
+    if (sys.argv[2]=='goal_plan_step' and completed[-1]=='goal_tracking'
+            and core.goal_progress.goals('u')[0]['workflow'].get('plan',{}).get('index')==1):os._exit(73)
     if completed[-1]==sys.argv[2]:os._exit(73)
     return original(event,completed)
 core.delivery_updates._ack=ack
+if sys.argv[2] in ('goal_plan_step','goal_plan_review'):
+    cid=core.start_conversation('u')
+    core._llm.generate.return_value='1. Scrivi tre voci distinte nella lista.\\n2. Controlla ogni voce e correggi gli errori.'
+    if sys.argv[2]=='goal_plan_review':core._llm.generate.return_value='1. Scrivi tre voci distinte nella lista.\\n2. Controlla una voce della lista finale.'
+    for text in ['Nuovo obiettivo: Lista sintetica\\nCriterio: tre voci controllate',
+                 'Proponi un piano per questo obiettivo','Adotta questo piano',
+                 'Risultato del passo: tre voci scritte','Confermo il risultato del passo']:
+        core.process_message('u',cid,text)
+    raise RuntimeError('Step exit checkpoint not reached')
 message=('Sono felice per il risultato di oggi.' if sys.argv[2]=='personality_growth' else
-         'Quante lettere contiene JSON?' if sys.argv[2]=='tool_learning' else 'Spiegami come funziona la luce bianca.')
+         'Quante lettere contiene JSON?' if sys.argv[2]=='tool_learning' else
+         'Nuovo obiettivo: Lista sintetica' if sys.argv[2]=='goal_tracking' else 'Spiegami come funziona la luce bianca.')
 core.process_message('u',core.start_conversation('u'),message)
 raise RuntimeError('Abrupt-exit checkpoint not reached')
 '''
@@ -295,6 +309,22 @@ raise RuntimeError('Abrupt-exit checkpoint not reached')
             assert restored.meta_learner.tool_learning.view('u')['executions']=={'letters':1}
             restored.delivery_updates.recover(synchronize=True)
             assert restored.meta_learner.tool_learning.view('u')['executions']=={'letters':1}
+        elif action=='goal_tracking':
+            goals=restored.goal_progress.goals('u')
+            assert len(goals)==1 and goals[0]['objective']=='Lista sintetica'
+            restored.delivery_updates.recover(synchronize=True)
+            assert restored.goal_progress.goals('u')==goals
+        elif action=='goal_plan_step':
+            assert restored.goal_progress.goals('u')[0]['workflow']['plan']['index']==1
+            learning=restored.goal_progress.goals('u')[0]['workflow']['learning']
+            assert list(learning['cases'])==['step_0_confirmed']
+            restored.delivery_updates.recover(synchronize=True)
+            assert restored.goal_progress.goals('u')[0]['workflow']['plan']['index']==1
+            assert restored.goal_progress.goals('u')[0]['workflow']['learning']==learning
+        elif action=='goal_plan_review':
+            goal=restored.goal_progress.goals('u')[0]
+            assert goal['workflow'].get('plan') is None and 'learning' not in goal['workflow']
+            assert restored.goal_progress.report(restored.goal_progress.delivery_checkpoint)['status']=='review_required'
         else:
             assert restored.coalescence_processor.emotion_growth_view('u')['associations']['joy']['observations']==1
     finally:

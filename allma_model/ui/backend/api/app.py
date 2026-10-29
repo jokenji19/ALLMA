@@ -122,7 +122,7 @@ def create_app(core=None, config=None):
         memory=bridge.allma.conversational_memory
         with memory.lock:
             conversations=len(memory.conversations.get(g.user_id,[]))
-            messages=sum((m.user_id or m.metadata.get('user_id'))==g.user_id for m in memory.messages)
+            messages=memory.message_count(g.user_id)
         return jsonify(projects={'total':len(bridge.project_tracker.get_user_projects(g.user_id))},
             emotional=bridge._emotional_state(g.user_id),learning=bridge.learner.get_learning_progress(g.user_id),
             conversation={'total':conversations,'messages':messages})

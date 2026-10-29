@@ -8,14 +8,20 @@ import time
 from allma_model.ui.temperature_monitor import TemperatureMonitor
 
 class WebViewBridge:
-    def __init__(self, message_callback, core=None):
+    def __init__(self, message_callback, core=None, startup_error=None):
         self.webview = None
         self.message_callback = message_callback
         self.core = core
+        self.startup_error = startup_error
         self.is_android = platform == 'android'
         self.running = True
         self._closed = False
         self._poll_event = None
+        self._poll_inflight = False
+        from allma_model.ui.stream_delivery import StreamDelivery
+        self._stream_delivery = StreamDelivery(
+            lambda batch: self.call_js_function('streamBatch', json.dumps(batch)),
+            Clock.schedule_once)
         self._startup_ready = False
         self._startup_revealed = False
         self._startup_reveal_event = None
@@ -56,39 +62,19 @@ class WebViewBridge:
 
             @java_method('(Ljava/lang/Object;)V')
             def onReceiveValue(self, value):
+                self.bridge._poll_inflight = False
                 if self.bridge._closed or not self.bridge.running:
                     return
                 # value is a JSON string from JS, e.g., '"Hello"' or 'null'
                 # print(f"POLL RESULT: {value}")
                 if value and value != 'null' and value != 'None':
                     try:
-                        # CRITICAL FIX: Use json.loads to unescape the string (hanlde \" inside)
-                        # strip('"') was leaving backslashes, breaking downstream JSON parsing
-                        import json
-                        clean_val = json.loads(value)
-                        
+                        from allma_model.ui.bridge_protocol import decode_poll
+                        clean_val = decode_poll(value)
                         if clean_val:
-                            # FIX 0.57: Double-decode if it's a string (Bridge sends JSON strings)
                             effective_val = clean_val
-                            if isinstance(clean_val, str) and clean_val.strip().startswith('{'):
-                                try:
-                                    decoded = json.loads(clean_val)
-                                    if isinstance(decoded, dict):
-                                        effective_val = decoded
-                                except:
-                                    pass # Not JSON, treat as plain text
-                            # Check for System/Action Messages using the potentially decoded dict
-                            # SECURITY: Validate structure before processing
-                            if isinstance(effective_val, dict):
-                                # Whitelist allowed keys to prevent object pollution if we were using unsafe loads (we aren't, but good practice)
-                                # For now, just ensuring it's a dict is enough since logic below checks specific keys
-                                pass
-                            elif isinstance(effective_val, str):
-                                # Text message
-                                pass
-                            else:
-                                # Reject unknown types (lists, numbers) as top-level messages
-                                print(f"⚠️ WebViewBridge: Rejected invalid message type: {type(effective_val)}")
+                            if isinstance(effective_val, dict) and effective_val.get('type') == 'chat':
+                                self.callback(effective_val)
                                 return
                             if isinstance(effective_val, dict) and effective_val.get('type') == 'action':
                                 action = effective_val.get('action')
@@ -114,6 +100,12 @@ class WebViewBridge:
                                 if action in ('decider_status', 'set_decider'):
                                     self.bridge.handle_decider_action(action, effective_val.get('enabled'))
                                     return
+                                if action in ('web_status', 'set_web_access'):
+                                    self.bridge.handle_web_action(action, effective_val.get('enabled'))
+                                    return
+                                if action == 'open_reference':
+                                    self.bridge.open_reference(effective_val.get('url'))
+                                    return
                                 if action in ('notification_status', 'set_notifications', 'test_notification', 'notification_settings'):
                                     self.bridge.handle_notification_action(action, effective_val.get('enabled'))
                                     return
@@ -133,7 +125,7 @@ class WebViewBridge:
                                         return
                                     self.bridge.benchmark_running = True
                                     profile = effective_val.get('profile', 'quick')
-                                    if profile not in ('quick', 'historical', 'extended', 'comparison', 'reasoning', 'support', 'support_roles', 'support_reasoning', 'support_natural', 'operational', 'tool_learning', 'relational', 'memory_recovery', 'long_history', 'preservation', 'dialogue', 'growth', 'decider', 'memory', 'memory_contract', 'memory_recall', 'memory_lifecycle', 'memory_personal', 'memory_dialogue', 'greeting', 'greeting_closure', 'personality', 'personality_feedback'):
+                                    if profile not in ('quick', 'historical', 'extended', 'comparison', 'reasoning', 'support', 'support_roles', 'support_reasoning', 'support_natural', 'operational', 'tool_learning', 'relational', 'perception', 'context_fit', 'context_inference', 'reasoning_diagnostic', 'reasoning_followup', 'reasoning_validation', 'learning_evolution', 'long_session', 'runtime_followup', 'turn_reasoning', 'turn_revision', 'checkin', 'public_references', 'internet_chat', 'memory_recovery', 'recall_storage', 'incremental_storage', 'long_history', 'preservation', 'idle_runtime', 'learning_storage', 'goal_continuity', 'goal_planning', 'plan_experience', 'plan_transfer', 'plan_review', 'plan_comparison', 'dialogue_recovery', 'dialogue', 'growth', 'decider', 'memory', 'memory_contract', 'memory_recall', 'memory_lifecycle', 'memory_personal', 'memory_dialogue', 'greeting', 'greeting_closure', 'personality', 'personality_feedback'):
                                         profile = 'quick'
                                     print("🧪 UI Trigger: Starting Benchmark...")
                                     
@@ -184,6 +176,50 @@ class WebViewBridge:
                                             if profile == 'relational':
                                                 from reliability_android import AndroidRelationalRun
                                                 bench = AndroidRelationalRun()
+                                            elif profile == 'perception':
+                                                from reliability_android import AndroidPerceptionRun
+                                                bench = AndroidPerceptionRun()
+                                            elif profile == 'context_fit':
+                                                from allma_model.llm.context_diagnostics import ContextFitRun
+                                                bench = ContextFitRun()
+                                            elif profile == 'context_inference':
+                                                from allma_model.llm.context_inference import ContextInferenceRun
+                                                bench = ContextInferenceRun()
+                                            elif profile == 'reasoning_diagnostic':
+                                                from allma_model.llm.reasoning_diagnostics import ReasoningDiagnosticRun
+                                                bench = ReasoningDiagnosticRun()
+                                            elif profile == 'reasoning_followup':
+                                                from allma_model.llm.reasoning_diagnostics import ReasoningFollowupRun
+                                                bench = ReasoningFollowupRun()
+                                            elif profile == 'reasoning_validation':
+                                                from allma_model.llm.reasoning_diagnostics import ReasoningValidationRun
+                                                bench = ReasoningValidationRun()
+                                            elif profile == 'learning_evolution':
+                                                from reliability_android import AndroidLearningEvolutionRun
+                                                bench = AndroidLearningEvolutionRun()
+                                            elif profile == 'internet_chat':
+                                                from allma_model.llm.internet_chat_diagnostics import InternetChatRun
+                                                bench = InternetChatRun()
+                                            elif profile == 'public_references':
+                                                from allma_model.llm.public_reference_diagnostics import PublicReferenceRun
+                                                bench = PublicReferenceRun()
+                                            elif profile == 'turn_revision':
+                                                from allma_model.llm.dialogue_reasoning_diagnostics import RevisionRecoveryRun
+                                                bench = RevisionRecoveryRun()
+                                            elif profile == 'turn_reasoning':
+                                                from allma_model.llm.dialogue_reasoning_diagnostics import DialogueReasoningRun
+                                                bench = DialogueReasoningRun()
+                                            elif profile == 'checkin':
+                                                from allma_model.llm.checkin_diagnostics import CheckinRun
+                                                bench = CheckinRun()
+                                            elif profile == 'runtime_followup':
+                                                from allma_model.llm.cancellation_diagnostics import RuntimeFollowupRun
+                                                bench = RuntimeFollowupRun()
+                                                bench.voice_probe = getattr(getattr(app, 'chat_screen', None), 'tts', None)
+                                            elif profile == 'long_session':
+                                                from allma_model.llm.endurance import LongSessionRun
+                                                bench = LongSessionRun()
+                                                bench.voice_probe = getattr(getattr(app, 'chat_screen', None), 'tts', None)
                                             elif profile == 'tool_learning':
                                                 from reliability_android import AndroidToolLearningRun
                                                 bench = AndroidToolLearningRun()
@@ -193,12 +229,45 @@ class WebViewBridge:
                                             elif profile == 'operational':
                                                 from reliability_android import AndroidReliabilityRun
                                                 bench = AndroidReliabilityRun()
+                                            elif profile == 'incremental_storage':
+                                                from reliability_android import AndroidIncrementalStorageRun
+                                                bench = AndroidIncrementalStorageRun()
+                                            elif profile == 'recall_storage':
+                                                from reliability_android import AndroidRecallStorageRun
+                                                bench = AndroidRecallStorageRun()
                                             elif profile == 'memory_recovery':
                                                 from reliability_android import AndroidMemoryRecoveryRun
                                                 bench = AndroidMemoryRecoveryRun()
                                             elif profile == 'preservation':
                                                 from reliability_android import AndroidPreservationRun
                                                 bench = AndroidPreservationRun()
+                                            elif profile == 'idle_runtime':
+                                                from reliability_android import AndroidIdleWorkRun
+                                                bench = AndroidIdleWorkRun()
+                                            elif profile == 'goal_planning':
+                                                from allma_model.agency_system.plan_diagnostics import PlanDiagnosticRun
+                                                bench = PlanDiagnosticRun()
+                                            elif profile == 'plan_review':
+                                                from reliability_android import AndroidPlanReviewRun
+                                                bench = AndroidPlanReviewRun()
+                                            elif profile == 'plan_comparison':
+                                                from allma_model.agency_system.plan_comparison import PlanReviewComparisonRun
+                                                bench = PlanReviewComparisonRun()
+                                            elif profile == 'dialogue_recovery':
+                                                from allma_model.utils.dialogue_diagnostics import DialogueRecoveryRun
+                                                bench = DialogueRecoveryRun()
+                                            elif profile == 'plan_experience':
+                                                from reliability_android import AndroidPlanExperienceRun
+                                                bench = AndroidPlanExperienceRun()
+                                            elif profile == 'plan_transfer':
+                                                from allma_model.agency_system.plan_diagnostics import PlanExperienceModelRun
+                                                bench = PlanExperienceModelRun()
+                                            elif profile == 'goal_continuity':
+                                                from reliability_android import AndroidGoalContinuityRun
+                                                bench = AndroidGoalContinuityRun()
+                                            elif profile == 'learning_storage':
+                                                from reliability_android import AndroidLearningStorageRun
+                                                bench = AndroidLearningStorageRun()
                                             elif profile == 'long_history':
                                                 from reliability_android import AndroidLongHistoryRun
                                                 bench = AndroidLongHistoryRun()
@@ -256,11 +325,7 @@ class WebViewBridge:
                             self.callback(clean_val)
                     except Exception as e:
                         print(f"Bridge Decode Error: {type(e).__name__}")
-                        # Fallback for simple strings if not valid JSON?
-                        # Usually evaluateJavascript returns valid JSON string
-                        simple_clean = value.strip('"')
-                        if simple_clean:
-                            self.callback(simple_clean)
+                        # A malformed/failed control must never fall through as chat.
 
         @run_on_ui_thread
         def create_webview_ui():
@@ -277,14 +342,8 @@ class WebViewBridge:
                 
                 # Settings
                 settings = self.webview.getSettings()
-                settings.setJavaScriptEnabled(True)
-                settings.setDomStorageEnabled(True)
-                settings.setAllowFileAccess(True)
-                settings.setAllowContentAccess(True)
-                try:
-                    settings.setBlockNetworkLoads(True)
-                except Exception:
-                    pass
+                from allma_model.ui.web_assets import configure_webview
+                configure_webview(settings)
                 
                 self.webview.setBackgroundColor(Color.parseColor("#FAF9F5"))
                 self.webview.setAlpha(0.0)
@@ -403,6 +462,10 @@ class WebViewBridge:
                 with open(os.path.join(base_path, 'brain_anatomy.js'), 'r') as f:
                     js += '\n' + f.read()
                 with open(os.path.join(base_path, 'brain_view.js'), 'r') as f:
+                    js += '\n' + f.read()
+                with open(os.path.join(base_path, 'learning_ui.js'), 'r') as f:
+                    js += '\n' + f.read()
+                with open(os.path.join(base_path, 'web_reference_ui.js'), 'r') as f:
                     js += '\n' + f.read()
                 with open(os.path.join(base_path, 'navigation.js'), 'r') as f:
                     js += '\n' + f.read()
@@ -555,6 +618,8 @@ class WebViewBridge:
                 
                 # Load Data with Fake Origin to fix CORS/Security restrictions
                 # Using https://app.allma/ allows local storage and secure context features
+                from allma_model.ui.web_assets import isolate_document
+                html = isolate_document(html)
                 self.webview.loadDataWithBaseURL("https://app.allma/", html, "text/html", "utf-8", None)
                 print("WebView Loaded with Robust Inlining & Fake Origin.")
                 
@@ -573,6 +638,13 @@ class WebViewBridge:
                 print(f"Error initializing WebView: {e}")
                 import traceback
                 traceback.print_exc()
+                self.running = False
+                if self.webview is not None:
+                    self.webview.destroy()
+                    self.webview = None
+                callback = getattr(self, 'startup_error', None)
+                if callback is not None:
+                    Clock.schedule_once(lambda dt: callback('Non riesco ad aprire la chat in sicurezza. Riapri ALLMA.'), 0)
 
         create_webview_ui()
 
@@ -645,6 +717,8 @@ class WebViewBridge:
         if self.is_android and self.webview is not None:
             self.call_js_function('brainVisibility', 'false')
         self.running = False
+        self._poll_inflight = False
+        self._stream_delivery.clear()
         if self._poll_event is not None:
             self._poll_event.cancel()
             self._poll_event = None
@@ -692,17 +766,23 @@ class WebViewBridge:
             self.webview.evaluateJavascript(code, callback)
 
     def _poll_js(self, dt):
-        if not self.running or not self.webview or not self.poll_callback:
+        if not self.running or not self.webview or not self.poll_callback or self._poll_inflight:
             return
+        self._poll_inflight = True
             
         from android.runnable import run_on_ui_thread
         
         @run_on_ui_thread
         def run_poll():
-            if not self.running:
+            if not self.running or self._closed or self.webview is None:
+                self._poll_inflight = False
                 return
             # fetchPending() returns the string or null
-            self._evaluate_js("window.fetchPending()", self.poll_callback)
+            try:
+                self._evaluate_js("window.fetchPending()", self.poll_callback)
+            except Exception:
+                self._poll_inflight = False
+                logging.exception('WebView polling failed')
             
         run_poll()
 
@@ -824,16 +904,19 @@ class WebViewBridge:
         self.call_js_function('receiveBrainActivity', json.dumps(payload))
 
     def start_stream(self, request_id=None):
+        self._stream_delivery.start(request_id)
         self.call_js_function("startStream", json.dumps(request_id))
 
     def stream_chunk(self, text, is_thought=False, request_id=None):
-        safe_text = json.dumps(text)
-        is_thought_js = "true" if is_thought else "false"
-        self.call_js_function("streamChunk", f"{safe_text}, {is_thought_js}, {json.dumps(request_id)}")
+        self._stream_delivery.push(text, is_thought, request_id)
 
-    def end_stream(self, final_content=None, request_id=None, generation=None):
+    def reference_activity(self, payload, request_id=None):
+        self.call_js_function('receiveReferenceActivity',json.dumps(payload)+', '+json.dumps(request_id))
+
+    def end_stream(self, final_content=None, request_id=None, generation=None, plan_review=None, origin=None):
+        self._stream_delivery.finish(request_id)
         status = (generation or {}).get('status')
-        self.call_js_function("endStream", f"{json.dumps(final_content)}, {json.dumps(request_id)}, {json.dumps(status)}")
+        self.call_js_function("endStream", f"{json.dumps(final_content)}, {json.dumps(request_id)}, {json.dumps(status)}, {json.dumps(plan_review)}, {json.dumps(origin)}")
 
     def update_voice_internal_state(self, payload):
         if not self.webview:
@@ -859,6 +942,37 @@ class WebViewBridge:
             payload = dict(runtime.status() if runtime is not None else {},
                            error='Non sono riuscita a salvare la preferenza del decisore.')
         self.execute_js('window.deciderUI && window.deciderUI.update(' + json.dumps(payload) + ')')
+
+    def open_reference(self, url):
+        from allma_model.utils.public_references import reference_link_allowed
+        if not self.is_android or not reference_link_allowed(url):
+            return False
+        from android.runnable import run_on_ui_thread
+        @run_on_ui_thread
+        def open_link():
+            try:
+                from jnius import autoclass
+                intent=autoclass('android.content.Intent')('android.intent.action.VIEW',
+                    autoclass('android.net.Uri').parse(url))
+                autoclass('org.kivy.android.PythonActivity').mActivity.startActivity(intent)
+            except Exception:
+                logging.warning('Public reference link unavailable')
+        open_link()
+        return True
+
+    def handle_web_action(self, action, enabled=None):
+        service=getattr(self.core,'public_references',None)
+        def work():
+            try:
+                payload=({'enabled':False,'error':'Attendi il caricamento di ALLMA.'} if service is None else
+                    service.configure(enabled) if action=='set_web_access' else service.status())
+            except Exception:
+                payload=dict(service.status() if service else {'enabled':False},
+                    error='Non riesco a salvare la preferenza Internet.')
+            if not self._closed:
+                Clock.schedule_once(lambda dt:self.execute_js('window.webReferenceUI && window.webReferenceUI.update('
+                    +json.dumps(payload)+')'))
+        threading.Thread(target=work,daemon=True,name='WebPreference').start()
 
     def handle_notification_action(self, action, enabled=None):
         def update(payload):

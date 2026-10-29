@@ -1,6 +1,9 @@
 """Describe wired capabilities without treating them as personal memories."""
 import re
 from .dialogue_continuity import normalized
+from .dialogue_recovery import (
+    clarification_question, unanswered_attempt, opening_recovery,
+)
 
 
 def capability_items(core):
@@ -14,6 +17,12 @@ def capability_items(core):
         items.append('conservare e consultare le conversazioni salvate')
     if getattr(core, 'answer_recall', None) is not None:
         items.append('recuperare risposte dopo conferme esplicite, senza modificare i pesi del modello')
+    if getattr(core, 'goal_progress', None) is not None:
+        items.append('conservare obiettivi, progressi e correzioni tra le chat, distinguendo i risultati dichiarati dalla tua conferma; puoi chiedermi come gestire gli obiettivi')
+    references=getattr(core,'public_references',None)
+    if references is not None:
+        items.append('consultare Wikipedia per gli argomenti generali riconosciuti, con fonti visibili' if references.status()['enabled'] else
+            'consultare Wikipedia se abiliti le ricerche in Impostazioni → Internet e fonti; al momento sono disattivate')
     runtime = getattr(core, 'decision_runtime', None)
     if runtime is not None and runtime.status().get('enabled') and runtime.status().get('available'):
         items.append('usare un decisore locale per instradare richieste e dare priorità ai ricordi, mantenendo i controlli di ALLMA')
@@ -27,6 +36,13 @@ def capability_items(core):
 def capability_reply(message, core, history):
     query = normalized(message)
     query = re.sub(r'^(?:ciao|allma|alma)\s+', '', query)
+    if query in {'hai accesso a internet','puoi cercare su internet','puoi andare su internet',
+                 'puoi navigare su internet','sei connessa a internet','sei connesso a internet'}:
+        references=getattr(core,'public_references',None)
+        enabled=references is not None and references.status()['enabled']
+        return (('Le ricerche online sono abilitate: posso consultare Wikipedia per gli argomenti generali riconosciuti e mostrarti la fonte. Identità e memoria restano locali.' if enabled else
+            'Le ricerche online sono disattivate. Puoi abilitarle in Impostazioni → Internet e fonti; identità e memoria restano locali.'),
+            'runtime_web_access',[])
     query = re.sub(r'\s+(?:allma|alma)$', '', query)
     direct = query in {'cosa sai fare', 'che cosa sai fare', 'cosa puoi fare',
                        'quali sono le tue capacità', 'quali sono le tue capacita'}
@@ -66,18 +82,33 @@ def self_description_reply(message, core, history, user_id=None):
                 return (f'Mi hai spiegato che per te «{meaning_query[1]}» significa: «{meaning["definition"]}».',
                         'personal_emotion_meaning_recall', [meaning['definition']])
             return ('Non trovo ancora un significato personale documentato di questa parola per te.', 'no_evidence', [])
-    if query in {'cosa intendi', 'che significa', 'cosa significa', 'perché hai bloccato la risposta'}:
+    pending = unanswered_attempt(history)
+    opening = opening_recovery(message)
+    if opening:
+        source = opening['source'] if pending else 'dialogue_opening'
+        return opening['content'], source, opening['evidence']
+    if clarification_question(message):
         last = history[-1] if history else None
-        if last is not None and last.role == 'assistant' and last.metadata.get('is_valid') is False:
-            reason = (last.metadata.get('generation') or {}).get('status')
+        if pending or (last is not None and last.role == 'assistant' and last.metadata.get('is_valid') is False):
+            reason = pending['reason'] if pending else (last.metadata.get('generation') or {}).get('status')
             reasons = {'dialogue_repetition': 'ripeteva una risposta o una domanda già affrontata',
+                       'internal_commentary': 'commentava le istruzioni invece di affrontare la domanda',
                        'subject_mismatch': 'non distingueva correttamente la tua esperienza dalla mia',
                        'unsupported_personal_claim': 'attribuiva ad ALLMA esperienze personali non documentate',
                        'identity_conflict': 'descriveva un’identità incoerente con ALLMA',
                        'format_mismatch': 'non rispettava il formato richiesto'}
             if reason in reasons:
-                return (f'Il controllo ha trattenuto la risposta perché {reasons[reason]}. '
-                        'Questo segnala un problema della risposta generata, non del tuo messaggio.',
+                recovery = opening_recovery(pending['request'].content) if pending else None
+                explicit_reason = query in {'perché hai bloccato la risposta', 'perche hai bloccato la risposta'}
+                text = ((f'Il controllo ha trattenuto la risposta perché {reasons[reason]}. '
+                         'Questo segnala un problema della risposta generata, non del tuo messaggio.')
+                        if explicit_reason else
+                        'La mia risposta precedente non era utilizzabile; la tua richiesta è ancora senza risposta.')
+                if query in {'what do you mean', 'why was the answer blocked'}:
+                    text = 'My previous answer was unusable; your request is still unanswered.'
+                if recovery:
+                    text += ' ' + recovery['content']
+                return (text,
                         'runtime_recovery_explanation', [])
         if last is not None and last.role == 'assistant' and last.metadata.get('source') == 'runtime_self_description':
             previous_user = next((turn for turn in reversed(history) if turn.role == 'user'), None)

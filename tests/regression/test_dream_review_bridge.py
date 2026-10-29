@@ -16,7 +16,8 @@ def callback(core):
     view = SimpleNamespace(core=core, bridge=bridge)
     namespace = {'self': view}
     exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), 'exec'), namespace)
-    return namespace['on_js_message'], bridge
+    from allma_model.ui.bridge_protocol import decode_poll
+    return lambda value: namespace['on_js_message'](decode_poll(json.dumps(value))), bridge
 
 
 def result(bridge):

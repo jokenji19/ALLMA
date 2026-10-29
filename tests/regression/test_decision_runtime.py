@@ -113,3 +113,15 @@ def test_router_only_advertises_bound_resources_after_exact_fast_path(tmp_path):
     obj.route('Spiega le frazioni')
     options=engine.decide.call_args.args[2]
     assert set(options)=={'memory','reason','clarify'}
+
+
+def test_shared_power_policy_defers_optional_motor_then_recovers(tmp_path):
+    obj,engine,factory=runtime(tmp_path)
+    obj.power_guard=lambda:False
+    assert obj.route('Spiega una bussola')['status']=='thermal_pause'
+    factory.assert_not_called()
+    obj.power_guard=lambda:True
+    assert obj.route('Spiega una bussola')['choice']=='reason'
+    obj.power_guard=lambda:False
+    assert obj.route('Spiega una bussola')['status']=='thermal_pause'
+    engine.close.assert_called_once()

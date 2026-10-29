@@ -4,6 +4,27 @@ import re
 from pathlib import Path
 
 
+def configure_webview(settings):
+    """Mandatory isolation for the bundled document; errors must stop loading."""
+    settings.setJavaScriptEnabled(True)
+    settings.setDomStorageEnabled(True)
+    settings.setAllowFileAccess(False)
+    settings.setAllowContentAccess(False)
+    settings.setBlockNetworkLoads(True)
+    if (settings.getAllowFileAccess() or settings.getAllowContentAccess()
+            or not settings.getBlockNetworkLoads()):
+        raise RuntimeError('WebView isolation unavailable')
+
+
+def isolate_document(html):
+    # Event attributes are still used by the local UI. Inline scripts/styles
+    # stay supported; remote scripts, network, frames and plugins do not.
+    policy = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+              "img-src data:; font-src data:; connect-src 'none'; object-src 'none'; "
+              "frame-src 'none'; base-uri 'none'; form-action 'none'")
+    return html.replace('<head>', '<head><meta http-equiv="Content-Security-Policy" content="'+policy+'">', 1)
+
+
 def inline_stylesheets(html, asset_dir):
     """Preserve document stylesheet order and embed local font resources."""
     root = Path(asset_dir).resolve()

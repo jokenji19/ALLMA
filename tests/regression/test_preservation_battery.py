@@ -4,13 +4,13 @@ from preservation_battery import run_battery,CASES
 
 
 def test_fixed_preservation_challenges_pass(tmp_path):
-    assert len(CASES)==20
+    assert len(CASES)==28
     previous=Path.cwd()
     summary=run_battery(tmp_path/'reports')
     assert Path.cwd()==previous
-    assert summary['complete'] and summary['passed']==20,summary['failures']
+    assert summary['complete'] and summary['passed']==28,summary['failures']
     plan=json.loads((tmp_path/'reports/plan.json').read_text())
-    assert plan['version']=='preservation-v1' and len(plan['cases'])==20
+    assert plan['version']=='preservation-v2' and len(plan['cases'])==28
 
 
 def test_backup_frontend_controls_password_and_restore_state():

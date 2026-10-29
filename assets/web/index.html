@@ -360,6 +360,11 @@
                     <span class="nav-text">Memoria</span>
                 </button>
 
+                <button class="nav-item" onclick="openPanel('learning')">
+                    <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16M5 15l4-4 4 2 6-8M15 5h4v4"/></svg></span>
+                    <span class="nav-text">Cosa imparo</span>
+                </button>
+
                 <button class="nav-item" id="dream-journal-btn" onclick="openPanel('dream')">
                     <span class="icon icon-indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13A8 8 0 0 1 11 4a8 8 0 1 0 9 9Z"/></svg></span>
                     <span class="nav-text">Diario Sogni</span>
@@ -446,6 +451,19 @@
 
     <!-- Memory screen -->
 
+    <main id="panel-learning" class="app-view screen hidden" data-screen="learning" aria-labelledby="panel-learning-title" hidden>
+        <header class="screen-header">
+            <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
+            <h1 id="panel-learning-title" tabindex="-1" data-screen-heading>Cosa imparo</h1><span class="screen-header-space" aria-hidden="true"></span>
+        </header>
+        <div class="screen-content learning-layout">
+            <p class="section-desc">La mia esperienza cresce con i tuoi riscontri. Qui vedi ciò che è documentato, le correzioni e l’origine delle risposte.</p>
+            <button type="button" class="learning-refresh" onclick="learningUI.refresh()">Aggiorna</button>
+            <div id="learning-content" aria-live="polite"><p>Apri questa pagina per consultare l’apprendimento.</p></div>
+            <p class="section-desc learning-footnote">Le conferme personali sono esperienze, non prove universali. Il modello linguistico mantiene i suoi pesi: memoria e strategie appartengono ad ALLMA.</p>
+        </div>
+    </main>
+
     <main id="panel-memory" class="app-view screen hidden" data-screen="memory" aria-labelledby="panel-memory-title"><header class="screen-header">
             <button type="button" class="screen-back" onclick="appNav.back()" aria-label="Indietro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m14 6-6 6 6 6"/></svg><span data-back-label>Chat</span></button>
             <h1 id="panel-memory-title" tabindex="-1" data-screen-heading>Memoria</h1><span class="screen-header-space" aria-hidden="true"></span>
@@ -529,6 +547,11 @@
                     <path d="m9 5 7 7-7 7"/>
                 </svg>
             </button>
+            <button type="button" class="settings-link" onclick="appNav.go('settings/internet')">
+                <span class="settings-link-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg></span>
+                <span class="settings-link-copy"><strong>Internet e fonti</strong><span>Ricerche facoltative, identità e memoria locali</span></span>
+                <svg class="settings-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+            </button>
             <button type="button" class="settings-link" onclick="appNav.go('settings/notifications')">
                 <span class="settings-link-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -603,7 +626,18 @@
                     <label class="apple-switch"><input type="checkbox" id="decider-toggle" aria-label="Usa il decisore locale" onchange="deciderUI.configure(this.checked)"><span class="slider round"></span></label>
                 </div>
                 <p id="decider-status" class="section-desc" role="status">Controllo disponibilità…</p>
-            </section></details></div><div class="settings-detail" data-settings-page="chat" hidden><section class="settings-section"><h4>Aspetto</h4><p class="section-desc">Scegli il tema che preferisci.</p><div class="appearance-options" role="group" aria-label="Tema dell’app"><button type="button" data-appearance="light" aria-pressed="true" onclick="setAppearance('light')"><span class="theme-swatch theme-swatch-light" aria-hidden="true"></span>Chiaro</button><button type="button" data-appearance="dark" aria-pressed="false" onclick="setAppearance('dark')"><span class="theme-swatch theme-swatch-dark" aria-hidden="true"></span>Scuro</button></div></section><section class="settings-section"><h4>Come ricevi le risposte</h4><p>Puoi dire ad ALLMA «Scrivi progressivamente», «Rispondi tutto insieme» oppure «Scegli tu come inviare le risposte». La preferenza viene conservata.</p><p class="section-desc">Per alcune risposte personali, ALLMA attende i controlli finali prima di mostrarle. I dettagli disponibili si aprono direttamente in chat.</p></section></div><div class="settings-detail" data-settings-page="notifications" hidden><section class="settings-section" id="notification-settings">
+            </section></details></div><div class="settings-detail" data-settings-page="chat" hidden><section class="settings-section"><h4>Aspetto</h4><p class="section-desc">Scegli il tema che preferisci.</p><div class="appearance-options" role="group" aria-label="Tema dell’app"><button type="button" data-appearance="light" aria-pressed="true" onclick="setAppearance('light')"><span class="theme-swatch theme-swatch-light" aria-hidden="true"></span>Chiaro</button><button type="button" data-appearance="dark" aria-pressed="false" onclick="setAppearance('dark')"><span class="theme-swatch theme-swatch-dark" aria-hidden="true"></span>Scuro</button></div></section><section class="settings-section"><h4>Come ricevi le risposte</h4><p>Puoi dire ad ALLMA «Scrivi progressivamente», «Rispondi tutto insieme» oppure «Scegli tu come inviare le risposte». La preferenza viene conservata.</p><p class="section-desc">Per alcune risposte personali, ALLMA attende i controlli finali prima di mostrarle. I dettagli disponibili si aprono direttamente in chat.</p></section></div><div class="settings-detail" data-settings-page="internet" hidden>
+            <section class="settings-section">
+                <h4>Locale, con una finestra sul mondo</h4>
+                <p>Identità, memoria e modelli restano sul dispositivo. Se lo consenti, ALLMA può cercare autonomamente informazioni generali quando riconosce un argomento da consultare.</p>
+                <div class="setting-item"><span>Consenti le ricerche online</span>
+                    <label class="apple-switch"><input type="checkbox" id="web-access-toggle" aria-label="Consenti le ricerche online" onchange="webReferenceUI.configure(this.checked)"><span class="slider round"></span></label>
+                </div>
+                <p id="web-access-status" class="section-desc" role="status" aria-live="polite">Modalità locale. Le ricerche online sono disattivate.</p>
+                <p class="section-desc">Per ora la fonte è Wikipedia. Viene inviato l’argomento ricavato dalla domanda, senza inviare la conversazione completa o l’archivio personale. Le richieste personali riconosciute restano locali.</p>
+                <p class="section-desc">Apri «Origine» sotto una risposta per vedere la fonte. Le pagine già consultate possono essere riutilizzate localmente per 24 ore. Disattivando questa opzione, ALLMA non avvia nuove ricerche e scarta gli esiti online ancora in arrivo.</p>
+            </section>
+        </div><div class="settings-detail" data-settings-page="notifications" hidden><section class="settings-section" id="notification-settings">
                 <h4>Notifiche</h4>
                 <p class="section-desc">Ricevi avvisi per nuovi messaggi, riflessioni e modelli pronti. Nessun testo personale compare nell’avviso.</p>
                 <div class="setting-item">
@@ -629,6 +663,7 @@
                         <span class="slider round"></span>
                     </label>
                 </div>
+                <p id="dream-settings-status" class="setting-help" role="status" aria-live="polite"></p>
             </div></div><div class="settings-detail" data-settings-page="data" hidden><section class="settings-section" id="backup-settings">
                 <h4>Dati e backup</h4>
                 <p>Memoria, apprendimento, personalità e sogni. Le copie private restano su questo telefono: salva una copia cifrata altrove per proteggerle anche dalla perdita del dispositivo.</p>
@@ -702,7 +737,7 @@
 
         <!-- Input Area -->
         <div id="chat-notice" role="status" aria-live="polite"></div>
-        <div class="chat-caption">La nostra storia, un messaggio alla volta.</div>
+        <div class="chat-caption"><span id="network-activity" class="network-activity" data-state="local" role="status" aria-live="polite" aria-busy="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="10" cy="10" r="7"/><ellipse cx="10" cy="10" rx="3" ry="7"/><path d="M3 10h14"/></svg><span>Locale</span></span></div>
         <div id="input-area">
             <div class="capsule">
                 <textarea id="message-input" rows="2" placeholder="Come posso aiutarti?" aria-label="Messaggio per ALLMA" autocomplete="off" enterkeyhint="send" onkeydown="handleInputKey(event)"></textarea>
@@ -725,12 +760,35 @@
                 <p class="section-desc">Prove in memoria separata. La qualità delle risposte va valutata nel report.</p>
                 <div class="setting-item">
                     <label for="benchmark-profile">Tipo di prova</label>
-                    <select id="benchmark-profile" aria-label="Tipo di benchmark" onchange="document.getElementById('benchmark-decider-note').hidden=this.value!=='decider'"><optgroup label="Software e memoria">
+                    <select id="benchmark-profile" aria-label="Tipo di benchmark" onchange="document.getElementById('benchmark-decider-note').hidden=this.value!=='decider';document.getElementById('benchmark-web-note').hidden=!['public_references','internet_chat'].includes(this.value)"><optgroup label="Software e memoria">
 <option value="operational">Affidabilità software · 60 scenari</option>
 <option value="tool_learning">Apprendimento strumenti · 12 scenari</option>
 <option value="relational">Sensibilità e contesto · 12 scenari</option>
+<option value="perception">Emozioni e urgenza · 24 scenari</option>
+<option value="context_fit">Contesto 2K / 4K / 8K · storia conservata</option>
+<option value="context_inference">Contesto 2K / 4K / 8K · 12 risposte reali</option>
+<option value="reasoning_diagnostic">CPU / GPU e ragionamento · 12 prove</option>
+<option value="reasoning_followup">Passaggio alla risposta e penalità · 15 prove</option>
+<option value="reasoning_validation">Ragionamento · casi nuovi e arresto · 13 prove</option>
 <option value="memory_recovery">Memoria e recupero · 16 scenari</option>
-<option value="preservation">Conservazione e backup · 20 scenari</option>
+<option value="incremental_storage">Memoria e coerenza · 38 scenari</option>
+<option value="recall_storage">Risposte apprese · 8 scenari</option>
+<option value="preservation">Conservazione e backup · 28 scenari</option>
+<option value="idle_runtime">Lavoro a riposo · 12 scenari</option>
+<option value="turn_revision">Revisione mirata · 1 scenario</option>
+<option value="turn_reasoning">Dialogo e revisione · 4 scenari</option>
+<option value="checkin">Dialogo e contesto · 6 risposte e 2 controlli</option>
+<option value="public_references">Internet e fonti · prova isolata · 1 ricerca pubblica</option>
+<option value="internet_chat">Chat con Internet · 6 turni isolati</option>
+<option value="learning_evolution">Apprendimento e curiosità · scenari nuovi</option>
+<option value="runtime_followup">CPU e temperatura · prova breve</option>
+<option value="long_session">Sessione lunga · 25 minuti · chat e voce</option>
+<option value="learning_storage">Apprendimento incrementale · 18 scenari</option>
+<option value="goal_continuity">Obiettivi, piani e continuità · 26 scenari</option>
+<option value="plan_experience">Apprendimento dai piani · 22 scenari</option>
+<option value="plan_review">Requisiti e collegamenti appresi · 24 scenari</option>
+<option value="plan_comparison">Piani · confronto requisiti · 2 coppie</option>
+<option value="plan_transfer">Piani con esperienza · 2 proposte</option>
 <option value="long_history">Storia lunga · 24 scenari</option>
 <option value="memory_personal">Memoria personale · 6 casi</option>
 <option value="memory_lifecycle">Memoria · correzioni e revoche · 7 casi</option>
@@ -739,6 +797,7 @@
 <option value="memory">Fedeltà ai ricordi · 4 casi sintetici</option>
 </optgroup>
 <optgroup label="Conversazione e personalità">
+<option value="dialogue_recovery">Continuità del dialogo · 24 scenari e 5 turni</option>
 <option value="quick" selected>Rapida · 6 casi nuovi</option>
 <option value="historical">Confronto storico · 6 casi</option>
 <option value="extended">Estesa · 14 casi, anche memoria</option>
@@ -760,9 +819,11 @@
 <optgroup label="Confronti sperimentali">
 <option value="comparison">ALLMA / modello · 4 coppie</option>
 <option value="decider">Prova del decisore · 8 casi EN/IT · download 529 MB</option>
+<option value="goal_planning">Proposte di piano · 2 prove con modello</option>
 </optgroup></select>
                 </div>
                 <p id="benchmark-decider-note" class="section-desc" hidden>La prova del decisore usa esempi sintetici e scarica il modello da 529 MB se manca. Puoi attivarlo in Impostazioni → Modello di ALLMA.</p>
+                <p id="benchmark-web-note" class="section-desc" hidden>Questa prova consulta Wikipedia su argomenti pubblici sintetici, anche con le ricerche disattivate nell’app. Usa un archivio temporaneo e lascia invariata la tua preferenza Internet.</p>
                 <button type="button" id="benchmark-start" class="benchmark-button" onclick="startBenchmark()">
                     <div class="action-label">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h11v16H8a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z"/><path d="M8 4v16M11 9h5M11 13h5"/></svg></span>
@@ -772,6 +833,9 @@
                 </button>
             </div>            <!-- Resource Monitor -->
             <div class="diag-section">
+                <h4>Motori in uso</h4>
+                <p id="diag-qwen-backend" class="section-desc" role="status">Modello di conversazione: in attesa dei dati.</p>
+                <p id="diag-decider-backend" class="section-desc" role="status">Decisore: in attesa dei dati.</p>
                 <h4>Monitor Risorse</h4>
                 <div class="diag-grid">
                     <!-- CPU -->
@@ -1001,6 +1065,8 @@
     <script src="brain_geometry.js"></script>
     <script src="brain_anatomy.js"></script>
     <script src="brain_view.js"></script>
+    <script src="learning_ui.js"></script>
+    <script src="web_reference_ui.js"></script>
     <script src="navigation.js"></script>
 </body>
 

@@ -22,6 +22,7 @@ class DecisionRuntime:
     def __init__(self, models_dir, store, *, temperature=None, factory=LocalDecisionEngine):
         self.path = Path(models_dir)/'decider-0.8b'/DECIDER_MODEL['filename'] if models_dir else None
         self.store, self.temperature, self.factory = store, temperature, factory
+        self.power_guard = None
         self.enabled = store.get('decision_runtime').get('enabled', True) is True
         self._engine = None
         self._lock = threading.Lock()
@@ -36,6 +37,7 @@ class DecisionRuntime:
             available = False
         return {'enabled':self.enabled, 'available':available, 'loaded':self._engine is not None,
                 'closed':self._closed.is_set(), 'last_status':self.last.get('status'),
+                'backend':getattr(self._engine,'backend_info',{}).get('kind','not_loaded'),
                 'mode':'operational', 'model':'Decider 0.8B · Q4_K_M'}
 
     def configure(self, enabled):
@@ -77,6 +79,10 @@ class DecisionRuntime:
             if self._closed.is_set() or not self.enabled:
                 result['status'] = 'disabled'
                 return result
+            if self.power_guard is not None and not self.power_guard():
+                self._release_locked()
+                result['status'] = 'thermal_pause'
+                return result
             if self.temperature and (self.temperature() or 0) >= 42:
                 self._release_locked()
                 result['status'] = 'thermal_pause'
@@ -94,7 +100,8 @@ class DecisionRuntime:
                 self._engine = engine
             answer = self._engine.decide(state, question, options, cancel_event=cancel_event)
             result.update(choice=answer.choice, status=answer.status,
-                          probabilities=dict(answer.probabilities), elapsed_ms=answer.elapsed_ms)
+                          probabilities=dict(answer.probabilities), elapsed_ms=answer.elapsed_ms,
+                          backend=getattr(self._engine,'backend_info',{}).get('kind','cpu'))
             # Never consume a stale result after an opt-out or shutdown.
             if self._closed.is_set() or not self.enabled or (cancel_event is not None and cancel_event.is_set()):
                 result.update(choice=None, status='cancelled')

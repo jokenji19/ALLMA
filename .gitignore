@@ -114,3 +114,7 @@ visual_memory/
 /incremental_cache/
 /allma_state/
 /allma_state_backups/
+
+# Verified optional native runtime (not model weights); required by clean builds.
+!libs/native_backend/hexagon/libggml-hexagon.so
+!libs/native_backend/hexagon/libggml-htp-v79.so.bin

@@ -1,0 +1,51 @@
+--- a/vendor/llama.cpp/ggml/src/ggml-opencl/ggml-opencl.cpp
++++ b/vendor/llama.cpp/ggml/src/ggml-opencl/ggml-opencl.cpp
+@@ -6450,10 +6450,44 @@
+ 
+     cl_int                err;
+     cl_context            shared_context;
+-    cl_context_properties properties[] = { (intptr_t) CL_CONTEXT_PLATFORM, (intptr_t) default_device->platform->id, 0 };
+-
+-    CL_CHECK(
+-        (shared_context = clCreateContext(properties, device_ids.size(), device_ids.data(), NULL, NULL, &err), err));
++    // ALLMA: opt-in interactive scheduling on measured Qualcomm drivers.
++    // Constants verified against Qualcomm Adreno OpenCL SDK 2.3.2,
++    // cl_ext_qcom.h / cl_qcom_priority_hint. Other clients keep upstream behavior.
++    const char * scheduling = getenv("ALLMA_OPENCL_SCHEDULING");
++    bool interactive = scheduling && strcmp(scheduling, "interactive") == 0;
++    for (cl_device_id id : device_ids) {
++        size_t length = 0;
++        if (clGetDeviceInfo(id, CL_DEVICE_EXTENSIONS, 0, nullptr, &length) != CL_SUCCESS ||
++                length == 0 || length > 65536) {
++            interactive = false;
++            break;
++        }
++        std::vector<char> extensions(length + 1, 0);
++        if (clGetDeviceInfo(id, CL_DEVICE_EXTENSIONS, length, extensions.data(), nullptr) != CL_SUCCESS ||
++                (std::string(" ") + extensions.data() + " ").find(" cl_qcom_priority_hint ") == std::string::npos) {
++            interactive = false;
++            break;
++        }
++    }
++    std::vector<cl_context_properties> properties = {
++        (intptr_t) CL_CONTEXT_PLATFORM, (intptr_t) default_device->platform->id
++    };
++    if (interactive) {
++        properties.push_back(0x40C9); // CL_CONTEXT_PRIORITY_HINT_QCOM
++        properties.push_back(0x40CC); // CL_PRIORITY_HINT_LOW_QCOM
++    }
++    properties.push_back(0);
++    shared_context = clCreateContext(properties.data(), device_ids.size(), device_ids.data(), NULL, NULL, &err);
++    if (interactive && (err != CL_SUCCESS || !shared_context)) {
++        GGML_LOG_WARN("ggml_opencl: interactive context rejected (%d); retrying default context\n", err);
++        if (shared_context) { clReleaseContext(shared_context); }
++        properties.resize(3);
++        properties[2] = 0;
++        interactive = false;
++        shared_context = clCreateContext(properties.data(), device_ids.size(), device_ids.data(), NULL, NULL, &err);
++    }
++    CL_CHECK(err);
++    GGML_LOG_INFO("ggml_opencl: ALLMA scheduling=%s\n", interactive ? "interactive-low" : "default");
+ 
+     for (auto dev = candidate_devices, dev_end = candidate_devices + n_candidate_devices; dev != dev_end; dev++) {
+         GGML_LOG_INFO("\nggml_opencl: device: '%s (%s)'\n", dev->name, dev->version);

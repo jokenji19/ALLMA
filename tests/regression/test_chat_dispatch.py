@@ -37,6 +37,9 @@ def test_reset_cannot_overtake_a_queued_message():
     pending[0].run()
     view.core.process_message.assert_not_called()
     assert view.chat_session.conversation_id == 'new-chat'
-    view.bridge.end_stream.assert_called_once_with('Risposta interrotta.', 1)
+    from allma_model.core.learning_insights import response_origin
+    generation={'status':'cancelled'}
+    view.bridge.end_stream.assert_called_once_with('',1,generation=generation,
+        origin=response_origin({'generation':generation},False))
     view.bridge.call_js_function.assert_any_call('newChatReady', '"new-chat"')
     assert view.submit_message('Messaggio nella nuova chat')

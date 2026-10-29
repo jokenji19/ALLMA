@@ -6,6 +6,29 @@ from datetime import datetime
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
 
+class ModelSelectionRequired(ValueError):
+    """Personal state is available; a local motor must be selected separately."""
+
+
+def saved_model_selection(directory,preference_path):
+    """Resolve a portable filename locally, without downloads or silent fallback."""
+    import json
+    from allma_model.utils.operational_preferences import validate_model_preference,MAX_BYTES
+    path=Path(preference_path)
+    data={}
+    if path.exists():
+        try:
+            if path.stat().st_size>MAX_BYTES:raise ValueError('Oversized model preference')
+            data=validate_model_preference(json.loads(path.read_text()))
+        except (OSError,ValueError,TypeError) as error:
+            raise ModelSelectionRequired('La scelta salvata richiede verifica. Scegli un modello nelle Impostazioni.') from error
+    try:
+        selected=select_model(directory,data.get('model_name'))
+    except ValueError as error:
+        raise ModelSelectionRequired('Il modello scelto non è disponibile qui. Scegli o scarica un modello nelle Impostazioni.') from error
+    return selected,data.get('reasoning')
+
+
 def select_model(directory, preferred=None):
     root = Path(directory).resolve()
     if preferred is not None:
@@ -41,6 +64,7 @@ class ModelBinding:
         self.reasoning = self.architecture in {'qwen3', 'qwen3moe', 'qwen35', 'qwen35moe'} if reasoning is None else reasoning
         self.extra_stops = ()
         self.bos, self.eos = bos, eos
+        self.template_source = template
         self.template = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True).from_string(template)
 
     @classmethod

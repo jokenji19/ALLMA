@@ -74,3 +74,14 @@ button.sidebar-footer { display:block; width:100%; border:0; border-top:1px soli
 #benchmark-settings .setting-item { flex-direction:column; align-items:stretch; gap:10px; }
 #view-diagnostics #benchmark-profile { width:100%; max-width:100%; }
 #view-diagnostics.screen .diag-grid { grid-template-columns:repeat(auto-fit,minmax(115px,1fr)); }
+
+.learning-layout { max-width: 740px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+.learning-section { margin: 28px 0; }
+.learning-section h2 { font-size: 18px; margin-bottom: 14px; font-weight: 600; }
+.learning-item { padding: 16px 0; border-bottom: 1px solid rgba(130,120,108,.16); }
+.learning-item p { margin: 0 0 7px; overflow-wrap: anywhere; line-height: 1.55; }
+.learning-refresh { background: transparent; color: inherit; border: 1px solid rgba(130,120,108,.35); border-radius: 20px; padding: 9px 17px; font: inherit; cursor: pointer; }
+.learning-footnote { margin-top: 32px; }
+.message-origin { font-size: 12px; color: var(--text-secondary, #77726c); margin: 6px 0 12px; max-width: 100%; }
+.message-origin summary { display: inline-block; cursor: pointer; padding: 6px 4px; text-decoration: underline; text-underline-offset: 3px; }
+.message-origin p { max-width: 42em; line-height: 1.5; padding: 8px 0; margin: 0; }

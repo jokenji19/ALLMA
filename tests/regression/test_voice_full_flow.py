@@ -84,6 +84,25 @@ def test_microphone_model_streaming_history_and_speech(flow):
     flow.finish_audio()
 
 
+def test_unresolved_voice_turn_is_not_read_and_returns_to_idle(flow):
+    flow.core._llm.generate.return_value='Sono felice per il nuovo lavoro e preoccupata per domani.'
+    flow.recognized('Sono felice per il nuovo lavoro e preoccupata per domani.')
+    assert not flow.core.conversational_memory.messages[-1].metadata['is_valid']
+    assert flow.core.conversational_memory.messages[-1].content==''
+    assert not flow.spoken() and not flow.view.chat_session.is_busy
+    calls=flow.view.bridge.call_js_function.call_args_list
+    assert any(call.args[0]=='updateVoiceState' and '"state": "idle"' in call.args[1] for call in calls)
+    assert flow.view.bridge.end_stream.call_args.args[0]==''
+
+
+def test_failed_voice_processing_reports_ui_state_without_a_canned_chat_utterance(flow):
+    flow.core.process_message=Mock(side_effect=RuntimeError('synthetic failure'))
+    flow.recognized('Spiegami la luce bianca.')
+    assert not flow.spoken() and not flow.view.chat_session.is_busy
+    args=flow.view.bridge.end_stream.call_args
+    assert args.args[0]=='' and args.kwargs['generation']['status']=='inference_error'
+
+
 def test_second_voice_turn_recalls_first_from_real_memory_without_model(flow):
     flow.recognized('Il codice di prova è FARO-VOCE-37.')
     flow.finish_audio();flow.native.backend.speak.reset_mock()

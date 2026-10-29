@@ -2,29 +2,38 @@ import os
 import json
 import shutil
 import time
+import math
+import re
+import logging
+from pathlib import Path
 from datetime import datetime
 try:
     import cv2
-    import numpy as np
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
     cv2 = None
-    
+try:
+    import numpy as np
+except ImportError:
     # Mock Numpy to prevent type hint crashes
     class MockNumpy:
         class ndarray: pass
     np = MockNumpy()
 from PIL import Image
 from typing import Dict, List, Optional, Tuple, Any
-import pickle
 import uuid
+from allma_model.utils.persistence import atomic_write_json
 
 class VisualMemorySystem:
     def __init__(self, storage_dir: str = "visual_memory"):
         """Inizializza il sistema di memoria visiva"""
         self.storage_dir = storage_dir
-        self.features_db_path = os.path.join(storage_dir, "features.pkl")
+        self.features_db_path = os.path.join(storage_dir, "features.json")
+        self.legacy_features_pending = (os.path.exists(os.path.join(storage_dir, 'features.pkl'))
+                                        and not os.path.exists(self.features_db_path))
+        if self.legacy_features_pending:
+            logging.warning('Legacy visual archive preserved without deserialization; explicit conversion required')
         self.metadata_db_path = os.path.join(storage_dir, "metadata.json")
         self.images_dir = os.path.join(storage_dir, "images")
         self.memory_dir = os.path.join(storage_dir, "memory")
@@ -42,26 +51,45 @@ class VisualMemorySystem:
     def _load_features_db(self) -> Dict[str, np.ndarray]:
         """Carica il database delle features"""
         if os.path.exists(self.features_db_path):
-            with open(self.features_db_path, 'rb') as f:
-                return pickle.load(f)
+            if os.path.getsize(self.features_db_path) > 64 * 1024**2:
+                raise ValueError('Visual archive too large')
+            with open(self.features_db_path, encoding='utf-8') as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or len(data) > 10000:
+                raise ValueError('Invalid visual archive')
+            for key, vector in data.items():
+                if (not isinstance(key, str) or not re.fullmatch(r'[\w-]{1,160}', key)
+                        or not isinstance(vector, list) or not 1 <= len(vector) <= 4096
+                        or any(type(v) not in (int, float) or not math.isfinite(v) for v in vector)):
+                    raise ValueError('Invalid visual vector')
+            return {key: np.array(vector, dtype=float) for key, vector in data.items()}
         return {}
         
     def _load_metadata_db(self) -> Dict[str, Dict[str, Any]]:
         """Carica il database dei metadata"""
+        if self.legacy_features_pending:
+            return {}  # Preserve the paired legacy metadata too, without mutating it.
         if os.path.exists(self.metadata_db_path):
+            if os.path.getsize(self.metadata_db_path) > 16 * 1024**2:
+                raise ValueError('Visual metadata too large')
             with open(self.metadata_db_path, 'r') as f:
-                return json.load(f)
+                data = json.load(f)
+            if not isinstance(data, dict) or any(not isinstance(v, dict) for v in data.values()):
+                raise ValueError('Invalid visual metadata')
+            return data
         return {}
         
     def _save_features_db(self):
         """Salva il database delle features"""
-        with open(self.features_db_path, 'wb') as f:
-            pickle.dump(self.features_db, f)
+        if self.legacy_features_pending:
+            raise ValueError('Legacy visual archive requires explicit conversion')
+        atomic_write_json(self.features_db_path, {k: v.tolist() for k, v in self.features_db.items()})
             
     def _save_metadata_db(self):
         """Salva il database dei metadata"""
-        with open(self.metadata_db_path, 'w') as f:
-            json.dump(self.metadata_db, f, indent=2)
+        if self.legacy_features_pending:
+            raise ValueError('Legacy visual archive requires explicit conversion')
+        atomic_write_json(self.metadata_db_path, self.metadata_db)
             
     def _extract_features(self, image: np.ndarray) -> np.ndarray:
         """Estrae le features dall'immagine"""
@@ -104,13 +132,15 @@ class VisualMemorySystem:
     def learn_visual_concept(self, image_path: str, label: str, description: Optional[str] = None) -> bool:
         """Impara un nuovo concetto visivo"""
         try:
+            if self.legacy_features_pending:
+                return False
             # Leggi l'immagine
             image = cv2.imread(image_path)
             if image is None:
                 raise ValueError(f"Impossibile leggere l'immagine: {image_path}")
                 
             # Genera un ID univoco usando uuid per evitare collisioni
-            image_id = f"{label}_{str(uuid.uuid4())[:8]}"
+            image_id = uuid.uuid4().hex
             
             # Estrai features
             features = self._extract_features(image)
@@ -192,9 +222,13 @@ class VisualMemorySystem:
     def delete_visual_concept(self, image_id: str) -> bool:
         """Elimina un concetto visivo dal database"""
         try:
+            if self.legacy_features_pending:
+                return False
             if image_id in self.metadata_db:
                 # Elimina l'immagine salvata
                 image_path = self.metadata_db[image_id]['stored_path']
+                if not Path(image_path).resolve().is_relative_to(Path(self.images_dir).resolve()):
+                    return False
                 if os.path.exists(image_path):
                     os.remove(image_path)
                     

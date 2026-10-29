@@ -3,12 +3,12 @@
     'use strict';
     const pages = {
         chat: 'view-chat', settings: 'panel-settings', memory: 'panel-memory', dream: 'panel-dream',
-        profile: 'user-modal', voice: 'voice-overlay', diagnostics: 'view-diagnostics'
+        learning: 'panel-learning', profile: 'user-modal', voice: 'voice-overlay', diagnostics: 'view-diagnostics'
     };
     const titles = {chat:'Chat',settings:'Impostazioni',memory:'Memoria',dream:'Diario dei sogni',
-        profile:'Il tuo profilo',voice:'Voce',diagnostics:'Diagnostica',
+        learning:'Cosa imparo', profile:'Il tuo profilo',voice:'Voce',diagnostics:'Diagnostica',
         'settings/model':'Modello di ALLMA','settings/chat':'Aspetto e chat',
-        'settings/notifications':'Notifiche','settings/dreams':'Sogni e iniziativa','settings/data':'Dati e backup'};
+        'settings/notifications':'Notifiche','settings/internet':'Internet e fonti','settings/dreams':'Sogni e iniziativa','settings/data':'Dati e backup'};
     let stack = [{route:'chat',scroll:0}], cursor = 0, current = 'chat', waitingBack = false;
     const session = 'allma-pages-' + Date.now() + '-' + Math.random().toString(36).slice(2);
     let browserHistory = true;
@@ -38,10 +38,13 @@
         if(route==='voice' && previous!=='voice') window.enterVoiceScreen();
         if(route==='profile' && previous!=='profile') window.prepareProfileFields();
         if(route==='memory') send('__REQUEST_MEMORY_UPDATE__');
+        if(route==='learning') window.learningUI?.refresh();
         if(route==='dream') send('__REQUEST_DREAM_HISTORY__');
         if(route==='settings/model') { window.modelUI?.refresh();window.deciderUI?.refresh(); }
         if(route==='settings/data') window.backupUI?.refresh();
         if(route==='settings/notifications') window.notificationUI?.refresh();
+        if(route==='settings/internet') window.webReferenceUI?.refresh();
+        if(route==='settings/dreams') window.refreshDreamSettings?.();
     }
     function render(route,{restore=false}={}) {
         const previous=current;

@@ -144,8 +144,10 @@ def test_legacy_knowledge_and_diary_migration_is_idempotent_and_non_destructive(
     (True,.9,30,True), (False,.9,30,False), (True,.5,30,False),
     (True,.9,42,False), (True,.9,0,False), (True,.9,float('nan'),False)])
 def test_background_admission(charging, energy, temp, expected):
+    import time
     monitor = Mock()
-    monitor.get_metabolic_state.return_value = SimpleNamespace(is_charging=charging, energy_level=energy, battery_temp_celsius=temp)
+    monitor.get_metabolic_state.return_value = SimpleNamespace(is_charging=charging, energy_level=energy, battery_temp_celsius=temp,
+        is_valid=True, observed_at=time.monotonic(), source='synthetic', is_power_save=False)
     assert power_allows_background(monitor) is expected
 
 
@@ -161,7 +163,9 @@ def test_maintenance_cancelled_or_bad_extraction_never_erases_history(tmp_path):
     assert memory.messages == before
     active, shutdown = Event(), Event()
     monitor = Mock()
-    monitor.get_metabolic_state.return_value = SimpleNamespace(is_charging=True, energy_level=.9, battery_temp_celsius=30)
+    import time
+    monitor.get_metabolic_state.return_value = SimpleNamespace(is_charging=True, energy_level=.9, battery_temp_celsius=30,
+        is_valid=True, observed_at=time.monotonic(), source='synthetic', is_power_save=False)
     cancel = BackgroundCancellation(shutdown, active, monitor)
     def extract(_):
         active.set()

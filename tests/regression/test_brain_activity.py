@@ -87,10 +87,11 @@ def test_native_lifecycle_explicitly_suspends_and_resumes_viewer():
     methods=[n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name in ('pause','resume')]
     env={};exec(compile(ast.fix_missing_locations(ast.Module(body=methods,type_ignores=[])),str(source),'exec'),env)
     poll=Mock();bridge=SimpleNamespace(is_android=True,webview=object(),_closed=False,
-        running=True,_poll_event=poll,call_js_function=Mock(),_start_polling=Mock())
+        running=True,_poll_event=poll,call_js_function=Mock(),_start_polling=Mock(),_stream_delivery=Mock())
     env['pause'](bridge)
     assert bridge.running is False and bridge._poll_event is None
     poll.cancel.assert_called_once()
+    bridge._stream_delivery.clear.assert_called_once()
     bridge.call_js_function.assert_called_with('brainVisibility','false')
     env['resume'](bridge)
     assert bridge.running is True

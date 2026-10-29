@@ -104,7 +104,8 @@ class ChatView(MDScreen):
                 Clock.schedule_once(report_progress)
             if mobile and not self._startup_cancelled.is_set():
                 core._ensure_mobile_llm()
-                if getattr(core, '_llm_ready', False) is not True:
+                if (getattr(core, '_llm_ready', False) is not True
+                        and getattr(core, '_model_selection_required', False) is not True):
                     raise RuntimeError('Non riesco a caricare il modello. Riapri ALLMA per riprovare.')
             if self._startup_cancelled.is_set():
                 core.close()
@@ -132,7 +133,9 @@ class ChatView(MDScreen):
             self.intro.set_stage('Avvio non riuscito',error,1,busy=False)
             return
         self.core = core
-        self.intro.set_stage('Apro la chat…','Modello e memoria sono pronti.',2)
+        self.intro.set_stage('Apro la chat…',
+            'Scegli il modello nelle Impostazioni.' if getattr(core,'_model_selection_required',False) is True
+            else 'Modello e memoria sono pronti.',2)
         try:
             from allma_model.ui.webview_bridge import WebViewBridge
             # Start a conversation session
@@ -150,14 +153,45 @@ class ChatView(MDScreen):
             def on_js_message(message):
                 print("Message from WebView received")
                 
+                import json
+                if isinstance(message, dict) and message.get('type') == 'chat':
+                    text = message.get('text')
+                    if isinstance(text, str) and text.strip():
+                        try:
+                            accepted = self.submit_message(text)
+                        except Exception:
+                            accepted = False
+                        if accepted is False:
+                            self.bridge.call_js_function('chatRejected', json.dumps(text))
+                    return
                 try:
-                    # Try to parse as JSON for system messages
-                    import json
-                    data = json.loads(message)
-                    
+                    # Only the bridge may decode control envelopes. Raw strings
+                    # remain text, including JSON typed by a user.
+                    data = message if isinstance(message, dict) else {}
                     if isinstance(data, dict):
                         msg_type = data.get('type')
                         action = data.get('action')
+                        if msg_type == 'action' and action == 'native_recovery_probe':
+                            from allma_model.llm.native_health import recovery_probe
+                            try:
+                                if self.chat_session.is_busy or self.core._user_active.is_set():
+                                    raise RuntimeError('ALLMA occupata')
+                                result = recovery_probe(data.get('mode'))
+                            except Exception as error:
+                                result = {'error': str(error), 'synthetic': True}
+                            self.bridge.execute_js(f"window._nativeRecoveryProbe={json.dumps(result)}")
+                            return
+                        if msg_type == 'action' and action in ('native_status', 'prepare_native_update', 'resume_native_update'):
+                            from allma_model.llm.native_backend import update_status
+                            from allma_model.llm.native_health import backend_status
+                            busy = (self.chat_session.is_busy or self.voice_mode_enabled
+                                    or getattr(self.bridge, 'benchmark_running', False)
+                                    or self.core._user_active.is_set())
+                            status = update_status(resume=action == 'resume_native_update',
+                                reserve=action == 'prepare_native_update' and not busy)
+                            status.update(backends=backend_status(self.core), busy=bool(busy))
+                            self.bridge.execute_js(f"window.nativeUpdateState({json.dumps(status)})")
+                            return
                         if msg_type == 'action' and action == 'review_dream_hypothesis':
                             try:
                                 self.core.review_dream_hypothesis('user_default', data.get('id'),
@@ -208,55 +242,19 @@ class ChatView(MDScreen):
                                     self.core.update_user_identity(name, int(age) if age else 0)
                             return
                         
-                        # System Actions (Dream Mode)
-                        if msg_type == 'action':
-                             if action == 'toggle_dream_mode':
-                                 enabled = data.get('enabled', False)
-                                 print(f"ChatView: Setting Dream Mode -> {enabled}")
-                                 if self.core and hasattr(self.core, 'set_dream_mode'):
-                                     self.core.set_dream_mode(enabled)
-                                 return
+                        if msg_type == 'action' and action in ('dream_status', 'toggle_dream_mode'):
+                            error = None
+                            try:
+                                if action == 'toggle_dream_mode':
+                                    self.core.set_dream_mode(data.get('enabled'))
+                            except Exception:
+                                error = 'Modifica non salvata. Riprova.'
+                            state = self.core.dream_settings()
+                            if error:
+                                state['error'] = error
+                            self.bridge.call_js_function('receiveDreamSettings', json.dumps(state))
+                            return
 
-                        # System Actions (Memory Debug)
-                        if msg_type == 'system':
-                            if action == 'get_memory_debug':
-                                user_id = data.get('user_id', 'user_default')
-                                print(f"ChatView: Memory Debug Requested for {user_id}")
-                                
-                                try:
-                                    # Access memory data from core
-                                    memory_data = {"facts": {}, "logs": []}
-                                    
-                                    if self.core and hasattr(self.core, 'memory'):
-                                        # Get user facts
-                                        if hasattr(self.core.memory, 'user_data'):
-                                            memory_data["facts"] = self.core.memory.user_data.get(user_id, {})
-                                        
-                                        # Get recent conversation logs
-                                        try:
-                                            from allma_model.utils.repetition_guard import memory_display
-                                            history = self.core.memory.get_conversation_history(user_id)
-                                            for msg in history[-10:]:  # Last 10 messages
-                                                memory_data["logs"].append({
-                                                    "role": msg.role,
-                                                    "content": memory_display(msg.content,msg.role),
-                                                    "timestamp": msg.timestamp.isoformat() if msg.timestamp else "",
-                                                    "is_thought": "[[TH:" in msg.content
-                                                })
-                                        except Exception as e:
-                                            print(f"Memory Log Error: {e}")
-                                    
-                                    # Send back to JS
-                                    import json
-                                    self.bridge.execute_js(f"window.renderMemoryData({json.dumps(json.dumps(memory_data))})")
-                                    
-                                except Exception as e:
-                                    print(f"Memory Debug Error: {e}")
-                                    import traceback
-                                    traceback.print_exc()
-                                
-                                return
-                        
                         # UI Actions (Mic / Voice Mode)
                         if msg_type == 'action':
                             if action == 'download_voice_pack':
@@ -315,6 +313,21 @@ class ChatView(MDScreen):
                             self.bridge.execute_js('window.dreamReviewResult({ok:false,error:"Archivio delle revisioni non disponibile. Nessuna ipotesi è stata modificata."})')
                     return
 
+                if message == "__REQUEST_LEARNING_UPDATE__":
+                    if self.bridge and self.core and not getattr(self, '_learning_reading', False):
+                        self._learning_reading = True
+                        user = self.core._current_user_id or 'user_default'
+                        def read_learning():
+                            try:
+                                from allma_model.core.learning_insights import snapshot
+                                payload = snapshot(self.core, user)
+                                if (self.core._current_user_id or 'user_default') == user:
+                                    self.bridge.call_js_function('learningUIResult', json.dumps(payload))
+                            finally:
+                                self._learning_reading = False
+                        Thread(target=read_learning, daemon=True, name='ALLMA-LearningView').start()
+                    return
+
                 if message == "__REQUEST_MEMORY_UPDATE__":
                     if self.bridge:
                         try:
@@ -341,7 +354,8 @@ class ChatView(MDScreen):
                                     # Popola i Logs (ultimi 10 messaggi)
                                     history = []
                                     if hasattr(mem, 'messages') and mem.messages:
-                                        history = mem.messages[-10:]
+                                        from allma_model.core.autobiographical_identity import delivery_visible
+                                        history = mem.recent_messages(10)
 
                                     from allma_model.utils.repetition_guard import memory_display
                                     for msg in history:
@@ -364,8 +378,9 @@ class ChatView(MDScreen):
                             traceback.print_exc()
                     return
 
-                # Send to Core (Standard Chat)
-                self.submit_message(message)
+                # Unknown controls and handler failures are not conversational input.
+                if isinstance(message, str):
+                    self.submit_message(message)
                 
             from allma_model.voice_system.preferences import VoicePreferences
             self.voice_preferences = VoicePreferences(getattr(getattr(self.core, 'meta_learner', None), 'state_manager', None))
@@ -385,7 +400,8 @@ class ChatView(MDScreen):
                 self.tts = None
 
             # Initialize Bridge
-            self.bridge = WebViewBridge(on_js_message, core=self.core)
+            self.bridge = WebViewBridge(on_js_message, core=self.core,
+                startup_error=lambda message: self.intro.set_stage('Avvio non riuscito', message, 1, busy=False))
             self.is_initialized = True
             self.voice_mode_enabled = False # Track Voice Mode State
             
@@ -458,13 +474,6 @@ class ChatView(MDScreen):
         """Reserve the turn before starting a worker, so reset/cancel cannot overtake it."""
         if not self.core or not isinstance(user_text, str) or not user_text.strip():
             return False
-        import json
-        try:
-            control = json.loads(user_text)
-            if isinstance(control, dict) and control.get('type') in ('system', 'action'):
-                return False
-        except (ValueError, TypeError):
-            pass
         turn = self.chat_session.begin()
         if turn is None:
             self.bridge.call_js_function('chatNotice', '"Attendi la risposta o premi Interrompi."')
@@ -507,6 +516,12 @@ class ChatView(MDScreen):
                 check_cancelled(turn.cancelled)
                 msg_type = data.get('type')
                 content = data.get('content')
+
+                if msg_type == 'reference':
+                    self.bridge.reference_activity(content,turn.request_id)
+                    return
+                if msg_type not in ('thought','answer'):
+                    return
                 
                 if not content: return
                 
@@ -526,8 +541,12 @@ class ChatView(MDScreen):
             
             # End Stream
             check_cancelled(turn.cancelled)
+            from allma_model.core.learning_insights import response_origin
             self.bridge.end_stream(processed_response.content, turn.request_id,
-                generation=(getattr(processed_response, 'metadata', None) or {}).get('generation', {}))
+                origin=response_origin(processed_response.metadata, processed_response.is_valid),
+                generation=(getattr(processed_response, 'metadata', None) or {}).get('generation', {}),
+                **({'plan_review':processed_response.metadata['goal_plan_review']}
+                   if (getattr(processed_response,'metadata',None) or {}).get('goal_plan_review') else {}))
 
             if self.bridge and self.voice_mode_enabled:
                 try:
@@ -557,7 +576,7 @@ class ChatView(MDScreen):
                 self.current_voice_params = processed_response.voice_params
                 voice_params = processed_response.voice_params
             
-            if self.tts and processed_response.content.strip() and self.voice_mode_enabled:
+            if self.tts and processed_response.is_valid and processed_response.content.strip() and self.voice_mode_enabled:
                 voice_params = dict(voice_params or {})
                 language = getattr(self.core, '_language_lock', {}).get(turn.conversation_id, 'it')
                 from allma_model.voice_system.languages import language_tag
@@ -568,17 +587,27 @@ class ChatView(MDScreen):
                 elif getattr(self.stt, 'detected_language', None):
                     voice_params['language'] = self.stt.detected_language
                 self.tts.speak(processed_response.content.strip(), voice_params=voice_params, flush=True)
+            elif self.voice_mode_enabled:
+                # An unresolved turn has no utterance. Return the microphone UI
+                # to idle instead of waiting for a TTS callback that cannot occur.
+                self._voice_state('idle')
             
 
         except GenerationCancelled:
             if hasattr(self, '_voice_state'):
                 self._voice_state('idle', 'Risposta interrotta. Tocca il microfono per parlare.')
-            self.bridge.end_stream('Risposta interrotta.', turn.request_id)
+            from allma_model.core.learning_insights import response_origin
+            generation={'status':'cancelled'}
+            self.bridge.end_stream('', turn.request_id, generation=generation,
+                origin=response_origin({'generation':generation},False))
         except Exception:
             import logging
             logging.exception('Errore durante la risposta')
             self._voice_state('error', 'Non sono riuscita a completare la risposta.')
-            self.bridge.end_stream('Non sono riuscita a completare la risposta. Riprova.', turn.request_id)
+            from allma_model.core.learning_insights import response_origin
+            generation={'status':'inference_error'}
+            self.bridge.end_stream('', turn.request_id, generation=generation,
+                origin=response_origin({'generation':generation},False))
         finally:
             try:
                 import json
@@ -723,9 +752,7 @@ class ChatView(MDScreen):
         try:
             memory = self.core.conversational_memory
             with memory.lock:
-                count = sum(message.role == 'user' and
-                            (message.user_id or message.metadata.get('user_id')) == 'user_default'
-                            for message in memory.messages)
+                count = memory.message_count('user_default','user')
             self.bridge.update_synergy(None, f'{count} messaggi tuoi registrati')
         except Exception as error:
             logging.debug('Learning activity unavailable: %s', error)
@@ -744,6 +771,8 @@ class ChatView(MDScreen):
                 self._resource_diagnostics = ResourceDiagnostics()
             stats['resources'] = self._resource_diagnostics.read(
                 getattr(self.core, 'system_monitor', None))
+            from allma_model.llm.native_health import backend_status
+            stats['backends'] = backend_status(self.core)
             orchestrator = getattr(self.core, 'module_orchestrator', None)
             if orchestrator:
                 stats['modules'] = orchestrator.get_stats()
@@ -792,7 +821,8 @@ class ChatView(MDScreen):
                 # Robust history retrieval (Fallback to .messages)
                 msgs = []
                 if hasattr(mem, 'messages'):
-                    msgs = mem.messages[-5:]
+                    from allma_model.core.autobiographical_identity import delivery_visible
+                    msgs = mem.recent_messages(5)
                 
                 for m in msgs:
                     import datetime
@@ -825,30 +855,45 @@ class ChatView(MDScreen):
             msg_type = data.get('type')
             content = data.get('content')
             if data.get('user_id') and data['user_id'] != 'user_default':
-                return
+                return False
             
             if not self.bridge:
                 print("ChatView: Cannot handle core output - Bridge not ready.")
-                return
+                return False
 
             print(f"ChatView: Core output type={msg_type}")
             
             if msg_type == 'thought':
-                # Show thought bubble
-                cleaned = content.replace('"', '\\"').replace('\n', ' ')
-                self.bridge.execute_js(f"window.showThought('{cleaned}')")
+                # Retired unscoped callback. Active thoughts carry a request ID
+                # through on_stream_data; never inject source code or mix turns.
+                return False
                 
-            elif msg_type in ('text','proactive'):
+            elif msg_type == 'proactive':
+                # Retry acknowledgement without showing or notifying twice in
+                # this UI session. The archive owns the stable delivery ID.
+                request_id = data.get('request_id')
+                seen = getattr(self, '_proactive_seen', None)
+                if seen is None:
+                    from collections import deque
+                    seen = self._proactive_seen = deque(maxlen=128)
+                if request_id and request_id in seen:
+                    return True
+                if (data.get('conversation_id') != self.conversation_id
+                        or getattr(self.bridge, 'webview', None) is None):
+                    return False
+                self.bridge.send_message_to_js(content, 'bot')
+                if request_id:
+                    seen.append(request_id)
+                self.bridge.notify_event('message')
+            elif msg_type == 'text':
                 # Show bot message
                 self.bridge.send_message_to_js(content, 'bot')
-                if msg_type == 'proactive':
-                    self.bridge.notify_event('message')
                 
             elif msg_type == 'status':
                 # Handle Status Updates (e.g. Dreaming)
                 for key, value in content.items():
-                    js_val = 'true' if value else 'false'
-                    self.bridge.execute_js(f"window.updateStatus('{key}', {js_val})")
+                    import json
+                    self.bridge.call_js_function('updateStatus', json.dumps(str(key)) + ', ' + json.dumps(bool(value)))
 
             elif msg_type == 'dream_log':
                 if isinstance(content, dict) and content.get('phase') == 'done':
@@ -856,7 +901,8 @@ class ChatView(MDScreen):
                 # Stream dream reasoning to the Dream Journal panel
                 import json
                 self.bridge.execute_js(f"window.handleDreamLog && window.handleDreamLog({json.dumps(content)})")
-
+            return True
 
         except Exception as e:
             print(f"ChatView: Error handling core output: {e}")
+            return False

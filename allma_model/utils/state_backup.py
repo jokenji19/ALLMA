@@ -47,7 +47,28 @@ def _check_data(path,name):
         with closing(sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True)) as db:
             if db.execute('PRAGMA quick_check').fetchone()!=('ok',):
                 raise BackupError('Un archivio SQLite richiede recupero')
+        if name == 'conversation_history.db':
+            from allma_model.memory_system.history_store import HistoryStore
+            try:
+                HistoryStore.validate_database(path)
+            except (sqlite3.Error, ValueError, TypeError, KeyError) as error:
+                raise BackupError('Archivio della cronologia non valido') from error
+        if name == 'answer_recall.db':
+            from allma_model.learning_system.recall_store import RecallStore
+            from allma_model.learning_system.answer_recall import AnswerRecall
+            try:
+                RecallStore.validate_database(path, AnswerRecall._valid_record)
+            except (sqlite3.Error, ValueError, TypeError, KeyError) as error:
+                raise BackupError('Archivio delle risposte apprese non valido') from error
+        if name == 'incremental_cache/knowledge_states.db':
+            from allma_model.learning_system.learning_store import LearningStore
+            try:LearningStore.validate_database(path)
+            except (sqlite3.Error,ValueError,TypeError,KeyError,AttributeError) as error:
+                raise BackupError('Archivio di apprendimento non valido') from error
     else:
+        from .operational_preferences import FILES,MAX_BYTES,validate_preference
+        if name in FILES and Path(path).stat().st_size>MAX_BYTES:
+            raise BackupError('Preferenza operativa troppo grande')
         if Path(path).stat().st_size>MAX_JSON:
             raise BackupError('JSON troppo grande per la verifica sicura su questo dispositivo; serve una migrazione del formato')
         with Path(path).open(encoding='utf-8') as reader:
@@ -64,6 +85,8 @@ def _check_data(path,name):
         if name=='allma_memory.json':
             from .autobiography_validation import validate_history_archive
             validate_history_archive(data)
+        if name in FILES:
+            validate_preference(name,data)
         if name=='incremental_cache/knowledge_states.json':
             from allma_model.learning_system.incremental_learning import IncrementalLearner
             if IncrementalLearner(str(path)).load_error is not None:
@@ -81,6 +104,13 @@ def _check_data(path,name):
                 raise BackupError('Versione dello stato cognitivo non supportata')
             if any(not isinstance(value,dict) for value in data['sections'].values()):
                 raise BackupError('Sezione cognitiva non valida')
+            authority = data['sections'].get('action_authority',{})
+            goals = authority.get('goals',{})
+            if ('workflow_checkpoint' in authority or (isinstance(goals,dict)
+                    and any(isinstance(g,dict) and 'workflow' in g for g in goals.values()))):
+                from allma_model.agency_system.goal_progress import valid_archive
+                if not valid_archive(authority):
+                    raise BackupError('Obiettivi persistenti non validi')
 
 
 def verify_archive(archive,destination=None,*,primary='allma.db',cancel_event=None):
@@ -229,7 +259,13 @@ class StateBackups:
 
     def _signature(self):
         result={}
+        learning=self.root/'incremental_cache/knowledge_states.db'
+        marker=Path(str(learning)+'.init.lock')
+        if not learning.exists() and marker.is_file() and marker.stat().st_size:
+            raise BackupError('Archivio di apprendimento mancante dopo la migrazione; ripristina una copia verificata')
         for name in self.allowed:
+            if name=='incremental_cache/knowledge_states.json' and learning.exists():
+                continue  # Immutable migration source is not a current learning archive.
             path=self.root/name
             if not path.is_file():continue
             if any(parent.is_symlink() for parent in (path,*path.parents) if parent!=self.root.parent):

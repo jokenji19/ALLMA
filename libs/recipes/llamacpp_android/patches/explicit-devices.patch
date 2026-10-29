@@ -1,0 +1,35 @@
+--- a/llama_cpp/llama.py
++++ b/llama_cpp/llama.py
+@@ -56,6 +56,7 @@
+     """High-level Python wrapper for a llama.cpp model."""
+ 
+     __backend_initialized = False
++    _allma_explicit_devices = True
+ 
+     def __init__(
+         self,
+@@ -66,6 +67,7 @@
+         split_mode: int = llama_cpp.LLAMA_SPLIT_MODE_LAYER,
+         main_gpu: int = 0,
+         tensor_split: Optional[List[float]] = None,
++        devices: Optional[List[int]] = None,
+         vocab_only: bool = False,
+         use_mmap: bool = True,
+         use_mlock: bool = False,
+@@ -225,6 +227,16 @@
+ 
+         # Model Params
+         self.model_params = llama_cpp.llama_model_default_params()
++        self._allma_device_array = None
++        if devices is not None:
++            if not all(type(device) is int and device > 0 for device in devices):
++                raise ValueError("Native device pointers must be positive integers")
++            self._allma_device_array = (ctypes.c_void_p * (len(devices) + 1))(
++                *devices, None
++            )
++            self.model_params.devices = ctypes.cast(
++                self._allma_device_array, ctypes.c_void_p
++            )
+         self.model_params.n_gpu_layers = (
+             0x7FFFFFFF if n_gpu_layers == -1 else n_gpu_layers
+         )  # 0x7FFFFFFF is INT32 max, will be auto set to all layers

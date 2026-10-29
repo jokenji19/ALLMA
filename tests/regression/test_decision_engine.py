@@ -70,6 +70,53 @@ def test_cancel_during_eval_discards_decision(tmp_path, monkeypatch):
     assert result.choice is None and result.status == 'cancelled'
 
 
+@pytest.mark.parametrize('thermal',[None,2,4])
+def test_hot_or_unknown_npu_never_runs_a_decision(tmp_path,monkeypatch,thermal):
+    from allma_model.llm import decision_backend
+    engine,native=ready(tmp_path,monkeypatch)
+    engine.backend_info={'kind':'hexagon'}
+    monkeypatch.setattr(decision_backend,'android_thermal_status',lambda:thermal)
+    result=engine.decide('state','question',{'one':'First','two':'Second'})
+    assert result.status=='thermal_pause' and result.choice is None
+    native.eval.assert_not_called()
+
+
+def test_cancelled_npu_clears_marker_and_discards_result(tmp_path,monkeypatch):
+    from allma_model.llm import decision_backend,native_backend
+    engine,native=ready(tmp_path,monkeypatch)
+    engine.backend_info={'kind':'hexagon'}
+    engine._native_guard=native_backend.NativeGuard(tmp_path,'test',filename='npu-decision-pending.json')
+    monkeypatch.setattr(decision_backend,'android_thermal_status',lambda:0)
+    event=threading.Event()
+    native.eval.side_effect=lambda _:event.set()
+    result=engine.decide('state','question',{'one':'First','two':'Second'},cancel_event=event)
+    assert result.status=='cancelled' and result.choice is None
+    assert not engine._native_guard.path.exists()
+
+
+def test_npu_model_failure_retries_cpu_without_inheriting_other_devices(tmp_path,monkeypatch):
+    import sys
+    from allma_model.llm import decision_backend,native_backend
+    engine,native=ready(tmp_path,monkeypatch)
+    engine.close();engine.factory=None
+    guard=native_backend.NativeGuard(tmp_path,'test',filename='npu-decision-pending.json')
+    choice=native_backend.BackendChoice('hexagon','test',guard=guard,device_ids=(222,),batch_threads=2)
+    monkeypatch.setattr(decision_backend,'prepare_android_backend',lambda:choice)
+    calls=[]
+    class Factory:
+        _allma_explicit_devices=True
+        def __new__(cls,**kwargs):
+            calls.append(kwargs)
+            if kwargs['n_gpu_layers']!=0:raise RuntimeError('NPU context unavailable')
+            return native
+    monkeypatch.setitem(sys.modules,'llama_cpp',SimpleNamespace(Llama=Factory))
+    engine.load()
+    assert len(calls)==2 and calls[0]['devices']==[222] and calls[1]['devices']==[]
+    assert calls[1]['n_gpu_layers']==0 and calls[1]['offload_kqv'] is False
+    assert engine.backend_info=={'kind':'cpu','reason':'npu_model_initialization_failed'}
+    assert not guard.path.exists()
+
+
 @pytest.mark.parametrize('state,question,options', [('x'*8001,'q',{'a':'A','b':'B'}),('x','',{'a':'A','b':'B'}),('x','q',{'a':'A'}),('x','q',{'a':'A','b':''})])
 def test_bad_input_rejected_without_inference(tmp_path, state, question, options):
     with pytest.raises(ValueError): LocalDecisionEngine(tmp_path/'missing').decide(state,question,options)
@@ -81,6 +128,25 @@ def test_corruption_rejected_before_native_load(tmp_path, monkeypatch):
     engine.path.write_bytes(b'x'*module.DECIDER_MODEL['size_bytes'])
     with pytest.raises(ValueError, match='checksum'): engine.load()
     assert engine.factory.call_count == 1
+
+
+def test_verified_download_and_native_reloads_share_checksum(tmp_path, monkeypatch):
+    from allma_model.utils.model_downloader import ModelDownloader
+    from allma_model.utils import model_integrity
+    engine, native = ready(tmp_path, monkeypatch)
+    engine.close()
+    model_integrity.verified_models.verified.pop(str(engine.path))
+    digest = Mock(wraps=hashlib.sha256)
+    monkeypatch.setattr(model_integrity.hashlib, 'sha256', digest)
+    downloader = ModelDownloader(str(tmp_path))
+    assert downloader._valid(engine.path, module.DECIDER_MODEL)
+    engine.load()
+    engine.close()
+    engine.load()
+    assert digest.call_count == 1
+    assert engine.factory.call_count == 3
+    assert engine.load_metrics['total_ms'] >= 0
+    assert sum(value for key, value in engine.load_metrics.items() if key != 'total_ms') == pytest.approx(engine.load_metrics['total_ms'])
 
 
 def test_agent_verifies_and_never_repeats_actions():
