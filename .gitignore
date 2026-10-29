@@ -118,3 +118,23 @@ visual_memory/
 # Verified optional native runtime (not model weights); required by clean builds.
 !libs/native_backend/hexagon/libggml-hexagon.so
 !libs/native_backend/hexagon/libggml-htp-v79.so.bin
+
+# Repository hygiene: generated build artifacts and local diagnostics
+/allma_model.zip
+/embedded_code.txt
+/vulkan_build_log.txt
+/android_logs.txt
+/blob_log.txt
+/crash_dump_full.txt
+/current_log.txt
+/python_logs.txt
+/buildozer.spec.backup_*
+/*_build*.log
+/my_build*.log
+/crash*.log
+/crash*.txt
+/htmlcov/
+*.db
+*.sqlite
+*.sqlite3
+.coverage*
