@@ -108,7 +108,11 @@ jobs:
             --env APP_ANDROID_SDK_PATH= \
             --entrypoint /bin/bash \
             ghcr.io/kivy/buildozer@sha256:d5b9d1b5e3241fc6ec8eb78b8ecff9e975054645e26c07075c0a60d18c471c1f \
-            -c 'mkdir -p "$HOME"
+            -c 'set -eu
+                mkdir -p "$HOME"
+                python3 tools/prepare_ci_venv.py /home/user/.venv "$HOME/.venv"
+                export VIRTUAL_ENV="$HOME/.venv"
+                export PATH="$VIRTUAL_ENV/bin:$PATH"
                 python3 tools/build_android_safe.py'
 
       - name: Upload APK artifact
