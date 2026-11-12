@@ -1,0 +1,10 @@
+{
+  "scope": "Misure storiche circoscritte, non punteggi globali di qualita o affidabilita.",
+  "gpu": {"prompt_tokens": [128, 512], "cpu_s": [9.079, 27.878], "gpu_s": [2.207, 3.053], "repetitions": [3, 2], "source": "docs/INTEGRAZIONE_OPENCL_2026-10-24.md"},
+  "npu": {"cases": ["Brevi 81-86 token", "Lungo 482 token"], "cpu_ms": [622.8, 5044.6], "npu_ms": [68.8, 282.6], "repetitions": 2, "source": "docs/INTEGRAZIONE_NPU_DECIDER_2026-10-24.md"},
+  "pagination": {"python_resident_bytes": [7411056, 46898], "python_peak_bytes": [10191856, 53921], "milliseconds": [144.8, 176.8], "synthetic_items": 4096, "repetitions": 3, "source": "docs/PUNTI_4_8_2026-10-27.md"},
+  "context": {"windows": [2048, 4096, 8192], "first_text_long_s": [10.53, 17.17, 17.82], "complete_long_s": [16.81, 21.34, 23.95], "prompt_tokens": [1824, 3840, 4116], "repetitions": 2, "source": "docs/CONFRONTO_CONTESTO_REALE_102574.md"},
+  "cancellation": {"wait_after_signal_ms": [16073.43, 98.16], "observations_each": 1, "source": "docs/PUNTI_4_8_2026-10-27.md"},
+  "test_suites": {"passed_091": 2074, "passed_0911": 3299, "skipped_each": 15, "same_corpus": false, "sources": ["docs/RELEASE_V0.9.1.md", "docs/DIALOGO_CONTESTUALE_2026-10-29.md"]},
+  "initial_benchmark": {"mean_seconds": [76.81, 46.33], "responses": [4, 6], "cases_per_run": 6, "controlled_comparison": false, "source": "docs/MIGLIORAMENTI_PRESTAZIONI_2026-10-01.md"}
+}

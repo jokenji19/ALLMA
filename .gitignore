@@ -138,3 +138,5 @@ visual_memory/
 *.sqlite
 *.sqlite3
 .coverage*
+
+/output/pdf/ALLMA_STUDIO_0.8.4.2_0.9.1.1.pdf

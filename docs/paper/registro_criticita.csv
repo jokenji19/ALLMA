@@ -1,0 +1,44 @@
+id,problema,stato,intervento,fonte,prossima_verifica
+F01,Iniziativa consegnata prima del salvataggio,Corretto nei casi verificati,Consegna dopo commit e recupero pendenti,CORREZIONI_RUNTIME_2026-10-21.md,Verificare guasti reali su dispositivi aggiuntivi
+F02,Letture energetiche obsolete autorizzavano lavoro,Corretto nei casi verificati,"Validità, provenienza e limite di età del campione",CORREZIONI_RUNTIME_2026-10-21.md,Sensori indisponibili e differenze fra telefoni
+F03,Costo di scrittura della cronologia cresceva con la storia,Migliorato,Commit incrementali e caricamento paginato,PAGINAZIONE_MEMORIA_2026-10-22.md,Validazione e scansioni possono crescere con i dati
+F04,Indice ricostruito interamente a ogni nuovo ricordo,Migliorato,Indice incrementale e riconciliazione,MEMORIA_INCREMENTALE_2026-10-22.md,Misurare archivi molto grandi e guasti concorrenti
+F05,Limite della cache poteva perdere risposte consolidate,Corretto nei casi verificati,Deposito persistente e controllo dei limiti,APPRENDIMENTO_PERSISTENTE_2026-10-21.md,Verificare migrazioni e ripristini su nuovi ambienti
+F06,Segnali percettivi non contribuivano al turno,Parziale,Percezione contestuale con attribuzione e incertezza,PERCEZIONE_E_CONTESTO_2026-10-26.md,Percezione continua e qualità reale da misurare
+F07,Urgenza attivata da frammenti o negazioni,Corretto nei casi verificati,Confini linguistici e gestione della negazione,PERCEZIONE_E_CONTESTO_2026-10-26.md,Estendere parafrasi e lingue fuori campione
+F08,Copertura emotiva diseguale fra lingue,Migliorato,Lessico e attribuzione multilingue con incertezza,PERCEZIONE_E_CONTESTO_2026-10-26.md,Nessuna copertura completa di lingue o emozioni
+F09,Preferenze operative assenti dai backup,Corretto nei casi verificati,Preferenze validate e portabili senza trasferire permessi Android,BACKUP_PORTABILE_2026-10-24.md,Ripristino esterno su secondo dispositivo
+F10,Decider residente durante inattività in primo piano,Aperto,Rilascio in background e condizioni specifiche; ricaricamento misurato,DECIDER_AVVIO_E_CONTINUITA_2026-10-24.md,Rilascio adattivo in foreground e confronto memoria/latenza
+F11,Annullamento Decider ai confini di eval nativa,Parziale,Controllo e scarto del risultato annullato,AUDIT_SISTEMA_2026-10-21.md,Interruzione intra-eval NPU/CPU da misurare; hook Qwen CPU distinto
+F12,Doppia costruzione del modello nel recupero import,Corretto nel percorso esaminato,Unico caricamento e chiusura dei candidati falliti,INTEGRAZIONE_OPENCL_2026-10-24.md,Testare nuovi backend e versioni del binding
+F13,Core e bridge concentrano responsabilità,Aperto,Estrazioni incrementali di componenti e controlli,AUDIT_AGGIORNATO_2026-10-22.md,Proseguire estrazione senza regressioni
+F14,Nomi dei moduli più ampi delle capacità provate,Aperto,Distinzione fra inventario statico e percorso verificato,AUDIT_SISTEMA_2026-10-21.md,Documentare raggiungibilità e limiti per componente
+F15,Notifiche confuse con iniziativa ad app chiusa,Aperto,Consenso e notifiche separati dalla proattività in foreground,AUDIT_AGGIORNATO_2026-10-22.md,Eventuale servizio in background da progettare
+F16,Componenti precedenti e import fuori dal grafo,Aperto,Inventario e controlli sugli ingressi principali,AUDIT_AGGIORNATO_2026-10-22.md,Verificare allma_model.data.vocabulary_data e ingressi dinamici
+F17,Test numerosi senza copertura di tutta la qualità reale,Aperto,"Batterie sintetiche, benchmark e revisione umana distinti",DIALOGO_CONTESTUALE_2026-10-29.md,"Nuovi casi, valutatori indipendenti e collaudo Android finale"
+F18,Adattamento ai modelli e processo release incompleti,Parziale,"Binding, selezione, verifiche APK e release versionata",RELEASE_V0.9.1.1.md,Nuovi GGUF e firma produzione richiedono qualificazione
+A01,Cronologia e indice di ricerca divergenti,Corretto nei casi verificati,Chiavi stabili e controllo della fonte autorevole,COERENZA_MEMORIA_2026-10-22.md,Interleaving e archivi reali molto grandi
+A02,Letture paginate aperte e scritture sovrapposte,Corretto nei casi verificati,Gestione della durata delle letture e snapshot,COERENZA_MEMORIA_2026-10-22.md,Verifica su altri dispositivi e carichi
+A03,Scansioni complete durante il lavoro a riposo,Migliorato,Riepilogo transitorio invalidato alla modifica della fonte,LAVORO_RIPOSO_2026-10-24.md,Ricostruzione dopo invalidazione ancora proporzionale ai dati
+A04,Preferenze escluse dal backup,Corretto nei casi verificati,Schema e inclusione portabile; permessi distinti,BACKUP_PORTABILE_2026-10-24.md,Testare fornitori esterni reali
+A05,Percezione debole o parzialmente collegata,Parziale,Segnali contestuali prudenti e metadati,PERCEZIONE_E_CONTESTO_2026-10-26.md,Valutazione reale e percezione multimodale
+A06,Copertura emozionale non uniforme,Migliorato,Lingue aggiuntive e dichiarazione di incertezza,PERCEZIONE_E_CONTESTO_2026-10-26.md,Validazione su dati nuovi e lingue meno coperte
+A07,Risorse e cancellazione del Decider,Parziale,NPU opzionale e integrità condivisa,DECIDER_AVVIO_E_CONTINUITA_2026-10-24.md,"Costo cold start, scarico adattivo, annullamento nativo"
+A08,Possibile doppia costruzione nativa,Corretto nel percorso esaminato,Unificazione del caricamento,INTEGRAZIONE_OPENCL_2026-10-24.md,Ripetere sui futuri adattatori
+A09,Stati JSON crescenti e scritture in pausa,Migliorato,Deposito incrementale e riduzione delle riscritture,APPRENDIMENTO_INCREMENTALE_2026-10-24.md,Copia e controllo grandi archivi ancora costosi
+A10,Conservazione illimitata e backup locale,Aperto,"Copia cifrata, integrità e limiti dichiarati",CONSERVAZIONE_BACKUP_2026-10-17.md,"Copie indipendenti, migrazione e prove di ripristino"
+A11,Generalizzazione apprendimento e curiosità,Parziale,Focus legati a obiettivi e casi di trasferimento,PUNTI_4_8_2026-10-27.md,Misurare trasferimento su casi non usati nello sviluppo
+A12,"Voce: lingue, servizi e durata",Parziale,Sessioni e voce naturale opzionale; prove mirate,VOCE_STABILITA_LINGUE_2026-10-21.md,"Microfono, uscite audio e lingue in sessioni lunghe"
+A13,Servizio e iniziativa ad app chiusa,Aperto,Servizio precedente fuori dal percorso operativo,AUDIT_AGGIORNATO_2026-10-22.md,Definire eventuale lavoro background consensuale
+A14,Responsabilità concentrate e risorse precedenti,Aperto,Inventario e rimozione parziale di rami non usati,AUDIT_AGGIORNATO_2026-10-22.md,Verificare asset avatar e ingressi dinamici prima della rimozione
+A15,"Test, toolchain e firma di rilascio",Parziale,Suite offline e APK debug verificata,RELEASE_V0.9.1.1.md,"CI completa, toolchain riproducibile e firma produzione"
+A16,Spazio e conservazione del lavoro locale,Migliorato,Commit pubblicati e pulizia degli artefatti tracciati,RELEASE_V0.9.1.1.md,Monitorare spazio e conservare backup indipendenti
+S01,Testo utente reinterpretato come comando,Corretto nei casi verificati,Contenitore chat separato dalle azioni,CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,Fuzzing dei confini fra frontend e backend
+S02,Divieti di rete non riconosciuti,Corretto nei casi verificati,Vincolo del turno più restrittivo del consenso generale,CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,"Parafrasi, lingue e richieste contraddittorie"
+S03,Soggetto precedente usato nella ricerca,Corretto nei casi verificati,Nuova ancora e arresto in caso ambiguo,CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,Nuovi cambi di tema fuori campione
+S04,Preferenze sogni in conflitto fra UI e core,Corretto nei casi verificati,Nucleo come autorità; conferma esplicita della modifica,CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,Guasti e migrazioni con versioni future
+S05,Chiamata HTTP bloccante e risultati tardivi,Migliorato,"Limite del chiamante, cancellazione e singola ammissione",CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,DNS sottostante può terminare più tardi
+S06,Deserializzazione pickle della memoria visiva,Corretto nel percorso attivo,JSON limitato e validato; vecchi file preservati,CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,Migrazione sicura esplicita se richiesta
+S07,WebView con accesso eccessivo,Corretto nei casi verificati,"Blocco rete e file, CSP e fallimento esplicito",CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,Verificare più versioni Android e casi avversari
+S08,Callback vecchi senza identificatore e interpolazioni,Corretto nei casi verificati,Ritiro del ramo e serializzazione dei parametri,CORREZIONI_SICUREZZA_INTEGRAZIONE_2026-10-28.md,Isolamento di turni concorrenti su nuovi bridge
+D01,Risposta breve trattenuta come ripetizione,Correzione software; prova reale sospesa,Contesto della domanda e controllo conservativo,DIALOGO_CONTESTUALE_2026-10-29.md,Completare 6 risposte reali e 2 controlli sul telefono
