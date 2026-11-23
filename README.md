@@ -1,6 +1,6 @@
 # ALLMA - Advanced Learning and Memory Architecture
 
-Current release: **0.9.1**. See [release notes](docs/RELEASE_V0.9.1.md) for the current Android features, validation results and known limitations, and [the system audit](docs/AUDIT_SISTEMA_2026-10-21.md) for the remaining work. Some architecture sections below describe earlier development stages; in particular, automatic background service activity and universal memory or model compatibility are not guarantees of the current app.
+Current Android release: **[0.9.1.41](https://github.com/jokenji19/ALLMA/releases/tag/v0.9.1.41)**. See the [Internet research roadmap](docs/roadmap_ricerca_internet.md) for validation and remaining work, and the [0.9.1 release notes](docs/RELEASE_V0.9.1.md) for the earlier Android baseline. Some architecture sections below describe earlier development stages; in particular, automatic background service activity and universal memory or model compatibility are not guarantees of the current app.
 
 See [reproducible emotion tests](docs/TEST_EMOZIONI.md) for the follow-up correction to the three cache-dependent desktop tests, the separate pinned model suite and its documented model quality limit.
 

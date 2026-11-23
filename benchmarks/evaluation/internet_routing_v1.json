@@ -1,0 +1,911 @@
+[
+  {
+    "id": "R001",
+    "split": "development",
+    "category": "public",
+    "message": "Che cosa significa tettonica delle placche?",
+    "topic": "tettonica delle placche",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R002",
+    "split": "development",
+    "category": "public",
+    "message": "Che cosa sono i quasar?",
+    "topic": "quasar",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R003",
+    "split": "development",
+    "category": "public",
+    "message": "Mi spieghi la fusione nucleare?",
+    "topic": "fusione nucleare",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R004",
+    "split": "development",
+    "category": "public",
+    "message": "Dimmi qualcosa su Rosalind Franklin",
+    "topic": "Rosalind Franklin",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R005",
+    "split": "development",
+    "category": "public",
+    "message": "In che anno è stata firmata la Magna Carta?",
+    "topic": "Magna Carta",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R006",
+    "split": "development",
+    "category": "public",
+    "message": "Chi ha scritto la Divina Commedia?",
+    "topic": "Divina Commedia",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R007",
+    "split": "development",
+    "category": "public",
+    "message": "Che cos'è il paradosso di Fermi?",
+    "topic": "paradosso di Fermi",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R008",
+    "split": "development",
+    "category": "public",
+    "message": "Dove si trova il monte Fuji?",
+    "topic": "monte Fuji",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R009",
+    "split": "development",
+    "category": "public",
+    "message": "Parlami di Grazia Deledda",
+    "topic": "Grazia Deledda",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R010",
+    "split": "development",
+    "category": "public",
+    "message": "Qual è la causa delle maree?",
+    "topic": "maree",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R011",
+    "split": "development",
+    "category": "public",
+    "message": "What are black holes?",
+    "topic": "black holes",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R012",
+    "split": "development",
+    "category": "public",
+    "message": "Could you explain photosynthesis?",
+    "topic": "photosynthesis",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R013",
+    "split": "development",
+    "category": "public",
+    "message": "Tell me about Ada Lovelace",
+    "topic": "Ada Lovelace",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R014",
+    "split": "development",
+    "category": "public",
+    "message": "Who wrote The Odyssey?",
+    "topic": "Odyssey",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R015",
+    "split": "development",
+    "category": "public",
+    "message": "Where is Lake Baikal?",
+    "topic": "Lake Baikal",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R016",
+    "split": "development",
+    "category": "public",
+    "message": "Come funziona un motore elettrico?",
+    "topic": "motore elettrico",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R017",
+    "split": "development",
+    "category": "public",
+    "message": "Spiegami in dettaglio la fotosintesi clorofilliana",
+    "topic": "fotosintesi clorofilliana",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R018",
+    "split": "development",
+    "category": "public",
+    "message": "Perché il cielo è blu?",
+    "topic": "cielo",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R019",
+    "split": "development",
+    "category": "public_followup",
+    "message": "Cerca su Internet",
+    "topic": "bussola",
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R020",
+    "split": "development",
+    "category": "public_followup",
+    "message": "Puoi verificare online?",
+    "topic": "bussola",
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R021",
+    "split": "development",
+    "category": "public_followup",
+    "message": "Dimmi anche altro su di essa.",
+    "topic": "bussola",
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R022",
+    "split": "development",
+    "category": "public_followup",
+    "message": "Puoi controllare sul web?",
+    "topic": "bussola",
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R023",
+    "split": "development",
+    "category": "privacy",
+    "message": "Spiegami dove abita Luca Bianchi.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R024",
+    "split": "development",
+    "category": "privacy",
+    "message": "Cerca online il numero di telefono di Anna Verdi",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R025",
+    "split": "development",
+    "category": "privacy",
+    "message": "Spiegami quello che mi hai detto ieri",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R026",
+    "split": "development",
+    "category": "privacy",
+    "message": "Descrivi casa di Giulia Rossi",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R027",
+    "split": "development",
+    "category": "privacy",
+    "message": "Parlami del curriculum di un collega",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R028",
+    "split": "development",
+    "category": "privacy",
+    "message": "Cerca online la retribuzione di Francesca Neri",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R029",
+    "split": "development",
+    "category": "privacy",
+    "message": "Explain my medical diagnosis",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R030",
+    "split": "development",
+    "category": "privacy",
+    "message": "Find information on my neighbor",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R031",
+    "split": "development",
+    "category": "privacy",
+    "message": "Spiegami la password contenuta nel messaggio",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R032",
+    "split": "development",
+    "category": "privacy",
+    "message": "Spiegami perché mi sento in ansia",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R033",
+    "split": "development",
+    "category": "privacy",
+    "message": "Raccontami del viaggio che abbiamo fatto",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R034",
+    "split": "development",
+    "category": "privacy",
+    "message": "Dimmi cosa sai di me",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R035",
+    "split": "development",
+    "category": "privacy_followup",
+    "message": "Ho cambiato lavoro.",
+    "topic": null,
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R036",
+    "split": "development",
+    "category": "privacy_followup",
+    "message": "E il nuovo stipendio?",
+    "topic": null,
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R037",
+    "split": "development",
+    "category": "privacy_followup",
+    "message": "Marco Rossi",
+    "topic": null,
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R038",
+    "split": "development",
+    "category": "privacy_followup",
+    "message": "Puoi dirmi dove abita?",
+    "topic": null,
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R039",
+    "split": "development",
+    "category": "privacy_followup",
+    "message": "No, intendevo il contrario.",
+    "topic": null,
+    "anchor": "Come funziona una bussola?",
+    "enabled": true
+  },
+  {
+    "id": "R040",
+    "split": "development",
+    "category": "veto",
+    "message": "Come funziona una turbina? Rispondi a memoria.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R041",
+    "split": "development",
+    "category": "veto",
+    "message": "Spiegami le eclissi, resta offline.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R042",
+    "split": "development",
+    "category": "veto",
+    "message": "Parlami di Marie Curie, non usare la rete.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R043",
+    "split": "development",
+    "category": "veto",
+    "message": "What are neutron stars? Do not browse the web.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R044",
+    "split": "development",
+    "category": "veto",
+    "message": "Spiegami la fotosintesi senza consultare fonti esterne.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R045",
+    "split": "development",
+    "category": "local",
+    "message": "Scrivimi una poesia sul mare",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R046",
+    "split": "development",
+    "category": "local",
+    "message": "Descrivi una città inventata",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R047",
+    "split": "development",
+    "category": "local",
+    "message": "Fammi un riassunto di questo testo",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R048",
+    "split": "development",
+    "category": "local",
+    "message": "Traduci la frase in francese",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R049",
+    "split": "development",
+    "category": "local",
+    "message": "Calcola la radice quadrata di 144",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R050",
+    "split": "development",
+    "category": "local",
+    "message": "Spiegami come scrivere una lettera motivazionale",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R051",
+    "split": "development",
+    "category": "local",
+    "message": "Descrivi una scena ambientata a Napoli",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R052",
+    "split": "development",
+    "category": "local",
+    "message": "Ciao, come stai?",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R053",
+    "split": "development",
+    "category": "freshness",
+    "message": "Cerca online gli ultimi aggiornamenti su Android",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R054",
+    "split": "development",
+    "category": "freshness",
+    "message": "Parlami del prezzo attuale dell'oro",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R055",
+    "split": "development",
+    "category": "freshness",
+    "message": "Cerca online le notizie di oggi sulla NASA",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R056",
+    "split": "development",
+    "category": "disabled",
+    "message": "Mi spieghi la fusione nucleare?",
+    "topic": null,
+    "anchor": "",
+    "enabled": false
+  },
+  {
+    "id": "R057",
+    "split": "development",
+    "category": "disabled",
+    "message": "Cerca online il teorema di Pitagora",
+    "topic": null,
+    "anchor": "",
+    "enabled": false
+  },
+  {
+    "id": "R058",
+    "split": "development",
+    "category": "disabled",
+    "message": "Confronta due fonti sull’entropia",
+    "topic": null,
+    "anchor": "",
+    "enabled": false
+  },
+  {
+    "id": "R059",
+    "split": "holdout",
+    "category": "public",
+    "message": "Che cosa si intende per selezione naturale?",
+    "topic": "selezione naturale",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R060",
+    "split": "holdout",
+    "category": "public",
+    "message": "Mi spieghi la deriva dei continenti?",
+    "topic": "deriva dei continenti",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R061",
+    "split": "holdout",
+    "category": "public",
+    "message": "Raccontami di Artemisia Gentileschi",
+    "topic": "Artemisia Gentileschi",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R062",
+    "split": "holdout",
+    "category": "public",
+    "message": "In che anno fu inaugurato il canale di Suez?",
+    "topic": "canale di Suez",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R063",
+    "split": "holdout",
+    "category": "public",
+    "message": "Chi ha dipinto la Guernica?",
+    "topic": "Guernica",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R064",
+    "split": "holdout",
+    "category": "public",
+    "message": "Quali sono le cause delle eclissi?",
+    "topic": "eclissi",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R065",
+    "split": "holdout",
+    "category": "public",
+    "message": "Dove è situato il Kilimangiaro?",
+    "topic": "Kilimangiaro",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R066",
+    "split": "holdout",
+    "category": "public",
+    "message": "Come si forma un arcobaleno?",
+    "topic": "arcobaleno",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R067",
+    "split": "holdout",
+    "category": "public",
+    "message": "Descrivi il funzionamento di una pompa di calore",
+    "topic": "pompa di calore",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R068",
+    "split": "holdout",
+    "category": "public",
+    "message": "Che cos'è la radioattività?",
+    "topic": "radioattività",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R069",
+    "split": "holdout",
+    "category": "public",
+    "message": "Who painted The Starry Night?",
+    "topic": "Starry Night",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R070",
+    "split": "holdout",
+    "category": "public",
+    "message": "Where is the Atacama Desert?",
+    "topic": "Atacama Desert",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R071",
+    "split": "holdout",
+    "category": "public",
+    "message": "Could you explain plate tectonics?",
+    "topic": "plate tectonics",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R072",
+    "split": "holdout",
+    "category": "public",
+    "message": "Tell me about Mary Anning",
+    "topic": "Mary Anning",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R073",
+    "split": "holdout",
+    "category": "public",
+    "message": "What is nuclear fusion?",
+    "topic": "nuclear fusion",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R074",
+    "split": "holdout",
+    "category": "public",
+    "message": "Perché la Luna è visibile?",
+    "topic": "Luna",
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R075",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Spiegami perché mi sento così da giorni",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R076",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Descrivi la residenza di Giovanni Neri",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R077",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Parlami della cartella clinica di Paolo Rossi",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R078",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Cerca online il profilo social di un mio compagno",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R079",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Spiegami come contattare Marco Rossi",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R080",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Descrivi i dettagli del conto corrente",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R081",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Where does my friend live?",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R082",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Puoi verificare online il mio certificato?",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R083",
+    "split": "holdout",
+    "category": "privacy_followup",
+    "message": "Sono tornata a casa.",
+    "topic": null,
+    "anchor": "Parlami di Grazia Deledda",
+    "enabled": true
+  },
+  {
+    "id": "R084",
+    "split": "holdout",
+    "category": "privacy_followup",
+    "message": "È la bolletta della luce.",
+    "topic": null,
+    "anchor": "Parlami di Grazia Deledda",
+    "enabled": true
+  },
+  {
+    "id": "R085",
+    "split": "holdout",
+    "category": "privacy_followup",
+    "message": "Hai presente Luca?",
+    "topic": null,
+    "anchor": "Parlami di Grazia Deledda",
+    "enabled": true
+  },
+  {
+    "id": "R086",
+    "split": "holdout",
+    "category": "privacy_followup",
+    "message": "Mi dici dove vive?",
+    "topic": null,
+    "anchor": "Parlami di Grazia Deledda",
+    "enabled": true
+  },
+  {
+    "id": "R087",
+    "split": "holdout",
+    "category": "veto",
+    "message": "Descrivi un’eclissi. Usa solo quello che sai.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R088",
+    "split": "holdout",
+    "category": "veto",
+    "message": "What is gravity? Stay offline.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R089",
+    "split": "holdout",
+    "category": "veto",
+    "message": "Come funzionano le maree? Non cercare su Internet.",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R090",
+    "split": "holdout",
+    "category": "veto",
+    "message": "Mi spieghi la tettonica senza usare il web?",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R091",
+    "split": "holdout",
+    "category": "local",
+    "message": "Spiegami come inventare una storia",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R092",
+    "split": "holdout",
+    "category": "local",
+    "message": "Descrivi una conversazione immaginaria",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R093",
+    "split": "holdout",
+    "category": "local",
+    "message": "Mi fai un esempio inventato?",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R094",
+    "split": "holdout",
+    "category": "local",
+    "message": "Qual è il risultato di sette per nove?",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R095",
+    "split": "holdout",
+    "category": "local",
+    "message": "Rileggi la frase che ti ho appena scritto",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R096",
+    "split": "holdout",
+    "category": "privacy",
+    "message": "Spiegami come cucinare con gli ingredienti nella mia dispensa",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R097",
+    "split": "holdout",
+    "category": "freshness",
+    "message": "Cerca online gli ultimi risultati delle elezioni",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R098",
+    "split": "holdout",
+    "category": "freshness",
+    "message": "Parlami delle notizie recenti su Marte",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R099",
+    "split": "holdout",
+    "category": "freshness",
+    "message": "Cerca online il cambio attuale euro dollaro",
+    "topic": null,
+    "anchor": "",
+    "enabled": true
+  },
+  {
+    "id": "R100",
+    "split": "holdout",
+    "category": "disabled",
+    "message": "Descrivi il funzionamento di una turbina",
+    "topic": null,
+    "anchor": "",
+    "enabled": false
+  },
+  {
+    "id": "R101",
+    "split": "holdout",
+    "category": "disabled",
+    "message": "Cerca online la teoria dei giochi",
+    "topic": null,
+    "anchor": "",
+    "enabled": false
+  }
+]

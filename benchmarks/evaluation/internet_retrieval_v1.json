@@ -1,0 +1,20 @@
+[
+  {"id":"americhe","language":"it","query":"chi é stato il primo uomo a scoprire il continente americano","expected":["sconosciuto","norreni","1492"]},
+  {"id":"australia","language":"en","query":"Who was the first person to discover Australia","expected":["aboriginal","janszoon","james cook"]},
+  {"id":"luna","language":"en","query":"Who was the first person to walk on the Moon","expected":["neil armstrong"]},
+  {"id":"america_es","language":"es","query":"Quién fue la primera persona en descubrir América","expected":["habitantes","nórdicos","1492"]},
+  {"id":"europei","language":"it","query":"Chi fu il primo europeo a raggiungere il continente americano","expected":["norreni","terranova"]},
+  {"id":"spazio","language":"en","query":"Who was the first woman to fly in space","expected":["valentina tereshkova","1963"]},
+  {"id":"everest","language":"it","query":"Chi fu il primo uomo a scalare l Everest","expected":["hillary","norgay","1953"]},
+  {"id":"telefono","language":"en","query":"Who was the first person to invent the telephone","expected":["bell","meucci"]},
+  {"id":"nobel","language":"it","query":"Chi fu la prima donna a vincere un premio Nobel","expected":["marie curie","1903"]},
+  {"id":"penicillina","language":"en","query":"Who first discovered penicillin","expected":["fleming","1928"]},
+  {"id":"atlantico","language":"en","query":"Who was the first person to fly solo across the Atlantic","expected":["lindbergh","1927","solo"]},
+  {"id":"stampa","language":"es","query":"Quién fue la primera persona en inventar la imprenta","expected":["bi sheng","gutenberg","1377"]},
+  {"id":"medaglia_fields","language":"en","query":"Who was the first woman to win the Fields Medal","expected":["maryam mirzakhani"]},
+  {"id":"rust","language":"en","query":"Rust cargo test documentation","expected":["test"]},
+  {"id":"relativita","language":"en","query":"Who first discovered gravitational waves","expected":["ligo","2015"]},
+  {"id":"atlantico_donna","language":"en","query":"Who was the first woman to fly solo across the Atlantic","expected":["amelia earhart","1932"]},
+  {"id":"mozilla","language":"en","query":"Firefox Mozilla HTTPS-Only Mode","expected":["https-only mode","secure"],"hosts":["support.mozilla.org"]},
+  {"id":"css","language":"en","query":"CSS container queries","expected":["container","size"],"hosts":["developer.mozilla.org","www.w3.org","web.dev"]}
+]

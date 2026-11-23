@@ -88,13 +88,13 @@ def test_literal_question_navigation_skips_models_and_persists_reference(core):
     core.decision_runtime.route.assert_not_called()
 
 
-def test_name_meaning_describes_allma_separately_from_llm(core):
+def test_name_meaning_uses_the_documented_project_name(core):
     conversation=core.start_conversation('u')
     core.decision_runtime.route=Mock(side_effect=AssertionError('No model for origin identity'))
     reply=core.process_message('u',conversation,'Cosa significa ALLMA?')
     assert reply.is_valid and reply.metadata['source']=='origin_identity'
-    assert 'è il mio nome' in reply.content
-    assert 'separato dalla mia identità' in reply.content
+    from allma_model.core.autobiographical_identity import ORIGIN
+    assert ORIGIN.name_expansion in reply.content
     core.decision_runtime.route.assert_not_called()
 
 

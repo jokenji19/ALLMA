@@ -1,0 +1,26 @@
+use_default_settings:
+  engines:
+    keep_only: [mwmbl, wikipedia, wikidata, arxiv, europepmc]
+
+general:
+  instance_name: ALLMA
+  contact_url: https://github.com/jokenji19/ALLMA
+  debug: false
+
+server:
+  bind_address: "127.0.0.1"
+  port: 18767
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  formats: [json]
+
+outgoing:
+  request_timeout: 3.0
+  max_request_timeout: 4.0
+
+engines:
+  - name: mwmbl
+    disabled: false

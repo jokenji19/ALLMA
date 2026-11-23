@@ -1,0 +1,14 @@
+[
+  {"id":"ghiaccio","category":"scienza","language":"it","query":"Come mai un cubetto di ghiaccio resta a galla nell’acqua?","expected":[["densità minore","minore densità","meno denso","più bassa densità","densità inferiore","densità più bassa"]]},
+  {"id":"marte","category":"scienza","language":"es","query":"¿Por qué Marte se ve rojo?","expected":[["óxido de hierro","óxidos de hierro"],["rojo","rojizo","rojiza"]]},
+  {"id":"maree","category":"scienza","language":"en","query":"How do tides form?","expected":[["moon","lunar"],["gravity","gravitational","gravitation"]]},
+  {"id":"eclissi","category":"scienza","language":"it","query":"Come si verifica un’eclissi di Sole?","expected":["luna",["tra il sole e la terra","fra il sole e la terra","tra la terra e il sole","fra la terra e il sole","davanti al sole","oscura il sole"]]},
+  {"id":"magma","category":"scienza","language":"en","query":"How does magma become lava?","expected":["magma","lava",["surface","erupts","erupted"]]},
+  {"id":"velocita_luce","category":"scienza","language":"fr","query":"À combien s’élève la vitesse de la lumière dans le vide ?","expected":[["299 792 458","299792458","299 792 458","299 792","300 000"],["vide"]]},
+  {"id":"mitocondri","category":"scienza","language":"pt","query":"Para que servem as mitocôndrias?","expected":[["atp","adenosina trifosfato","trifosfato de adenosina"],["energia","respiração celular"]]},
+  {"id":"placche","category":"scienza","language":"de","query":"Warum entstehen Erdbeben entlang der Plattengrenzen?","expected":[["platten","erdplatten","tektonischen platten"],["spannung","spannungen","reibung","bewegung"]]},
+  {"id":"battery_pumped_hydro","category":"energia_e_ambiente","language":"en","query":"How does a pumped-storage hydroelectricity system work?","expected":[["water","reservoir"],["pumped","pump","pumping"],["turbine","electricity"]]},
+  {"id":"ozone","category":"energia_e_ambiente","language":"pt","query":"Para que serve a camada de ozono?","expected":[["ultravioleta","ultravioletas","uv"],["absorve","absorver","protege","filtra"]]},
+  {"id":"mars_en","category":"scienza","language":"en","query":"What makes Mars red?","expected":["iron",["rust","oxidize","oxidation"],"red"]},
+  {"id":"eclipse_en","category":"scienza","language":"en","query":"What causes a solar eclipse?","expected":["moon","sun","earth",["between","blocks"]]}
+]

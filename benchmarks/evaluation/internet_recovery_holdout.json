@@ -1,0 +1,12 @@
+[
+  {"id":"maastricht","category":"date","language":"en","query":"When was the Treaty of Maastricht signed","expected":["1992"]},
+  {"id":"rome","category":"date","language":"fr","query":"Quand le traité de Rome a-t-il été signé","expected":["1957"]},
+  {"id":"brasilia","category":"date","language":"pt","query":"Quando foi inaugurada Brasília","expected":["1960"]},
+  {"id":"muro_es","category":"date","language":"es","query":"Cuándo cayó el Muro de Berlín","expected":["1989"]},
+  {"id":"daphnis","category":"autori","language":"fr","query":"Qui a composé Daphnis et Chloé","expected":["ravel"]},
+  {"id":"fidelio","category":"autori","language":"de","query":"Wer komponierte Fidelio","expected":["beethoven"]},
+  {"id":"la_tregua","category":"autori","language":"es","query":"Quién escribió La tregua","expected":["mario benedetti"]},
+  {"id":"kerch","category":"luoghi","language":"en","query":"Which seas does the Strait of Kerch connect","expected":["black sea","sea of azov"]},
+  {"id":"titicaca","category":"luoghi","language":"it","query":"Tra quali paesi si trova il lago Titicaca","expected":["perù","bolivia"]},
+  {"id":"renoir","category":"autori","language":"it","query":"Chi ha dipinto La colazione dei canottieri","expected":["renoir"]}
+]

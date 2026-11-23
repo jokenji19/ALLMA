@@ -171,6 +171,12 @@ class ChatView(MDScreen):
                     if isinstance(data, dict):
                         msg_type = data.get('type')
                         action = data.get('action')
+                        if msg_type == 'action' and action in ('save_reference', 'list_saved_references'):
+                            self._handle_saved_reference(action, data)
+                            return
+                        if msg_type == 'action' and action == 'response_feedback':
+                            self._handle_response_feedback(data)
+                            return
                         if msg_type == 'action' and action == 'native_recovery_probe':
                             from allma_model.llm.native_health import recovery_probe
                             try:
@@ -542,8 +548,12 @@ class ChatView(MDScreen):
             # End Stream
             check_cancelled(turn.cancelled)
             from allma_model.core.learning_insights import response_origin
+            from allma_model.core.response_feedback import response_id
+            origin = response_origin(processed_response.metadata, processed_response.is_valid)
+            if processed_response.is_valid and processed_response.content.strip() and origin.get('kind') != 'research_choices':
+                origin['feedback_id'] = response_id(processed_response.metadata)
             self.bridge.end_stream(processed_response.content, turn.request_id,
-                origin=response_origin(processed_response.metadata, processed_response.is_valid),
+                origin=origin,
                 generation=(getattr(processed_response, 'metadata', None) or {}).get('generation', {}),
                 **({'plan_review':processed_response.metadata['goal_plan_review']}
                    if (getattr(processed_response,'metadata',None) or {}).get('goal_plan_review') else {}))
@@ -756,6 +766,69 @@ class ChatView(MDScreen):
             self.bridge.update_synergy(None, f'{count} messaggi tuoi registrati')
         except Exception as error:
             logging.debug('Learning activity unavailable: %s', error)
+
+    def _handle_saved_reference(self, action, data):
+        import json
+        from allma_model.core.learning_insights import saved_reference_page
+
+        request = data.get('request')
+        if type(request) is not int or not 0 < request < 2**31:
+            return
+        core, bridge = self.core, self.bridge
+        conversation = self.chat_session.conversation_id
+
+        def work():
+            result = {'action': action, 'request': request, 'ok': False}
+            try:
+                if action == 'save_reference':
+                    identifier, saved = data.get('id'), data.get('saved')
+                    core.set_reference_saved('user_default', conversation, identifier, saved)
+                    result.update(id=identifier, saved=saved)
+                else:
+                    archive = core.saved_references
+                    offset = data.get('offset', 0)
+                    if type(offset) is not int or not 0 <= offset < archive.LIMIT or offset % archive.PAGE_SIZE:
+                        raise ValueError
+                    page = saved_reference_page(archive, 'user_default', offset)
+                    for item in page['items']:
+                        if item['origin']['kind'] == 'web_search':
+                            core.public_references.register_web_links(item['origin']['sources'])
+                    result.update(page)
+                result['ok'] = True
+            except ValueError as error:
+                result['error'] = (str(error) if action == 'save_reference' else
+                                   'Non riesco a leggere le fonti salvate. Riprova.')
+            except Exception as error:
+                logging.warning('Saved references action failed: %s', type(error).__name__)
+            if bridge is self.bridge:
+                bridge.call_js_function('receiveSavedReferences', json.dumps(result))
+
+        Thread(target=work, daemon=True, name='ALLMA-SavedReferences').start()
+
+    def _handle_response_feedback(self, data):
+        import json
+
+        request = data.get('request')
+        if type(request) is not int or not 0 < request < 2**31:
+            return
+        core, bridge = self.core, self.bridge
+        conversation = self.chat_session.conversation_id
+        identifier = data.get('id')
+
+        def work():
+            result = {'action': 'response_feedback', 'request': request, 'id': identifier, 'ok': False}
+            try:
+                result['feedback'] = core.give_response_feedback(
+                    'user_default', conversation, identifier, data.get('vote'), data.get('note'))
+                result['ok'] = True
+            except ValueError as error:
+                result['error'] = str(error)
+            except Exception as error:
+                logging.warning('Response feedback unavailable: %s', type(error).__name__)
+            if bridge is self.bridge:
+                bridge.call_js_function('receiveSavedReferences', json.dumps(result))
+
+        Thread(target=work, daemon=True, name='ALLMA-ResponseFeedback').start()
 
     def _get_diagnostics_data(self):
         """Collects system stats and soul state for the Diagnostics Panel."""

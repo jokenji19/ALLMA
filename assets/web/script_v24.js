@@ -26,7 +26,7 @@ let cancelIssuedRequestId = null;
 
 const emptyChatMarkup = chatContainer.innerHTML;
 function updateComposer() {
-    document.getElementById('send-btn').disabled = chatBusy || !messageInput.value.trim();
+    document.getElementById('send-btn').disabled = chatBusy || window.webReferenceUI?.writePending || !messageInput.value.trim();
     document.getElementById('send-btn').hidden = chatBusy;
     document.getElementById('voice-mode-btn').hidden = chatBusy;
     messageInput.style.height = 'auto';
@@ -106,7 +106,7 @@ window.newChatFailed = function () {
 // --- MESSAGING ---
 function sendMessage() {
     if (window._nativeUpdateReply && window._nativeUpdateReply.reserved) return;
-    if (chatBusy || newChatPending) return;
+    if (chatBusy || newChatPending || window.webReferenceUI?.writePending) return;
     window.chatNotice('');
     const text = messageInput.value.trim();
     if (text) {
@@ -128,6 +128,16 @@ function sendMessage() {
             setTimeout(() => addMessage("Test response", 'bot', "Thinking..."), 1000);
         }
     }
+}
+
+function sendResearchChoice(query) {
+    if (chatBusy || newChatPending || window.webReferenceUI?.writePending || window._nativeUpdateReply?.reserved) return;
+    if (messageInput.value.trim()) {
+        window.chatNotice('Conserva o invia prima il messaggio che stai scrivendo.');
+        return;
+    }
+    messageInput.value = query;
+    sendMessage();
 }
 
 window.chatRejected = function (text) {
@@ -251,6 +261,8 @@ function attachMessageCopy(wrapper, text = null) {
         wrapper.appendChild(row);
     }
     button.hidden = !wrapper.copyText.trim();
+    window.learningUI?.attachSaveButton(wrapper, button.parentElement);
+    window.learningUI?.attachResponseFeedback?.(wrapper, button.parentElement);
 }
 
 function attachPlanReview(wrapper, review) {
@@ -292,7 +304,11 @@ function addMessage(text, sender, thoughtText, planReview = null, origin = null)
 
     const wrapper = clone.querySelector('.message-wrapper');
     if (sender === 'bot' && !String(text || '').trim()) attachUnresolvedTurn(wrapper, origin);
-    if (sender === 'bot') { attachPlanReview(wrapper, planReview); window.learningUI?.attachOrigin(wrapper, origin); }
+    if (sender === 'bot') {
+        attachPlanReview(wrapper, planReview);
+        window.learningUI?.attachOrigin(wrapper, origin);
+        window.webReferenceUI?.attachChoices?.(wrapper, origin, sendResearchChoice);
+    }
     attachMessageCopy(wrapper, text);
     prepareConversation();
     chatContainer.appendChild(wrapper);
@@ -1640,6 +1656,12 @@ function attachUnresolvedTurn(wrapper, origin = null) {
     label.textContent = origin?.kind === 'incomplete' && typeof origin.label === 'string'
         ? origin.label.slice(0, 120) : 'Risposta non completata';
     if (origin?.kind === 'incomplete' && typeof origin.detail === 'string') label.title = origin.detail.slice(0, 600);
+    if (origin?.label === 'Ricerca senza riscontro' && label.title) {
+        const detail = document.createElement('p');
+        detail.className = 'turn-source-status';
+        detail.textContent = label.title;
+        state.append(detail);
+    }
     const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = 'Modifica domanda';
     edit.addEventListener('click', () => {
         if (chatBusy || newChatPending || messageInput.value.trim()) return;
@@ -1648,7 +1670,7 @@ function attachUnresolvedTurn(wrapper, origin = null) {
         const question = previous?.querySelector('.content, .message-bubble');
         if (question) { messageInput.value = question.textContent; messageInput.focus(); }
     });
-    state.append(label, edit); wrapper.appendChild(state);
+    state.prepend(label); state.append(edit); wrapper.appendChild(state);
 }
 
 function attachCompletionAction(wrapper, requestId) {
@@ -1688,6 +1710,9 @@ window.endStream = function (finalContent, requestId = null, status = null, plan
     }
     if (currentStreamBubble) attachPlanReview(currentStreamBubble.content.closest('.message-wrapper'), planReview);
     if (currentStreamBubble) window.learningUI?.attachOrigin(currentStreamBubble.content.closest('.message-wrapper'), origin);
+    if (currentStreamBubble) {
+        window.webReferenceUI?.attachChoices?.(currentStreamBubble.content.closest('.message-wrapper'), origin, sendResearchChoice, true);
+    }
     isBackendFinished = true;
     if (typeof VoiceFX !== 'undefined' && VoiceFX.isActive && VoiceFX.isActive()) {
         // Native recognizer and playback callbacks own the voice state.

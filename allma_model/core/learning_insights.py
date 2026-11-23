@@ -12,13 +12,28 @@ def response_origin(metadata, valid=True):
     source = meta.get('source')
     if not valid or meta.get('is_valid') is False:
         if source=='reference_unavailable':
-            state=(meta.get('reference_review') or {}).get('retrieval_status')
+            reference = meta.get('reference_review') or {}
+            state = reference.get('retrieval_status')
             detail={'local_only':'Le ricerche sono disattivate per questa richiesta.',
                 'not_applicable':'Non ho identificato un argomento pubblico da cercare.',
                 'not_found':'La fonte non ha restituito un estratto pertinente.',
+                'insufficient_evidence':'Il testo trovato non copre il punto specifico della domanda.',
+                'lifespan_unverified':'Per stabilire l’età alla morte mi serve una fonte che riporti le date di nascita e morte o l’età.',
+                'freshness_unsupported':'La domanda richiede dati aggiornati. Le fonti disponibili per questo argomento non bastano per rispondere.',
+                'source_format_unsupported':'Per citare la fonte serve una risposta in testo libero. Puoi chiedere la verifica senza il vincolo di formato.',
+                'comparison_unsupported':'Non ho individuato un argomento pubblico confrontabile con le fonti richieste.',
+                'unavailable':'La fonte non ha risposto in tempo o ha restituito dati inutilizzabili.',
+                'search_partial':'Alcuni motori di ricerca non hanno risposto. Dai risultati arrivati non emerge un passaggio utilizzabile.',
+                'index_unavailable':'L’indice di ricerca non è disponibile in questo momento. Puoi riprovare tra poco.',
+                'no_new_evidence':'Le fonti consultate non aggiungono informazioni utilizzabili rispetto alla risposta precedente.',
                 'consent_revoked':'Il consenso è stato revocato durante la ricerca.'}.get(state,
                     'La consultazione non ha prodotto una fonte utilizzabile.')
-            return {'kind':'incomplete','label':'Ricerca senza riscontro','detail':detail+' Non è stata sostituita con fatti generati dal modello.'}
+            if reference.get('weather_context'):
+                detail = {
+                    'local_only': 'Le ricerche sono disattivate per questa richiesta. Il meteo richiede dati aggiornati.',
+                    'unavailable': 'Open-Meteo non ha fornito dati aggiornati utilizzabili per questa richiesta.',
+                }.get(state, detail)
+            return {'kind':'incomplete','label':'Ricerca senza riscontro','detail':detail}
         generation=meta.get('generation') if isinstance(meta.get('generation'),dict) else {}
         guard=meta.get('output_guard') if isinstance(meta.get('output_guard'),dict) else {}
         reason=generation.get('status') or guard.get('reason')
@@ -41,16 +56,59 @@ def response_origin(metadata, valid=True):
     if source in {'verified_calculation','verified_text_count'} and meta.get('knowledge_verified') is True:
         return {'kind':'computation','label':'Calcolo verificato',
             'detail':'Il risultato è stato calcolato da uno strumento di ALLMA, senza affidarlo alla generazione del modello.'}
-    if source == 'reference_excerpt':
+    saved = source == 'saved_reference_recall'
+    identifier = {'save_id': meta['reference_save_id']} if meta.get('reference_save_id') else {}
+    evidence = meta.get('reference_review') or {}
+    if source == 'research_choices' and isinstance(evidence.get('choices'), dict):
+        focus = evidence['choices']
+        return {'kind': 'research_choices', 'choices': focus.get('choices'), 'offline': focus.get('offline')}
+    if source == 'weather_data':
+        return {'kind':'weather', 'label':'Meteo da Open-Meteo',
+                'detail':'Condizioni stimate e previsioni del modello meteo per la località indicata.',
+                'citation':evidence.get('citation')}
+    if source == 'web_search' or (saved and evidence.get('basis') == 'web_passages'):
+        return {'kind':'web_search', 'label':'Dalle fonti salvate' if saved else 'Risultati dal web',
+                'detail':'Passaggi selezionati dalle fonti indicate. Le date, quando presenti, sono quelle delle pagine.',
+                'sources':evidence.get('sources', []), **identifier}
+    if source == 'reference_comparison' or (saved and (meta.get('reference_review') or {}).get('basis') == 'source_comparison'):
+        evidence = meta.get('reference_review') or {}
+        detail = ('Due edizioni collegate della stessa enciclopedia. I passaggi affiancati non costituiscono una verifica indipendente.'
+                  if evidence.get('scope') == 'linked_wikipedia_editions' else
+                  'Il confronto riguarda la stessa affermazione. I passaggi originali riportano la formulazione dei due documenti.')
+        return {'kind': 'reference_comparison', 'label': 'Dalle fonti salvate' if saved else 'Confronto tra fonti',
+                'detail': detail,
+                'outcome': evidence.get('outcome'), 'sources': evidence.get('sources', []),
+                'saved_reference': saved, **identifier}
+    if source in ('reference_excerpt', 'reference_calculation') or saved:
         evidence=meta.get('reference_review',{})
         from allma_model.utils.public_references import _url_allowed
+        from allma_model.utils.nasa_references import NASA_PAGES
         citation=evidence.get('citation') if isinstance(evidence,dict) else None
-        if isinstance(citation,dict) and _url_allowed(citation.get('url')):
-            return {'kind':'reference','label':'Estratto da una fonte pubblica',
-                'detail':('Fonte conservata sul dispositivo. ' if evidence.get('retrieval_status')=='cached' else 'Fonte consultata online. ')+
-                    'Il testo è riportato dalla pagina indicata, senza aggiunte del modello. Una fonte può contenere errori.',
-                'via':'cache' if evidence.get('retrieval_status')=='cached' else 'internet',
-                'citation':citation}
+        url = citation.get('url') if isinstance(citation,dict) else None
+        if url in NASA_PAGES.values() or _url_allowed(url):
+            retrieval = evidence.get('retrieval_status')
+            detail = ('Estratto recuperato dal tuo archivio. ' if saved else
+                      'Passaggio già citato in questa conversazione. ' if retrieval == 'history' else
+                      'Fonte conservata sul dispositivo. ' if evidence.get('retrieval_status')=='cached' else
+                      'Fonte consultata online. ')
+            if source == 'reference_calculation':
+                calculated = evidence.get('calculated') is True
+                return {'kind': 'reference', 'label': 'Età calcolata dalla fonte' if calculated else 'Età riportata dalla fonte',
+                        'detail': detail + ('Gli anni compiuti sono calcolati dalle date di nascita e morte.'
+                                            if calculated else 'Il passaggio citato riporta l’età alla morte.'),
+                        'citation': citation, 'via': {'cached':'cache', 'history':'history'}.get(retrieval, 'internet')}
+            if evidence.get('coverage') == 'one_subject':
+                detail += 'Questo passaggio documenta solo il lato del confronto indicato dal titolo. '
+            if url in NASA_PAGES.values():
+                detail += 'Estratto in inglese dalla pagina NASA Science. '
+            else:
+                detail += 'Il testo è riportato dalla pagina indicata. '
+            return {'kind':'reference','label':'Dalle fonti salvate' if saved else 'Estratto da una fonte pubblica',
+                'detail':detail+'Una fonte può contenere errori.',
+                'via':{'cached':'cache', 'history':'history'}.get(retrieval,'internet'), 'saved_reference':saved,
+                'citation':citation, 'coverage':evidence.get('coverage'), **identifier}
+    if source == 'saved_reference_lookup':
+        return {'kind':'system','label':'Archivio delle fonti','detail':'Ricerca eseguita nelle informazioni salvate sul dispositivo.'}
     if source in {'literal_user_memory','personal_fact','personal_fact_memory','personal_fact_recall','user_declaration','user_profile'}:
         return {'kind':'memory','label':'Ricordo riferito da te',
             'detail':'Proviene dalle tue dichiarazioni conservate. È un ricordo di ciò che hai riferito, non una verifica indipendente del fatto.'}
@@ -71,17 +129,32 @@ def response_origin(metadata, valid=True):
         memory_used = bool(meta.get('memory_score',0)) or bool(meta.get('memory_evidence_ids'))
         lookup=(meta.get('turn_review') or {}).get('reference_lookup',{})
         search_note=(' La consultazione online non ha restituito un riscontro utilizzabile.'
-            if lookup.get('status') in ('unavailable','not_found','consent_revoked') else '')
+            if lookup.get('network_used') and lookup.get('status') in
+            ('unavailable','not_found','consent_revoked','insufficient_evidence') else '')
         return {'kind':'model','label':'Generata dal modello',
             'detail':('Il modello ha formulato la risposta usando anche il contesto recuperato. ' if memory_used else
                 'Il modello ha formulato la risposta nel contesto della conversazione. ')+
                 'Questo non equivale a una verifica indipendente di ciò che afferma.'+search_note}
     if source in {'identity_core','origin_identity'}:
         return {'kind':'identity','label':'Identità di ALLMA', 'detail':'Proviene dal nucleo identitario stabile.'}
+    if source in {'project_origin', 'project_origin_explanation'}:
+        return {'kind':'identity','label':'Origine di ALLMA',
+                'detail':'Proviene dai dati documentati del progetto e dalla descrizione dei moduli locali.'}
     if source:
         return {'kind':'system','label':'Gestita da ALLMA',
             'detail':'È un risultato della gestione del dialogo o dello stato persistente. Non indica un nuovo fatto verificato.'}
     return {'kind':'unknown','label':'Origine non disponibile','detail':'Questo messaggio non conserva metadati sufficienti per ricostruirne l’origine.'}
+
+
+def saved_reference_page(archive, user, offset):
+    page_size = archive.PAGE_SIZE
+    rows = archive.entries(user, offset=offset, limit=page_size + 1)
+    return {
+        'offset': offset, 'has_more': len(rows) > page_size,
+        'items': [{'id': row['id'], 'title': row['title'], 'answer': row['answer'], 'saved_at': row['saved_at'],
+                   'origin': response_origin({'source': 'saved_reference_recall', 'reference_review': row['review']})}
+                  for row in rows[:page_size]],
+    }
 
 
 def _answers(recall, user, limit=12):
@@ -141,6 +214,13 @@ def snapshot(core, user):
             recent.append({'text':message.content[:200], 'detail':origin['label']+' · '+origin['detail']})
             if meta.get('source') in {'learning_feedback','literal_memory_control_ack','personal_fact_control_ack','tool_learning_feedback','literal_user_update_ack','literal_user_revocation_ack','personal_fact_revocation_ack'}:
                 corrections.append({'text':message.content[:200],'detail':'Riscontro conservato nella conversazione'})
+            state = meta.get('response_feedback') or {}
+            if state.get('note'):
+                corrections.append({'text':state['note'][:200], 'detail':'Correzione scritta da te'})
+            elif state.get('vote') == 'down':
+                corrections.append({'text':message.content[:200], 'detail':'Risposta segnalata'})
+            elif state.get('vote') == 'up':
+                corrections.append({'text':message.content[:200], 'detail':'Risposta apprezzata da te'})
         strategies = []
         learner = getattr(core,'meta_learner',None)
         tools = getattr(learner,'tool_learning',None)

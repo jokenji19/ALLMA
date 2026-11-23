@@ -146,6 +146,55 @@ def seed(core):
     return cid
 
 
+@pytest.mark.parametrize('question,language', [
+    ('Come si forma un arcobaleno?', 'it'), ('How does a rainbow form?', 'en'), ('¿Cómo se forma un arcoíris?', 'es'),
+    ('Comment se forme un arc-en-ciel ?', 'fr'), ('Was ist ein Regenbogen?', 'de'), ('Como se forma um arco-íris?', 'pt'),
+    ('Как образуется радуга?', 'ru'), ('كيف يتشكل قوس قزح؟', 'ar'), ('什么是彩虹？', 'zh'), ('虹とは何ですか？', 'ja'),
+])
+def test_independent_question_keeps_unrelated_requests_out_of_first_pass_and_repair(core, question, language):
+    from allma_model.core.autobiographical_identity import POLICY_VERSION
+
+    cid = core.start_conversation('test-owner')
+    memory = core.conversational_memory
+    memory.store_message(cid, '¿Quién es Zlatan Ibrahimović?', {}, 'user', 'test-owner')
+    memory.store_message(cid, 'Zlatan es un futbolista sueco.',
+        {'identity_policy': POLICY_VERSION, 'source': 'reference_excerpt'}, 'assistant', 'test-owner')
+    core.decision_runtime.route.return_value = {'status': 'selected', 'choice': 'memory'}
+    core._llm.generate.side_effect = ['[Fonte: Documentazione ufficiale del modello] Bozza.', NEW]
+    reply = core.process_message('test-owner', cid, question)
+
+    assert reply.is_valid
+    assert reply.metadata['turn_review']['repair_status'] == 'accepted'
+    assert reply.metadata['turn_review']['initial_issues'] == ['unbacked_source_claim']
+    assert reply.metadata['turn_review']['standalone_request']
+    for call in core._llm.generate.call_args_list:
+        assert 'Zlatan' not in call.kwargs['prompt']
+        assert question in call.kwargs['prompt']
+        assert core._language_instruction(language) in call.kwargs['prompt']
+    assert core.decision_runtime.route.call_args.args[1] == []
+    assert 'action_cycle' not in reply.metadata['decision']
+    assert memory.messages[0].content == '¿Quién es Zlatan Ibrahimović?'
+
+
+def test_pronominal_followup_keeps_the_latest_public_subject_and_skips_bogus_search(core):
+    from allma_model.core.autobiographical_identity import POLICY_VERSION
+
+    cid = core.start_conversation('test-owner')
+    memory = core.conversational_memory
+    for role, content in [('user', 'Che cos’è una bussola?'), ('assistant', OLD),
+                          ('user', 'Chi è Zlatan Ibrahimović?'), ('assistant', 'È un ex calciatore svedese.')]:
+        memory.store_message(cid, content, {'identity_policy': POLICY_VERSION}, role, 'test-owner')
+    core.public_references.configure(True)
+    core.public_references.reader = Mock()
+    core._llm.generate.return_value = 'Nel 2023 Ibrahimović ha annunciato il ritiro dal calcio giocato.'
+    reply = core.process_message('test-owner', cid, 'Perché ha lasciato il Milan?')
+    assert reply.is_valid and reply.metadata['turn_review']['purpose'] == 'followup'
+    prompt = core._llm.generate.call_args.kwargs['prompt']
+    assert 'Chi è Zlatan Ibrahimović?' in prompt and 'Perché ha lasciato il Milan?' in prompt
+    assert 'Che cos’è una bussola?' not in prompt
+    core.public_references.reader.fetch.assert_not_called()
+
+
 def test_actual_pipeline_repairs_instead_of_publishing_notice_or_draft(core):
     cid=seed(core);events=[]
     def draft(**kwargs):

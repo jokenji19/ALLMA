@@ -15,6 +15,8 @@ from allma_model.utils.persistence import sync_directory,StateRecoveryRequired
 
 class HistoryStore:
     VERSION=1
+    _CORRECTION_KEY = "json_extract(data,'$.metadata.response_feedback.question_key')"
+    _CORRECTION_OWNER = "json_extract(data,'$.user_id')"
     FIELDS={
         'messages':('conversation_id','role','content','timestamp','metadata','user_id'),
         'conversations':('id','user_id','timestamp','content','metadata'),
@@ -25,6 +27,7 @@ class HistoryStore:
         self.generation=None
         self.loaded=False
         self.read_error=None
+        self.correction_index = False
 
     @contextmanager
     def connect(self,readonly=False):
@@ -90,6 +93,16 @@ class HistoryStore:
                     if lock.read(32):
                         raise StateRecoveryRequired('History database missing after migration; restore a verified backup')
                     self._initialize_locked()
+                with self.connect() as db, db:
+                    try:
+                        db.execute(f'''CREATE INDEX IF NOT EXISTS history_response_correction
+                            ON history_messages ({self._CORRECTION_OWNER}, {self._CORRECTION_KEY}, position)
+                            WHERE {self._CORRECTION_KEY} IS NOT NULL''')
+                    except sqlite3.OperationalError as error:
+                        if 'no such function: json_extract' not in str(error):
+                            raise
+                    else:
+                        self.correction_index = True
                 lock.seek(0);lock.write(b'initialized\n');lock.flush();os.fsync(lock.fileno())
             finally:fcntl.flock(lock.fileno(),fcntl.LOCK_UN)
 
@@ -164,6 +177,24 @@ class HistoryStore:
 
     def check_current_generation(self):
         with self.connect(readonly=True) as db:self._check_generation(db)
+
+    def response_correction(self, owner, key, conversation=None):
+        conditions = [f'{self._CORRECTION_OWNER}=?', f'{self._CORRECTION_KEY}=?']
+        values = [owner, key]
+        if conversation is not None:
+            conditions.append("json_extract(data,'$.conversation_id')=?")
+            values.append(conversation)
+        where = ' AND '.join(conditions)
+        with self.connect(readonly=True) as db:
+            db.execute('BEGIN')
+            self._check_generation(db)
+            record = db.execute(
+                f'SELECT data FROM history_messages WHERE {where} ORDER BY position DESC LIMIT 1',
+                values).fetchone()
+        if record is None:
+            return None
+        row = self._decode_page('messages', None, record[0])
+        return row['metadata']['response_feedback'].get('note')
 
     def stream(self,kind,owner=None,*,reverse=False):
         """Read bounded pages, closing each transaction before yielding to callers.

@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -71,6 +72,25 @@ def test_names_in_stories_are_not_identity_changes(memory):
     assert not identity_conflict('Luna è un personaggio del racconto.')
 
 
+@pytest.mark.parametrize('text', [
+    'Mi chiamo ALLMA, un modello linguistico. Tu hai detto il tuo nome.',
+    'No, non sono timida. Sono un modello linguistico progettato per rispondere.',
+    'I’m a large language model.',
+    'Me llamo ALLMA, un modelo de lenguaje.',
+])
+def test_backend_cannot_take_the_identity_of_allma(text):
+    assert identity_conflict(text)
+
+
+@pytest.mark.parametrize('text', [
+    'Mi chiamo ALLMA. Uso un modello linguistico per conversare.',
+    'Il personaggio risponde: «Ciao! Sono un modello linguistico».',
+    'La parola modello indica, qui, un modello linguistico.',
+])
+def test_backend_mentions_are_not_self_identification(text):
+    assert not identity_conflict(text)
+
+
 def test_legacy_output_is_history_not_evidence(memory):
     add(memory, 'Il mio nome è Elena.', role='assistant', is_valid=True)
     assert not history_eligible(memory.messages[-1])
@@ -95,13 +115,91 @@ def test_core_grounded_answers_need_no_llm_and_preserve_conversation(core):
     for question in ['Come ti chiami?', 'Qual è il tuo nome?', 'Chi sei?']:
         events = []
         answer = core.process_message('u', conv, question, stream_callback=events.append)
-        assert answer.content == 'Mi chiamo ALLMA.'
+        assert answer.content.startswith('Mi chiamo ALLMA.')
+        assert ('assistente' in answer.content) == (question == 'Chi sei?')
         assert events == [{'type': 'answer', 'content': answer.content}]
     core._llm.generate.assert_not_called()
     core._ensure_mobile_llm.assert_not_called()
     assert len(core.conversational_memory.messages) == 6
     assert core.incremental_learner.knowledge_base == {}
     assert not core._user_active.is_set()
+
+
+def test_introduction_name_followup_and_style_stay_grounded(core):
+    cid = core.start_conversation('u')
+    turns = [
+        ('Piacere io mi chiamo Ada', 'user_declaration'),
+        ('Come mi chiamo?', 'user_declaration'),
+        ('E tu come ti chiami?', 'origin_identity'),
+        ('Mi piace il tuo nome', 'identity_name_reaction'),
+        ('Sei timida?', 'personality_self_description'),
+    ]
+    answers = [core.process_message('u', cid, question) for question, _ in turns]
+    assert [answer.metadata['source'] for answer in answers] == [source for _, source in turns]
+    assert all(answer.is_valid and answer.content for answer in answers)
+    assert 'Ada' in answers[0].content and 'Ada' in answers[1].content
+    assert answers[2].content == 'Mi chiamo ALLMA.'
+    assert answers[3].metadata['evidence'] == []
+    assert 'modo personale di rispondere' in answers[4].content
+    assert grounded_reply('A lei piace il tuo nome', core.conversational_memory, 'u') is None
+    core._llm.generate.assert_not_called()
+
+
+@pytest.mark.parametrize('question, reply', [
+    ("And you, what's your name?", 'My name is ALLMA.'),
+    ('¿Y tú, cómo te llamas?', 'Me llamo ALLMA.'),
+    ('Et toi, comment t’appelles-tu ?', 'Je m’appelle ALLMA.'),
+])
+def test_name_followup_does_not_need_personal_history(memory, question, reply):
+    assert grounded_reply(question, memory, 'u') == (reply, 'origin_identity', [])
+
+
+@pytest.mark.parametrize('question, followup', [
+    ('Chi ti ha progettato cosi?', 'Cosa vuol dire?'),
+    ('Who designed you?', 'What do you mean?'),
+    ('¿Quién te diseñó así?', '¿Qué significa eso?'),
+])
+def test_project_origin_followup_explains_learning_without_picking_up_the_name(core, question, followup):
+    root = Path(__file__).resolve().parents[2]
+    assert ORIGIN.name_expansion in (root / 'README.md').read_text()
+    assert ORIGIN.rights_holder in (root / 'LICENSE').read_text()
+    cid = core.start_conversation('u')
+    reply = core.process_message('u', cid, 'Cosa significa il tuo nome?')
+    assert ORIGIN.name_expansion in reply.content
+    origin = core.process_message('u', cid, question)
+    assert origin.metadata['source'] == 'project_origin'
+    assert ORIGIN.rights_holder in origin.content
+    explanation = core.process_message('u', cid, followup)
+    assert explanation.metadata['source'] == 'project_origin_explanation'
+    assert explanation.is_valid and explanation.content
+    assert ORIGIN.name_expansion not in explanation.content and explanation.content != origin.content
+    core._llm.generate.assert_not_called()
+
+
+@pytest.mark.parametrize('questions,name_prefix', [
+    (('Sai chi sei?', 'E cosa significa il tuo nome?', 'Ti piace il tuo nome?'), 'Mi chiamo'),
+    (('Who are you?', 'And what does your name mean?', 'Do you like your name?'), 'My name is'),
+    (('¿Sabes quién eres?', '¿Y qué significa tu nombre?', '¿Te gusta tu nombre?'), 'Me llamo'),
+    (('Sais-tu qui tu es ?', 'Et que veut dire ton nom ?', 'Aimes-tu ton nom ?'), 'Je m’appelle'),
+    (('Wer bist du?', 'Was bedeutet dein Name?', 'Magst du deinen Namen?'), 'Ich heiße'),
+    (('Quem é você?', 'E o que significa o seu nome?', 'Você gosta do seu nome?'), 'O meu nome é'),
+    (('Ты знаешь, кто ты?', 'И что означает твоё имя?', 'Тебе нравится твоё имя?'), 'Меня зовут'),
+    (('هل تعرف من أنت؟', 'وما معنى اسمك؟', 'هل يعجبك اسمك؟'), 'اسمي'),
+    (('你知道你是谁吗？', '你的名字是什么意思？', '你喜欢自己的名字吗？'), '我叫'),
+    (('自分が誰か知っていますか？', 'あなたの名前の意味は何ですか？', '自分の名前が好きですか？'), '私の名前は'),
+])
+def test_questions_about_origin_and_name_preference_ignore_public_biography(core, questions, name_prefix):
+    cid = core.start_conversation('u')
+    memory = core.conversational_memory
+    memory.store_message(cid, '¿Quién es Zlatan Ibrahimović?', {}, 'user', 'u')
+    memory.store_message(cid, 'Zlatan es un futbolista sueco.',
+        {'identity_policy': POLICY_VERSION, 'source': 'reference_excerpt'}, 'assistant', 'u')
+    answers = [core.process_message('u', cid, question) for question in questions]
+    assert answers[0].content.startswith(name_prefix)
+    assert [reply.metadata['source'] for reply in answers] == ['origin_identity', 'origin_identity', 'no_evidence']
+    assert all('ALLMA' in reply.content and 'Zlatan' not in reply.content for reply in answers)
+    assert memory.messages[1].content.startswith('Zlatan')
+    core._llm.generate.assert_not_called()
 
 
 def test_core_rejects_false_identity_before_answer_stream_and_learning(core):
@@ -152,7 +250,8 @@ def test_multiple_chats_keep_name_and_current_user_evidence(core):
     core.process_message('u', a, 'Mi chiamo Ada.')
     b = core.start_conversation('u')
     assert 'Ada' in core.process_message('u', b, 'Come mi chiamo?').content
-    assert core.process_message('u', b, 'Chi sei?').content == 'Mi chiamo ALLMA.'
+    role = core.process_message('u', b, 'Chi sei?').content
+    assert role.startswith('Mi chiamo ALLMA.') and 'assistente' in role
     c = core.start_conversation('other')
     assert 'Non conosco' in core.process_message('other', c, 'Come mi chiamo?').content
 

@@ -98,14 +98,36 @@ jobs:
           # Regenerate the embedded sources before compiling the APK.
           python3 pack_brain.py
 
+          # Reuse the runner's provisioned SDK with the project versions.
+          # A fresh SDK lets Buildozer select newer tools and prompt for licenses.
+          runner_sdk="${ANDROID_HOME:?Android SDK missing from GitHub runner}"
+          build_sdk="$RUNNER_TEMP/allma-android-sdk"
+          install -d "$build_sdk/build-tools" "$build_sdk/platforms" "$build_sdk/cmdline-tools" "$build_sdk/tools/bin"
+          cp -a "$runner_sdk/build-tools/34.0.0" "$build_sdk/build-tools/"
+          cp -a "$runner_sdk/platforms/android-34" "$build_sdk/platforms/"
+          cp -a "$runner_sdk/platform-tools" "$runner_sdk/licenses" "$build_sdk/"
+          cp -aL "$runner_sdk/cmdline-tools/latest" "$build_sdk/cmdline-tools/latest"
+          test -x "$build_sdk/build-tools/34.0.0/aidl"
+          test -x "$build_sdk/cmdline-tools/latest/bin/sdkmanager"
+          # This Buildozer image looks for the legacy tools/bin path.
+          cat > "$build_sdk/tools/bin/sdkmanager" <<'SH'
+          #!/bin/sh
+          exec "$(dirname "$0")/../../cmdline-tools/latest/bin/sdkmanager" "$@"
+          SH
+          chmod +x "$build_sdk/tools/bin/sdkmanager"
+
           # Run buildozer inside the official Kivy Docker container
           docker run --rm \
             --user "$(id -u):$(id -g)" \
             --volume "$PWD":/home/user/hostcwd \
+            --volume "$build_sdk":/opt/allma-android-sdk \
             --workdir /home/user/hostcwd \
             --env HOME=/tmp/allma-build-home \
             --env APP_ANDROID_NDK_PATH= \
-            --env APP_ANDROID_SDK_PATH= \
+            --env APP_ANDROID_SDK_PATH=/opt/allma-android-sdk \
+            --env APP_ANDROID_SKIP_UPDATE=True \
+            --env ANDROID_HOME=/opt/allma-android-sdk \
+            --env ANDROID_SDK_ROOT=/opt/allma-android-sdk \
             --entrypoint /bin/bash \
             ghcr.io/kivy/buildozer@sha256:d5b9d1b5e3241fc6ec8eb78b8ecff9e975054645e26c07075c0a60d18c471c1f \
             -c 'set -eu

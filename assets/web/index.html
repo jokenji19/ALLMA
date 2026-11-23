@@ -8,11 +8,11 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ALLMA AI</title>
     <!-- Use v24 assets -->
-    <link rel="stylesheet" href="style_v24.css?v=62">
+    <link rel="stylesheet" href="style_v24.css?v=63">
     <link rel="stylesheet" href="settings_ui.css">
     <link rel="stylesheet" href="brain_view.css">
 
-    <link rel="stylesheet" href="sky.css?v=62">
+    <link rel="stylesheet" href="sky.css?v=67">
     <link rel="stylesheet" href="screens.css">
 
     <style>
@@ -459,6 +459,11 @@
         <div class="screen-content learning-layout">
             <p class="section-desc">La mia esperienza cresce con i tuoi riscontri. Qui vedi ciò che è documentato, le correzioni e l’origine delle risposte.</p>
             <button type="button" class="learning-refresh" onclick="learningUI.refresh()">Aggiorna</button>
+            <section class="learning-section" aria-labelledby="saved-references-title">
+                <h2 id="saved-references-title">Informazioni salvate</h2>
+                <p id="saved-references-status" class="section-desc" role="status"></p>
+                <div id="saved-references-content"></div>
+            </section>
             <div id="learning-content" aria-live="polite"><p>Apri questa pagina per consultare l’apprendimento.</p></div>
             <p class="section-desc learning-footnote">Le conferme personali sono esperienze, non prove universali. Il modello linguistico mantiene i suoi pesi: memoria e strategie appartengono ad ALLMA.</p>
         </div>
@@ -631,11 +636,15 @@
                 <h4>Locale, con una finestra sul mondo</h4>
                 <p>Identità, memoria e modelli restano sul dispositivo. Se lo consenti, ALLMA può cercare autonomamente informazioni generali quando riconosce un argomento da consultare.</p>
                 <div class="setting-item"><span>Consenti le ricerche online</span>
-                    <label class="apple-switch"><input type="checkbox" id="web-access-toggle" aria-label="Consenti le ricerche online" onchange="webReferenceUI.configure(this.checked)"><span class="slider round"></span></label>
+                    <label class="apple-switch"><input type="checkbox" id="web-access-toggle" aria-label="Consenti le ricerche online" onchange="webReferenceUI.configure(this.checked)" disabled><span class="slider round"></span></label>
                 </div>
-                <p id="web-access-status" class="section-desc" role="status" aria-live="polite">Modalità locale. Le ricerche online sono disattivate.</p>
-                <p class="section-desc">Per ora la fonte è Wikipedia. Viene inviato l’argomento ricavato dalla domanda, senza inviare la conversazione completa o l’archivio personale. Le richieste personali riconosciute restano locali.</p>
-                <p class="section-desc">Apri «Origine» sotto una risposta per vedere la fonte. Le pagine già consultate possono essere riutilizzate localmente per 24 ore. Disattivando questa opzione, ALLMA non avvia nuove ricerche e scarta gli esiti online ancora in arrivo.</p>
+                <p id="web-access-status" class="section-desc" role="status" aria-live="polite">Controllo la preferenza…</p>
+                <p class="section-desc">ALLMA può consultare Wikipedia, fonti ufficiali e Open-Meteo. Per il meteo il servizio riceve la località indicata e le coordinate del centro abitato.</p>
+                <div class="setting-item"><span>Ricerca web generale</span>
+                    <label class="apple-switch"><input type="checkbox" id="web-expanded-toggle" aria-label="Ricerca web generale" onchange="webReferenceUI.configureExpanded(this.checked)" disabled><span class="slider round"></span></label>
+                </div>
+                <p class="section-desc">Con il globo acceso, ALLMA può cercare anche quando fai una domanda su un argomento pubblico. Invia i termini della ricerca ai servizi consultati. Il telefono può consultare fonti pubbliche e l’indice Mwmbl. Se è collegato un servizio SearXNG locale, ALLMA può usare anche quello.</p>
+                <p class="section-desc">Apri «Origine» sotto una risposta per vedere la fonte. Gli estratti di Wikipedia possono essere riutilizzati dalla copia locale per 24 ore. Spegnendo il globo, ALLMA ferma le nuove ricerche e scarta gli esiti online ancora in arrivo.</p>
             </section>
         </div><div class="settings-detail" data-settings-page="notifications" hidden><section class="settings-section" id="notification-settings">
                 <h4>Notifiche</h4>
@@ -737,11 +746,17 @@
 
         <!-- Input Area -->
         <div id="chat-notice" role="status" aria-live="polite"></div>
-        <div class="chat-caption"><span id="network-activity" class="network-activity" data-state="local" role="status" aria-live="polite" aria-busy="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="10" cy="10" r="7"/><ellipse cx="10" cy="10" rx="3" ry="7"/><path d="M3 10h14"/></svg><span>Locale</span></span></div>
+        <div class="chat-caption">
+            <span id="network-activity" class="network-activity" data-state="local" role="status" aria-live="polite" aria-busy="false"></span>
+            <span id="composer-internet-error" role="status" aria-live="polite"></span>
+        </div>
         <div id="input-area">
             <div class="capsule">
                 <textarea id="message-input" rows="2" placeholder="Come posso aiutarti?" aria-label="Messaggio per ALLMA" autocomplete="off" enterkeyhint="send" onkeydown="handleInputKey(event)"></textarea>
                 <button id="composer-model" type="button" aria-label="Scegli il modello di ALLMA" onclick="appNav.go('settings/model')"><span id="composer-model-name">Modello locale</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
+                <button id="composer-internet" type="button" aria-label="Internet" aria-pressed="false" title="Controllo la preferenza Internet…" onpointerdown="event.preventDefault()" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="3.8" ry="8.5"/><path d="M3.5 12h17"/></svg>
+                </button>
                 <button id="voice-mode-btn" class="icon-button" aria-label="Apri modalità vocale" onclick="openVoiceMode()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path stroke-linecap="round" d="M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6"/></svg></button>
                 <button id="send-btn" type="button" onpointerdown="event.preventDefault()" aria-label="Invia messaggio" onclick="sendMessage()" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m-6 6 6-6 6 6"/></svg></button>
                 <button id="cancel-generation-btn" type="button" hidden onpointerdown="armCancelGeneration()" onpointercancel="disarmCancelGeneration()" onclick="cancelGeneration(event)">Interrompi</button>
@@ -779,7 +794,7 @@
 <option value="turn_reasoning">Dialogo e revisione · 4 scenari</option>
 <option value="checkin">Dialogo e contesto · 6 risposte e 2 controlli</option>
 <option value="public_references">Internet e fonti · prova isolata · 1 ricerca pubblica</option>
-<option value="internet_chat">Chat con Internet · 6 turni isolati</option>
+<option value="internet_chat">Chat con Internet · 45 turni isolati</option>
 <option value="learning_evolution">Apprendimento e curiosità · scenari nuovi</option>
 <option value="runtime_followup">CPU e temperatura · prova breve</option>
 <option value="long_session">Sessione lunga · 25 minuti · chat e voce</option>
@@ -823,7 +838,7 @@
 </optgroup></select>
                 </div>
                 <p id="benchmark-decider-note" class="section-desc" hidden>La prova del decisore usa esempi sintetici e scarica il modello da 529 MB se manca. Puoi attivarlo in Impostazioni → Modello di ALLMA.</p>
-                <p id="benchmark-web-note" class="section-desc" hidden>Questa prova consulta Wikipedia su argomenti pubblici sintetici, anche con le ricerche disattivate nell’app. Usa un archivio temporaneo e lascia invariata la tua preferenza Internet.</p>
+                <p id="benchmark-web-note" class="section-desc" hidden>Le prove consultano fonti pubbliche su argomenti sintetici. Usano un archivio temporaneo e lasciano invariata la tua preferenza Internet.</p>
                 <button type="button" id="benchmark-start" class="benchmark-button" onclick="startBenchmark()">
                     <div class="action-label">
                         <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h11v16H8a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z"/><path d="M8 4v16M11 9h5M11 13h5"/></svg></span>

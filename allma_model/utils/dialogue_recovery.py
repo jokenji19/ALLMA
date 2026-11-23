@@ -21,9 +21,10 @@ def _plain(text):
 
 def clarification_question(message):
     return _plain(message) in {
-        'cosa intendi', 'che significa', 'cosa significa',
+        'cosa intendi', 'che significa', 'cosa significa', 'cosa vuol dire', 'cosa vuoi dire', 'in che senso',
         'perché hai bloccato la risposta', 'perche hai bloccato la risposta',
-        'what do you mean', 'why was the answer blocked',
+        'what do you mean', 'what does that mean', 'why was the answer blocked',
+        'qué quieres decir', 'qué significa eso', 'a qué te refieres',
     }
 
 

@@ -10,7 +10,7 @@ import re
 
 from .output_contract import requested_contract, requested_sentence_count, sentence_count
 
-VERSION = 2
+VERSION = 3
 _REQUESTS_ANALYSIS = re.compile(
     r'\b(?:prompt|istruzioni|controll[oi]|validazion\w*|verifiche|ragionamento|'
     r'come ragioni|come rispondi|perché hai|perche hai|why did you|how do you|'
@@ -21,6 +21,8 @@ _COMMENTARY = re.compile(
     r'|(?:devo|dovrei)\s+(?:rispondere|rispettare|distinguere|evitare)\b.*'
     r'\b(?:utente|formato|istruzioni|esperienz\w*)\b'
     r'|i (?:have not verified whether the user|(?:need|should|must) (?:respond|answer) to the user)\b)', re.I)
+_CONTINUATION_SCAFFOLD = re.compile(
+    r'^\s*\[(?:Risposta precedente incompleta\b[^\]\n]*|Nuovo evento\s*:[^\]\n]*)\]\s*', re.I)
 
 
 @dataclass(frozen=True)
@@ -40,9 +42,15 @@ class Projection:
 
 
 def project_answer(text, request, continuity=None):
-    if (not text or _REQUESTS_ANALYSIS.search(request) or requested_contract(request) == 'json'
-            or sentence_count(text) is None):
+    if not text or _REQUESTS_ANALYSIS.search(request) or requested_contract(request) == 'json':
         return Projection(text)
+    scaffold = []
+    if continuity is not None and continuity.continuation:
+        while match := _CONTINUATION_SCAFFOLD.match(text):
+            scaffold.append(hashlib.sha256(match[0].strip().encode()).hexdigest())
+            text = text[match.end():]
+    if not text or sentence_count(text) is None:
+        return Projection(text, tuple(scaffold), ('continuation_scaffold',) if scaffold else ())
     # Only complete sentences with conventional boundaries are eligible. Mixed
     # factual/technical clauses remain intact for normal output validation.
     removed, spans = [], []
@@ -58,8 +66,8 @@ def project_answer(text, request, continuity=None):
     for begin, end in spans:
         result.append(text[start:begin]); start = end
     result.append(text[start:])
-    projection = Projection(''.join(result).strip(), tuple(removed),
-                            ('internal_commentary',) if removed else ())
+    reasons = (('continuation_scaffold',) if scaffold else ()) + (('internal_commentary',) if removed else ())
+    projection = Projection(''.join(result).strip(), tuple(scaffold + removed), reasons)
     return _remove_reasked_checkin(projection,request,continuity)
 
 

@@ -1,0 +1,14 @@
+[
+  {"id":"eiffel","category":"date","language":"en","query":"When was the Eiffel Tower opened","expected":["1889"]},
+  {"id":"prima_guerra","category":"date","language":"it","query":"Quando è iniziata la Prima guerra mondiale","expected":["1914"]},
+  {"id":"charte_onu","category":"date","language":"fr","query":"Quand la Charte des Nations unies a-t-elle été signée","expected":["26 juin 1945"]},
+  {"id":"constantinopla","category":"date","language":"es","query":"Cuándo cayó Constantinopla","expected":["1453"]},
+  {"id":"pride_and_prejudice","category":"autori","language":"en","query":"Who wrote Pride and Prejudice","expected":["Jane Austen"]},
+  {"id":"promessi_sposi","category":"autori","language":"it","query":"Chi ha scritto I promessi sposi","expected":["Alessandro Manzoni"]},
+  {"id":"liberte","category":"autori","language":"fr","query":"Qui a peint La Liberté guidant le peuple","expected":[["Eugène Delacroix","Delacroix"]]},
+  {"id":"dom_casmurro","category":"autori","language":"pt","query":"Quem escreveu Dom Casmurro","expected":["Machado de Assis"]},
+  {"id":"zauberfloete","category":"autori","language":"de","query":"Wer komponierte Die Zauberflöte","expected":[["Wolfgang Amadeus Mozart","Mozart"]]},
+  {"id":"canada","category":"luoghi","language":"fr","query":"Quelle est la capitale du Canada","expected":["Ottawa"]},
+  {"id":"amazonas","category":"luoghi","language":"es","query":"Dónde desemboca el río Amazonas","expected":[["océano atlántico","atlántico"]]},
+  {"id":"vesuv","category":"luoghi","language":"de","query":"In welchem Land liegt der Vesuv","expected":[["italien","italiens"]]}
+]

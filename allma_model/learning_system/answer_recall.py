@@ -211,13 +211,14 @@ class AnswerRecall:
                 self.delivery_checkpoint = previous_checkpoint
                 raise
 
-    def feedback(self, key, user, event, positive):
+    def feedback(self, key, user, event, positive, *, answer=None):
         with self.lock:
             if self.load_error is not None:
                 return False
             if self._store is not None:
                 def update(previous):
-                    if previous is None or previous['user'] != user:
+                    if (previous is None or previous['user'] != user
+                            or (answer is not None and previous['answer'] != answer)):
                         return None
                     record = deepcopy(previous)
                     if not positive:
@@ -228,7 +229,7 @@ class AnswerRecall:
                     return record
                 return self._persist_update(key, update)
             record = deepcopy(self.records.get(key))
-            if not record or record['user'] != user:
+            if not record or record['user'] != user or (answer is not None and record['answer'] != answer):
                 return False
             original = self.records
             self.records = dict(original, **{key: record})

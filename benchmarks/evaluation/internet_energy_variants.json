@@ -1,0 +1,10 @@
+[
+  {"id":"eolica","category":"energia_e_ambiente","language":"it","query":"Come genera elettricità una turbina eolica?","expected":[["vento","eolica"],["generatore","elettricità","energia elettrica"],["rotore","pale","elica","turbina"]]},
+  {"id":"fotovoltaico","category":"energia_e_ambiente","language":"es","query":"¿Cómo funciona un panel solar fotovoltaico?","expected":[["luz solar","radiación solar","efecto fotovoltaico"],["electricidad","energía eléctrica","corriente eléctrica"]]},
+  {"id":"paris_agreement","category":"energia_e_ambiente","language":"en","query":"What warming target does the Paris Agreement set?","expected":[["1.5","1.5°c","1.5 degrees"],["2°c","2 degrees","2 °c"]]},
+  {"id":"geotermia","category":"energia_e_ambiente","language":"it","query":"Da dove viene l’energia geotermica?","expected":[["calore della terra","calore terrestre","calore interno","calore naturale","calore del sottosuolo"]]},
+  {"id":"pompe_chaleur","category":"energia_e_ambiente","language":"fr","query":"Comment une pompe à chaleur transfère la chaleur ?","expected":[["chaleur","thermique"],["compresseur","compression","fluide frigorigène","transfert"]]},
+  {"id":"battery_pumped_hydro","category":"energia_e_ambiente","language":"en","query":"How does a pumped-storage hydroelectricity system work?","expected":[["water","reservoir"],["pumped","pump","pumping"],["turbine","electricity"]]},
+  {"id":"ozone","category":"energia_e_ambiente","language":"pt","query":"Para que serve a camada de ozono?","expected":[["ultravioleta","ultravioletas","uv"],["absorve","absorver","protege","filtra"]]},
+  {"id":"co2_sinks","category":"energia_e_ambiente","language":"en","query":"Why are forests considered carbon sinks?","expected":[["carbon","carbon dioxide"],["absorb","absorption","store","storage","sequester","sequestration"]]}
+]

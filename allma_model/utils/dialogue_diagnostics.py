@@ -89,7 +89,7 @@ def legacy_detour(path):
         require(reply.metadata['generation']['llm_used'] is False and not core._llm.generate.called, 'Unnecessary inference')
 
 
-@case('prompt_projection', 'Technical explanations stay in the archive but are absent from the next model prompt')
+@case('prompt_projection', 'Technical notices and unrelated openings stay in the archive and out of a standalone question')
 def prompt_projection(path):
     with fixture(path) as (core, user, cid):
         seed_failure(core, user, cid)
@@ -98,8 +98,10 @@ def prompt_projection(path):
         reply = core.process_message(user, cid, 'Perché la Luna è luminosa?')
         prompt = core._llm.generate.call_args.kwargs['prompt']
         require(reply.is_valid and notice.content not in prompt and 'Cosa intendi?' not in prompt, 'Notice contaminated prompt')
-        require('Bene, ma ho un dubbio' in prompt, 'Unanswered request removed')
-        require(notice.content in [m.content for m in core.conversational_memory.messages], 'Archive modified')
+        require('Perché la Luna è luminosa?' in prompt and 'Bene, ma ho un dubbio' not in prompt,
+                'Standalone question inherited an unrelated opening')
+        archived = [m.content for m in core.conversational_memory.messages]
+        require(notice.content in archived and 'Bene, ma ho un dubbio' in archived, 'Archive modified')
 
 
 @case('restart', 'A fresh core can resume an old withheld opening from the existing scoped history')

@@ -277,7 +277,10 @@ def validate(state):
 
 
 def self_description_question(text):
-    return bool(re.fullmatch(r'(?:che personalità hai|che carattere hai|com[’\']è (?:la tua personalità|il tuo carattere)|qual è (?:la tua personalità|il tuo carattere))',canonical(text)))
+    return bool(re.fullmatch(
+        r'(?:che personalità hai|che carattere hai|com[’\']è (?:la tua personalità|il tuo carattere)|'
+        r'qual è (?:la tua personalità|il tuo carattere)|'
+        r'(?:e )?(?:tu )?(?:sei|sembri) (?:timid|riservat|introvers|estrovers)[oa])', canonical(text)))
 
 
 def preferences_question(text):

@@ -2299,8 +2299,5 @@ body.dark-mode .message-bubble .content code {
 .turn-unresolved button { font:inherit; color:inherit; background:transparent; border:1px solid currentColor; border-radius:18px; padding:7px 12px; cursor:pointer; }
 
 /* Actual research activity, independent of permission to access the network. */
-.network-activity { display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:18px;color:var(--text-secondary); }
-.network-activity svg { width:14px;height:14px;opacity:.65; }
-.network-activity[data-state="online"] { color:#b15a3b; }
-.network-activity[data-state="online"] svg { opacity:1; }
+.network-activity { font-size: 12px; line-height: 18px; color: var(--primary-color); }
 .message-reference-badge { display:block;width:fit-content;margin-top:9px;font-size:11px;line-height:1.5;color:var(--text-secondary); }

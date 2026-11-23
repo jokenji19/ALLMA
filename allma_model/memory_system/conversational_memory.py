@@ -6,7 +6,7 @@ import json
 import os
 import hashlib
 from allma_model.utils.persistence import atomic_write_json
-from allma_model.core.autobiographical_identity import delivery_visible
+from allma_model.core.autobiographical_identity import delivery_visible, response_disputed
 from .history_changes import PersistedRow, HistoryChanges
 import re
 from collections import defaultdict, Counter
@@ -130,7 +130,7 @@ class ConversationalMemory:
         owners=None
         for message in messages:
             if (not message.content.strip() or message.metadata.get('is_valid') is False
-                    or not delivery_visible(message.metadata)):
+                    or not delivery_visible(message.metadata) or response_disputed(message.metadata)):
                 continue
             uid = message.user_id or message.metadata.get('user_id')
             if not uid and resolve_legacy:

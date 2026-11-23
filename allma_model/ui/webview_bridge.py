@@ -18,6 +18,8 @@ class WebViewBridge:
         self._closed = False
         self._poll_event = None
         self._poll_inflight = False
+        self._web_permission_lock = threading.Lock()
+        self._web_permission_write = 0
         from allma_model.ui.stream_delivery import StreamDelivery
         self._stream_delivery = StreamDelivery(
             lambda batch: self.call_js_function('streamBatch', json.dumps(batch)),
@@ -100,8 +102,12 @@ class WebViewBridge:
                                 if action in ('decider_status', 'set_decider'):
                                     self.bridge.handle_decider_action(action, effective_val.get('enabled'))
                                     return
-                                if action in ('web_status', 'set_web_access'):
-                                    self.bridge.handle_web_action(action, effective_val.get('enabled'))
+                                if action in ('web_status', 'set_web_access', 'set_expanded_search'):
+                                    request = effective_val.get('request')
+                                    if type(request) is int and 0 < request < 2**31:
+                                        self.bridge.handle_web_action(action, effective_val.get('enabled'), request)
+                                    elif request is None:
+                                        self.bridge.handle_web_action(action, effective_val.get('enabled'))
                                     return
                                 if action == 'open_reference':
                                     self.bridge.open_reference(effective_val.get('url'))
@@ -945,7 +951,10 @@ class WebViewBridge:
 
     def open_reference(self, url):
         from allma_model.utils.public_references import reference_link_allowed
-        if not self.is_android or not reference_link_allowed(url):
+        from allma_model.utils.online_weather import WEATHER_SITE
+        references = getattr(self.core, 'public_references', None)
+        if not self.is_android or not (reference_link_allowed(url) or url == WEATHER_SITE
+                                       or (references is not None and references.web_link_allowed(url))):
             return False
         from android.runnable import run_on_ui_thread
         @run_on_ui_thread
@@ -960,18 +969,29 @@ class WebViewBridge:
         open_link()
         return True
 
-    def handle_web_action(self, action, enabled=None):
+    def handle_web_action(self, action, enabled=None, request=None):
         service=getattr(self.core,'public_references',None)
         def work():
-            try:
-                payload=({'enabled':False,'error':'Attendi il caricamento di ALLMA.'} if service is None else
-                    service.configure(enabled) if action=='set_web_access' else service.status())
-            except Exception:
-                payload=dict(service.status() if service else {'enabled':False},
-                    error='Non riesco a salvare la preferenza Internet.')
+            with self._web_permission_lock:
+                if self._closed:
+                    return
+                try:
+                    if service is None:
+                        payload = {'enabled':False, 'error':'Attendi il caricamento di ALLMA.'}
+                    elif (action in ('set_web_access', 'set_expanded_search')
+                          and (request is None or request > self._web_permission_write)):
+                        if request is not None:
+                            self._web_permission_write = request
+                        payload = (service.configure_expanded(enabled) if action == 'set_expanded_search'
+                                   else service.configure(enabled))
+                    else:
+                        payload = service.status()
+                except Exception:
+                    payload = dict(service.status() if service else {'enabled':False},
+                                   error='Non riesco a salvare la preferenza Internet.')
             if not self._closed:
                 Clock.schedule_once(lambda dt:self.execute_js('window.webReferenceUI && window.webReferenceUI.update('
-                    +json.dumps(payload)+')'))
+                    +json.dumps(payload)+','+json.dumps(request)+')'))
         threading.Thread(target=work,daemon=True,name='WebPreference').start()
 
     def handle_notification_action(self, action, enabled=None):

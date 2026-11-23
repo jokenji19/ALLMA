@@ -4,6 +4,7 @@ class Element {
     constructor(){this.children=[];this.listeners={};this.textContent='';this.hidden=false;}
     querySelector(selector){return this.children.find(x=>'.'+x.className===selector)||null;}
     append(...children){this.children.push(...children);}
+    prepend(...children){this.children.unshift(...children);}
     appendChild(child){this.append(child);}
     addEventListener(name,fn){this.listeners[name]=fn;}
     setAttribute(name,value){this[name]=value;}
@@ -33,6 +34,11 @@ for(const origin of [
     assert.equal(node.children[1].children[0].title,origin.detail);
     assert.equal(body.hidden,true);
 }
+const searchFailure=new Element();
+context.attachUnresolvedTurn(searchFailure,{kind:'incomplete',label:'Ricerca senza riscontro',detail:'La fonte non copre la domanda.'});
+const searchStatus=searchFailure.children[0];
+assert.equal(searchStatus.children[1].textContent,'La fonte non copre la domanda.');
+assert.equal(searchStatus.children[2].textContent,'Modifica domanda');
 assert.match(source,/if \(!finalContent.trim\(\)\) attachUnresolvedTurn/);
 assert.match(source,/sender === 'bot' && !String\(text \|\| ''\).trim\(\)/);
 console.log('Unresolved-turn UI checks passed, including distinct failure reasons');

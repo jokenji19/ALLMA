@@ -4,7 +4,8 @@ import unicodedata
 import hashlib
 from .dialogue_recovery import dialogue_history, unanswered_attempt
 
-POLICY_VERSION = 4
+POLICY_VERSION = 5
+_CONTINUE = re.compile(r'^(?:continua|prosegui|completa)(?: la risposta precedente| dal punto| da dove| senza ripetere|$)')
 
 
 def task_content(message):
@@ -30,7 +31,7 @@ def _confirmation(message):
 
 
 def _clarifies_subject(message):
-    return bool(re.match(r'^(?:no[,!]?\s+)?(?:non intendevo|intendevo|mi riferivo|parlavo di|'
+    return bool(re.match(r'^(?:no[,!]?\s+)?(?:non intendevo|intendo|intendevo|mi riferivo|parlavo di|'
                          r'volevo dire|i meant|i was referring to)\b', message.strip(), re.I))
 
 
@@ -118,13 +119,19 @@ class DialogueContinuity:
         self.same_request = normalized(message) == normalized(self.previous_question)
         self.confirmation = bool((self.previous_answer or pending) and _confirmation(message))
         self.subject_clarification = bool((self.previous_answer or pending) and _clarifies_subject(message))
-        self.continuation = bool(self.previous_answer and re.match(
-            r'^(?:continua|prosegui|completa)(?: la risposta precedente| dal punto| da dove| senza ripetere|$)',
-            normalized(message)))
+        continue_request = _CONTINUE.match(normalized(message))
+        self.continuation = bool(self.previous_answer and continue_request)
         # Failed assistant text is not evidence, but a failed attempt exists.
         # Compare retries with the latest user request, not an older success.
         last = attempts[-1] if attempts else None
         last_user = next((turn for turn in reversed(attempts) if turn.role == 'user'), None)
+        self.incomplete_answer = ''
+        if (last is not None and last.role == 'assistant' and last_user is not None
+                and (getattr(last, 'metadata', {}).get('generation') or {}).get('status') == 'truncated_answer'
+                and continue_request):
+            self.continuation = True
+            self.incomplete_answer = last.content
+            self.previous_question = last_user.content
         self.retry_after_failure = bool(last is not None and last.role == 'assistant'
             and getattr(last, 'metadata', {}).get('is_valid') is False
             and last_user is not None and normalized(last_user.content) == normalized(message))
@@ -139,7 +146,10 @@ class DialogueContinuity:
                      'continuation' if self.continuation else 'retry' if self.retry_after_failure else
                      'elaboration' if (self.previous_answer or pending) and re.fullmatch(
                          r'(?:puoi )?(?:spiega(?:re)? meglio|approfondisci|approfondire|perché|perche|come mai|'
-                         r'cosa intendi|why|explain more|tell me more)', normalized(message)) else
+                         r'cosa intendi|cosa vuo[il] dire|in che senso|che significa|cosa significa|'
+                         r'why|what do you mean|what does that mean|explain more|tell me more|'
+                         r'que quieres decir|que significa eso|a que te refieres)',
+                         normalized(message)) else
                      'provide_details' if last is not None and last.role == 'assistant'
                          and getattr(last, 'metadata', {}).get('source') in ('dialogue_opening', 'grounded_dialogue_recovery', 'clarification') else
                      'request')
@@ -212,7 +222,11 @@ class DialogueContinuity:
         words = normalized(answer).split()
         if not self.continuation or len(words) < 10 or '```' in answer:
             return False
-        return (' ' + ' '.join(words[:10]) + ' ') in (' ' + self.previous + ' ')
+        old = ' ' + (normalized(self.incomplete_answer) or self.previous) + ' '
+        if not self.incomplete_answer:
+            return ' ' + ' '.join(words[:10]) + ' ' in old
+        return any(' ' + ' '.join(words[start:start + 10]) + ' ' in old
+                   for start in range(len(words)-9))
 
     def hold_prefix(self, answer):
         """Buffer a matching prefix until divergence; do not leak a full duplicate."""

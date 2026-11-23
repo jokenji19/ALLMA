@@ -10,6 +10,8 @@ import unicodedata
 @dataclass(frozen=True)
 class OriginIdentity:
     name: str = 'ALLMA'
+    name_expansion: str = 'Advanced Learning and Memory Architecture'  # README.md
+    rights_holder: str = 'Cristof Bano'  # LICENSE
 
 
 ORIGIN = OriginIdentity()
@@ -30,28 +32,22 @@ def user_events(memory, user_id):
 
 def declared_name(text):
     # An explicit entire statement, not a quotation, question, roleplay or inference.
-    match = re.fullmatch(r"(?:ciao[,!]?\s+)?(?:io\s+)?(?:mi chiamo|il mio nome [èe])\s+"
+    match = re.fullmatch(r"(?:(?:ciao|piacere)[,.!]?\s+)?(?:io\s+)?(?:mi chiamo|il mio nome [èe])\s+"
                         r"([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*(?: [A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ'’-]*){0,2})[.!]?", text.strip(), re.I)
     return match.group(1) if match else None
 
 
 def grounded_reply(message, memory, user_id, profile=None):
     """Return (answer, source, evidence) or None for ordinary model questions."""
+    from allma_model.utils.identity_dialogue import origin_reply
+
+    if origin := origin_reply(message, ORIGIN):
+        return origin
     query = normalized(message)
     # Spoken greetings/vocatives do not change a direct autobiographical question.
     query = re.sub(r'^(?:ciao|buongiorno|buonasera|salve)[,!.?\s]+', '', query)
     query = re.sub(r'^(?:allma|alma)[,!.?\s]+', '', query)
     events = user_events(memory, user_id)
-    if query in {'come ti chiami', 'qual e il tuo nome', 'mi dici il tuo nome',
-                 'dimmi il tuo nome', 'chi sei', 'tu come ti chiami',
-                 'ricordi come ti chiami', 'what is your name', "what's your name"}:
-        return f'Mi chiamo {ORIGIN.name}.', 'origin_identity', []
-    if query in {'cosa significa allma', 'che cosa significa allma',
-                 'cosa vuol dire allma', 'allma cosa significa'}:
-        return (f'{ORIGIN.name} è il mio nome. Il modello linguistico collegato è un componente del sistema, '
-                'separato dalla mia identità e dai ricordi delle nostre conversazioni. '
-                'Non attribuisco al nome un significato esteso senza una fonte documentata.',
-                'origin_identity', [])
     from allma_model.utils.personal_facts import personal_reply
     personal = personal_reply(message, events, user_id, profile, query=query)
     if personal is not None:
@@ -98,7 +94,14 @@ def history_eligible(message, *, allow_incomplete=False):
     if (message.role != 'user' and not allow_incomplete
             and message.metadata.get('generation', {}).get('status') == 'truncated_answer'):
         return False
+    if message.role == 'assistant' and response_disputed(message.metadata):
+        return False
     return message.role == 'user' or message.metadata.get('identity_policy') == POLICY_VERSION
+
+
+def response_disputed(metadata):
+    state = metadata.get('response_feedback')
+    return isinstance(state, dict) and state.get('vote') == 'down'
 
 
 def history_content(message):
@@ -117,7 +120,22 @@ def identity_conflict(text):
     for match in re.finditer(r'(?:^|[.!?]\s+)(?:Ciao[,!]\s*)?(?:Io sono|io sono|Sono|sono)\s+([A-ZÀ-ÖØ-Þ][a-zà-öø-ÿ]+)(?=[,.!?:;]|\s+(?:una?|che)\b)', plain):
         if match.group(1).upper() != ORIGIN.name:
             return True
-    return False
+    # The backend cannot identify itself as the host. Keep descriptions of a
+    # component and dialogue explicitly presented as a quotation out of this check.
+    unquoted = re.sub(r'"[^"]*"|«[^»]*»|“[^”]*”|「[^」]*」', ' ', plain)
+    return bool(_BACKEND_AS_IDENTITY.search(unquoted))
+
+
+_BACKEND_AS_IDENTITY = re.compile(
+    r"(?:^|[.!?]\s+)(?:"
+    r"(?:(?:io )?sono|mi chiamo allma\s*[,–—])\s+(?:allma\s*[,–—]\s+)?"
+    r"(?:un|il)\s+modello(?: di (?:linguaggio|intelligenza artificiale)| linguistico)\b|"
+    r"(?:i am|i['’]m|my name is allma\s*[,–—])\s+(?:allma\s*[,–—]\s+)?"
+    r"(?:an?|the)\s+(?:large\s+)?(?:language model|llm)\b|"
+    r"(?:soy|me llamo allma\s*[,–—])\s+(?:allma\s*[,–—]\s+)?(?:un|el) modelo (?:de lenguaje|lingüístico)\b|"
+    r"(?:je suis|je m['’]appelle allma\s*[,–—])\s+(?:un|le) modèle (?:de langage|linguistique)\b|"
+    r"(?:ich bin\s+(?:ein|das)\s+sprachmodell|sou\s+(?:um|o)\s+modelo\s+(?:de linguagem|linguístico))\b"
+    r")", re.I)
 
 
 def system_instruction(memory_variant="attributed"):

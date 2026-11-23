@@ -11,6 +11,7 @@ import re
 import unicodedata
 
 VERSION = 1
+_CJK = re.compile(r'[\u3040-\u30ff\u3400-\u9fff]')
 _STOP = set('il lo la i gli le un uno una di del della dello dei delle a al alla da dal dalla '
     'in nel nella con su per tra fra e o ma che come cui si ci ne l d ed alla anche inoltre '
     'questo questa questi queste tale tali proprio propria grazie presenza meccanismo '
@@ -43,10 +44,16 @@ def statements(text, limit=12):
     if not isinstance(text,str) or '```' in text or text.lstrip().startswith(('{','[')):
         return []
     safe=text[:6000]
-    # No splitting decimals. Preserve exact spans so source excerpts can be
-    # selected without manufacturing a connective or changing an assertion.
-    parts=re.split(r'(?<!\d)(?<=[.!?])\s+|\n+',safe)
-    return [p.strip(' \t-*') for p in parts if len(_features(p))>=3][:limit]
+    # Mask whitespace inside balanced annotations so a pronunciation like
+    # «…? ; …» cannot break the lead sentence. Slice the original text.
+    masked = re.sub(r'\([^()\n]*\)|\[[^\[\]\n]*\]',
+                    lambda match: re.sub(r'\s', '\0', match[0]), safe)
+    parts, start = [], 0
+    for boundary in re.finditer(r'(?<=[.!?؟])\s+|(?<=[。！？])\s*|\n+', masked):
+        parts.append(safe[start:boundary.start()])
+        start = boundary.end()
+    parts.append(safe[start:])
+    return [p.strip(' \t-*') for p in parts if len(_features(p))>=3 or len(_CJK.findall(p))>=8][:limit]
 
 
 def novelty(text, previous):
@@ -102,15 +109,64 @@ class SourcedContribution:
     def audit(self):
         return {'version':VERSION,'basis':'reference_text','truth_verified':False,
             'source_id':self.reference.identifier,'spans':[list(span) for span in self.spans],
-            'citation':self.reference.citation()}
+            'citation':self.reference.citation(),
+            'excerpt_sha256':hashlib.sha256(self.text.encode()).hexdigest()}
 
 
-def select_contribution(references, previous='', count=None):
+def history_contribution(history, request, count):
+    """Recover a precise span from the contiguous run of attributed extracts."""
+    from .saved_references import saved_topic
+
+    if count not in (None, 1):
+        return None
+    for row in reversed(history[-12:]):
+        if row.role == 'user':
+            continue
+        source = row.metadata.get('source')
+        if source not in ('reference_excerpt', 'saved_reference_recall'):
+            break
+        audit = row.metadata.get('reference_review')
+        if (not isinstance(audit, dict) or audit.get('basis') != 'reference_text'
+                or row.metadata.get('is_valid') is not True or not saved_topic('reference_excerpt', audit)):
+            break
+        spans = audit.get('spans')
+        if (audit.get('excerpt_sha256') != hashlib.sha256(row.content.encode()).hexdigest()
+                or not isinstance(spans, list) or not 1 <= len(spans) <= 5
+                or not all(isinstance(pair, list) and len(pair) == 2
+                           and all(type(n) is int for n in pair) and 0 <= pair[0] < pair[1] <= 6000 for pair in spans)):
+            continue
+        offset = 0
+        chunks = []
+        for start, end in spans:
+            length = end - start
+            chunks.append(row.content[offset:offset + length])
+            offset += length + 1
+        if ' '.join(chunks) != row.content or offset != len(row.content) + 1:
+            continue
+        for index, (span, sentence) in enumerate(zip(spans, chunks)):
+            if request.matches_at(chunks, index):
+                return sentence, dict(audit, spans=[span], retrieval_status='history',
+                    network_used=False, excerpt_sha256=hashlib.sha256(sentence.encode()).hexdigest())
+    return None
+
+
+def select_contribution(references, previous='', count=None, evidence_terms=(),
+                        default_count=1, reserve_followup=True, focus_evidence=False, year_terms=(), focused=None):
     """Extract complete new source sentences; never fuse different documents."""
+    year_pattern = None
+    if year_terms:
+        event = r'\b(?:' + '|'.join(map(re.escape, year_terms)) + r')\b'
+        year_pattern = re.compile(event + r"[^,;.!?]{0,50}(?<![\w.,])[1-9]\d{2,3}(?!\w|[.,]\d)", re.I)
     for reference in references[:2]:
         candidates=[]
-        for sentence in statements(reference.text):
-            if '?' in sentence or len(sentence)>900 or not sentence.endswith(('.', '!')) or sentence.endswith(('...', '…')):
+        sentences = statements(reference.text, limit=48 if evidence_terms or focused else 12)
+        for index, sentence in enumerate(sentences):
+            body = re.sub(r'\([^()\n]*\)|\[[^\[\]\n]*\]', '', sentence)
+            if (re.search(r'[?？؟]', body) or len(sentence)>900
+                    or not sentence.endswith(('.', '!', '。', '！')) or sentence.endswith(('...', '…'))):
+                continue
+            if focused is not None and not focused.matches_at(
+                    sentences, index, full_article=getattr(reference, 'full_article', False)):
                 continue
             if previous:
                 comparison=novelty(sentence,previous)
@@ -120,19 +176,41 @@ def select_contribution(references, previous='', count=None):
             if start<0:
                 continue
             candidates.append((sentence,(start,start+len(sentence))))
-        needed=count or 1
-        if not 1 <= needed <= 3 or len(candidates)<needed:
-            continue
-        chosen=candidates[:needed]
-        # Avoid silently stitching distant passages into a newly constructed
-        # assertion. Multi-sentence answers must remain one contiguous extract.
-        if any(reference.text[left[1][1]:right[1][0]].strip()
-               for left,right in zip(chosen,chosen[1:])):
-            continue
-        text=' '.join(s for s,_ in chosen)
-        # Exact output requirements are checked through the existing parser.
-        from .output_contract import valid_sentence_count
-        if count and not valid_sentence_count(text,count):
-            continue
-        return SourcedContribution(text,reference,tuple(span for _,span in chosen))
+        max_sentences = min(default_count, max(1, len(candidates) - int(reserve_followup)))
+        sizes = (count,) if count is not None else range(max_sentences, 0, -1)
+        for needed in sizes:
+            if not 1 <= needed <= 5:
+                continue
+            for index in range(len(candidates) - needed + 1):
+                chosen=candidates[index:index + needed]
+                if any(reference.text[left[1][1]:right[1][0]].strip()
+                       for left,right in zip(chosen,chosen[1:])):
+                    continue
+                text=' '.join(s for s,_ in chosen)
+                if len(text) > (1800 if count or default_count > 3 else 1100):
+                    continue
+                evidence_text = chosen[0][0] if focus_evidence else text
+                words = set(re.findall(r'\w+', evidence_text.casefold()))
+                if evidence_terms and not all(words.intersection(group) for group in evidence_terms):
+                    continue
+                if year_pattern and not year_pattern.search(evidence_text):
+                    continue
+                from .output_contract import valid_sentence_count
+                if count and not valid_sentence_count(text,count):
+                    continue
+                if (evidence_terms and count is None and index > 0
+                        and re.match(r'^(?:the measurement|these observations|from these samples)\b', text, re.I)):
+                    prior = candidates[index - 1]
+                    gap = reference.text[prior[1][1]:chosen[0][1][0]]
+                    if not gap.strip() and '\n' not in gap and len(prior[0]) + len(text) <= 900:
+                        chosen = [prior, *chosen]
+                        text = prior[0]+' '+text
+                if (focused is not None and count is None and getattr(reference, 'full_article', False)
+                        and focused.answer_type == 'date' and focused.date_context(sentences[0])
+                        and sentences[0] != chosen[0][0]):
+                    context = sentences[0]
+                    offset = reference.text.find(context)
+                    chosen = [(context, (offset, offset + len(context))), *chosen]
+                    text = context + ' ' + text
+                return SourcedContribution(text,reference,tuple(span for _,span in chosen))
     return None

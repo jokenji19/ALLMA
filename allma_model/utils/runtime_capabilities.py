@@ -21,8 +21,13 @@ def capability_items(core):
         items.append('conservare obiettivi, progressi e correzioni tra le chat, distinguendo i risultati dichiarati dalla tua conferma; puoi chiedermi come gestire gli obiettivi')
     references=getattr(core,'public_references',None)
     if references is not None:
-        items.append('consultare Wikipedia per gli argomenti generali riconosciuti, con fonti visibili' if references.status()['enabled'] else
-            'consultare Wikipedia se abiliti le ricerche in Impostazioni → Internet e fonti; al momento sono disattivate')
+        access = references.status()
+        if not access['enabled']:
+            items.append('consultare fonti pubbliche quando attivi il globo nella barra della chat')
+        elif access.get('expanded'):
+            items.append('cercare sul web, leggere le pagine pubbliche accessibili e mostrarti le fonti usate')
+        else:
+            items.append('consultare fonti pubbliche selezionate e il meteo, con fonti visibili')
     runtime = getattr(core, 'decision_runtime', None)
     if runtime is not None and runtime.status().get('enabled') and runtime.status().get('available'):
         items.append('usare un decisore locale per instradare richieste e dare priorità ai ricordi, mantenendo i controlli di ALLMA')
@@ -35,15 +40,22 @@ def capability_items(core):
 
 def capability_reply(message, core, history):
     query = normalized(message)
-    query = re.sub(r'^(?:ciao|allma|alma)\s+', '', query)
-    if query in {'hai accesso a internet','puoi cercare su internet','puoi andare su internet',
-                 'puoi navigare su internet','sei connessa a internet','sei connesso a internet'}:
-        references=getattr(core,'public_references',None)
-        enabled=references is not None and references.status()['enabled']
-        return (('Le ricerche online sono abilitate: posso consultare Wikipedia per gli argomenti generali riconosciuti e mostrarti la fonte. Identità e memoria restano locali.' if enabled else
-            'Le ricerche online sono disattivate. Puoi abilitarle in Impostazioni → Internet e fonti; identità e memoria restano locali.'),
-            'runtime_web_access',[])
+    query = re.sub(r'^(?:(?:ciao|allma|alma|tu)\s+)+', '', query)
     query = re.sub(r'\s+(?:allma|alma)$', '', query)
+    if re.fullmatch(
+            r'(?:hai (?:accesso (?:diretto )?(?:a|ad|alla) (?:internet|rete|web)|internet)|'
+            r'(?:puoi|sai|riesci a|sei in grado di) (?:fare (?:(?:una|le|delle) )?ricerc(?:a|he)|cercare|andare|'
+            r'navigare|consultare fonti|usare internet)(?: (?:su internet|in internet|online|sul web|in rete))?|'
+            r'quando puoi (?:utilizzare|usare) la (?:versione|funzione) online|'
+            r'sei conness[ao] (?:a|ad|alla) (?:internet|rete))'
+            r'(?: (?:in tempo reale|adesso|ora))?', query) and re.search(r'\b(?:internet|web|rete|online)\b', query):
+        references=getattr(core,'public_references',None)
+        status=references.status() if references is not None else {}
+        enabled=status.get('enabled') is True
+        return (('Le ricerche online sono abilitate. Posso consultare fonti pubbliche, aggiornamenti ufficiali e meteo '
+                 'al momento della richiesta, e mostrarti da dove vengono i dati. Identità e memoria restano locali.' if enabled else
+            'Le ricerche online sono disattivate. Tocca il globo nella barra della chat per abilitarle.'),
+            'runtime_web_access',[])
     direct = query in {'cosa sai fare', 'che cosa sai fare', 'cosa puoi fare',
                        'quali sono le tue capacità', 'quali sono le tue capacita'}
     followup = query in {'solo questi sai fare', 'solo questo sai fare',
@@ -89,6 +101,9 @@ def self_description_reply(message, core, history, user_id=None):
         return opening['content'], source, opening['evidence']
     if clarification_question(message):
         last = history[-1] if history else None
+        from .identity_dialogue import project_origin_followup
+        if explanation := project_origin_followup(message, last):
+            return explanation
         if pending or (last is not None and last.role == 'assistant' and last.metadata.get('is_valid') is False):
             reason = pending['reason'] if pending else (last.metadata.get('generation') or {}).get('status')
             reasons = {'dialogue_repetition': 'ripeteva una risposta o una domanda già affrontata',

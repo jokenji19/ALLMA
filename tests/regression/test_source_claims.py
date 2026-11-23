@@ -8,6 +8,9 @@ from allma_model.utils.answer_stream import AnswerStream
     'Ho consultato le fonti storiche.',
     'Ho verificato fonti online.',
     'Questi dati sono verificati dalle fonti.',
+    'A **Milano**, coperto e **5,5 °C**. Percepiti 4 °C, vento a 7 km/h.',
+    'A Palermo, previsione per il 14/11/2026: sereno, max 19 °C.',
+    'Oggi a Torino ci sono 11 °C.',
 ])
 def test_unperformed_external_verification_rejected(text):
     assert unbacked_source_claim(text)
@@ -25,6 +28,8 @@ def test_unperformed_external_verification_rejected(text):
     'Le fonti storiche possono contenere errori.',
     'Non è vero che ho consultato fonti.',
     'Il testo dice «Ho consultato le fonti storiche',
+    'A pressione atmosferica standard, l’acqua congela a 0 °C.',
+    'Il bollettino mostrava «A Milano, coperto e 5,5 °C».',
 ])
 def test_facts_uncertainty_and_quotes_are_not_fabricated_verification(text):
     assert not unbacked_source_claim(text)

@@ -2,8 +2,10 @@
 
 from typing import Dict, List, Optional, Tuple, Union, Any
 from datetime import datetime, timedelta
+from uuid import uuid4
 import json
 import re
+import sqlite3
 import threading
 import logging
 import os
@@ -137,8 +139,10 @@ class ALLMACore:
             storage_dir=os.path.dirname(os.path.abspath(db_path)), incremental=True)
         self.knowledge_memory = knowledge_memory or KnowledgeMemory(db_path)
         from allma_model.utils.public_references import PublicReferences
+        from allma_model.utils.saved_references import SavedReferences
         from pathlib import Path
         self.public_references = PublicReferences(db_path, Path(db_path).resolve().parent/'web_access.json')
+        self.saved_references = SavedReferences(db_path)
         self.project_tracker = project_tracker or ProjectTracker(db_path)
         self.emotional_core = emotional_core or EmotionalCore()
         # IncrementalLearner con persistenza su disco
@@ -316,6 +320,7 @@ class ALLMACore:
         # UI Output Callback (For Proactive Messages)
         self.output_callback = None
         self._language_lock = {}
+        self._explicit_language_lock = {}
 
         # Inizializza Deep Mind Adapter (Orchestrator of 66 Modules)
         self.legacy_brain = LegacyBrainAdapter()
@@ -871,26 +876,25 @@ class ALLMACore:
             return None
         t = message.strip().lower()
 
-        if any(x in t for x in ("in english", "english please", "tell me in english", "respond in english", "answer in english")):
+        if any(x in t for x in ("in english", "english please", "in inglese")):
             return "en"
         if any(x in t for x in ("in italiano", "in italian", "italiano per favore", "rispondi in italiano", "answer in italian")):
             return "it"
-        if any(x in t for x in ("en español", "en espanol", "in spanish", "español", "espanol", "responde en español", "responde en espanol")):
+        if any(x in t for x in ("en español", "en espanol", "in spanish", "in spagnolo")):
             return "es"
-        if any(x in t for x in ("en français", "en francais", "in french", "français", "francais", "réponds en français", "reponds en francais")):
+        if any(x in t for x in ("en français", "en francais", "in french", "in francese")):
             return "fr"
-        if any(x in t for x in ("auf deutsch", "in german", "deutsch", "antworte auf deutsch", "antwort auf deutsch")):
+        if any(x in t for x in ("auf deutsch", "in german", "in tedesco")):
             return "de"
-        if "日本語" in message or "にほんご" in t or "nihongo" in t or "japanese" in t:
-            if any(x in t for x in ("で", "で教えて", "in japanese", "japanese")) or "日本語" in message:
-                return "ja"
-        if any(x in t for x in ("中文", "汉语", "漢語", "普通话", "普通話", "in chinese", "mandarin", "cinese")):
+        if any(x in t for x in ("日本語で", "にほんごで", "in japanese", "in giapponese")):
+            return "ja"
+        if any(x in t for x in ("用中文", "用汉语", "用漢語", "in chinese", "in cinese")):
             return "zh"
-        if any(x in t for x in ("بالعربية", "arabic", "in arabic", "arabo")):
+        if any(x in t for x in ("بالعربية", "in arabic", "in arabo")):
             return "ar"
-        if any(x in t for x in ("по-русски", "русский", "russian", "in russian")):
+        if any(x in t for x in ("по-русски", "in russian", "in russo")):
             return "ru"
-        if any(x in t for x in ("em português", "em portugues", "português", "portugues", "in portuguese")):
+        if any(x in t for x in ("em português", "em portugues", "in portuguese", "in portoghese")):
             return "pt"
 
         return None
@@ -920,6 +924,15 @@ class ALLMACore:
         s = message.strip()
         if not s:
             return None
+        from allma_model.utils.public_language import identity_question
+        from allma_model.utils.response_guidance import correction_language
+        if identity := identity_question(s):
+            return identity[0]
+        if correction := correction_language(s):
+            return correction
+        from allma_model.utils.dialogue_reasoning import general_question_language
+        if language := general_question_language(s):
+            return language
 
         if re.search(r"[\u3040-\u30ff\u31f0-\u31ff]", s) or "日本語" in s:
             return "ja"
@@ -931,6 +944,16 @@ class ALLMACore:
             return "ru"
 
         t = s.lower()
+        words = set(re.findall(r"[^\W\d_]+", t))
+        markers = {
+            'es': {'hola', 'gracias', 'quién', 'puedes', 'explica', 'dime', 'cuándo', 'cómo', 'quiero'},
+            'fr': {'bonjour', 'merci', 'pourquoi', 'comment', 'peux', 'pouvez', 'explique', 'voudrais', 'suis'},
+            'de': {'hallo', 'danke', 'warum', 'kannst', 'erkläre', 'möchte', 'nicht', 'bitte', 'ich'},
+            'pt': {'olá', 'obrigado', 'obrigada', 'quem', 'você', 'não', 'explique', 'gostaria', 'uma'},
+        }
+        scores = sorted(((len(words & tokens), code) for code, tokens in markers.items()), reverse=True)
+        if scores[0][0] >= 2 and scores[0][0] > scores[1][0]:
+            return scores[0][1]
         it_hits = 0
         en_hits = 0
 
@@ -1415,9 +1438,60 @@ class ALLMACore:
             logging.warning('Emotional coalescence unavailable: %s', type(error).__name__)
             return {'status': 'unavailable'}
 
+    def set_reference_saved(self, user_id, conversation_id, identifier, saved):
+        from allma_model.utils.saved_references import valid_id
+        from allma_model.utils.state_restore import PENDING
+
+        if not user_id or not valid_id(identifier) or type(saved) is not bool:
+            raise ValueError('Richiesta di salvataggio non valida.')
+        if not self._turn_lock.acquire(timeout=0.25):
+            raise ValueError('ALLMA è occupata. Riprova tra poco.')
+        try:
+            if self._shutdown_event.is_set():
+                raise ValueError('Archivio delle fonti non disponibile.')
+            root = self.backups.store.root
+            if root.name == 'allma_state' and (root.parent / PENDING).exists():
+                raise ValueError('Completa il ripristino prima di modificare l’archivio.')
+            if not saved:
+                self.saved_references.forget(user_id, identifier)
+                return
+            memory = self.conversational_memory
+            with memory.lock:
+                event = next((row for row in reversed(memory.messages)
+                              if row.conversation_id == conversation_id and row.user_id == user_id
+                              and row.role == 'assistant' and row.metadata.get('reference_save_id') == identifier), None)
+            if event is None:
+                raise ValueError('Questa risposta non è disponibile per il salvataggio.')
+            self.saved_references.remember(user_id, event)
+        finally:
+            self._turn_lock.release()
+
+    def give_response_feedback(self, user_id, conversation_id, identifier, vote, note=None):
+        from allma_model.core.response_feedback import apply_feedback
+        from allma_model.utils.state_restore import PENDING
+
+        if not self._turn_lock.acquire(timeout=0.25):
+            raise ValueError('ALLMA è occupata. Riprova tra poco.')
+        try:
+            with self._lock:
+                if (self._shutdown_event.is_set() or getattr(self, '_benchmark_active', False)
+                        or getattr(self, '_model_switching', False)):
+                    raise ValueError('ALLMA è occupata. Riprova tra poco.')
+                root = self.backups.store.root
+                if root.name == 'allma_state' and (root.parent / PENDING).exists():
+                    raise ValueError('Completa il ripristino prima di modificare l’archivio.')
+                self._user_active.set()
+            try:
+                return apply_feedback(self, user_id, conversation_id, identifier, vote, note)
+            finally:
+                self._user_active.clear()
+        finally:
+            self._turn_lock.release()
+
     def _finish_grounded_turn(self, user_id, conversation_id, message, grounded,
                               cancel_event=None, stream_callback=None, decision=None, personality_response=None, tool_action=None,
-                              conversation_reference=None, goal_control=None, reference_review=None):
+                              conversation_reference=None, goal_control=None, reference_review=None, reference_revision=None,
+                              recalled_reference_id=None):
         """Persist and deliver a host-grounded answer once, with explicit provenance."""
         answer, source, evidence = grounded
         text_tool = source in ('verified_text_count', 'text_count_clarification', 'text_count_unavailable')
@@ -1430,10 +1504,18 @@ class ALLMACore:
                     'source': source, 'evidence': evidence, 'user_id': user_id,
                     'knowledge_verified': source in ('verified_calculation', 'verified_text_count'),
                     'generation': {'status':source, 'llm_used':False}}
+        if valid_grounded and answer.strip() and source != 'research_choices':
+            metadata['response_feedback_id'] = uuid4().hex
+        if recalled_reference_id is not None:
+            metadata['recalled_reference_id'] = recalled_reference_id
         if reference_review is not None:
             metadata['reference_review'] = reference_review
             if not valid_grounded:
                 metadata['delivery_state'] = 'unresolved'
+            else:
+                from allma_model.utils.saved_references import saved_topic
+                if answer and saved_topic(source, reference_review):
+                    metadata['reference_save_id'] = uuid4().hex
         if decision is not None:
             metadata['decision'] = decision
         if conversation_reference is not None:
@@ -1541,8 +1623,22 @@ class ALLMACore:
             except Exception as error:
                 logging.warning('Tool experience preparation unavailable: %s', type(error).__name__)
                 metadata['tool_learning'] = {'status': 'unavailable'}
-        self.brain_activity.call('storage', self.conversational_memory.store_message,
-            conversation_id, answer, metadata, 'assistant', user_id)
+        if reference_revision is not None:
+            with self.public_references.delivery_authorized(reference_revision) as allowed:
+                if not allowed:
+                    answer, source, valid_grounded = '', 'reference_unavailable', False
+                    metadata.pop('reference_save_id', None)
+                    metadata.pop('response_feedback_id', None)
+                    metadata.update(source=source, is_valid=False, delivery_state='unresolved',
+                        generation={'status':source, 'llm_used':False},
+                        reference_review={'basis':'none', 'truth_verified':False,
+                                          'retrieval_status':'consent_revoked', 'network_used':True})
+                check_cancelled(cancel_event)
+                self.brain_activity.call('storage', self.conversational_memory.store_message,
+                    conversation_id, answer, metadata, 'assistant', user_id)
+        else:
+            self.brain_activity.call('storage', self.conversational_memory.store_message,
+                conversation_id, answer, metadata, 'assistant', user_id)
         if metadata.get('tool_experience'):
             try:
                 recovery = self.delivery_updates.delivered(metadata['delivery_update'])
@@ -1550,6 +1646,8 @@ class ALLMACore:
             except Exception as error:
                 logging.warning('Tool experience save unavailable: %s', type(error).__name__)
                 metadata['tool_learning'] = {'status': 'not_saved'}
+        if source in ('web_search','saved_reference_recall') and (reference_review or {}).get('basis') == 'web_passages':
+            self.public_references.register_web_links(reference_review['sources'])
         if stream_callback:
             stream_callback({'type': 'answer', 'content': answer})
         logging.info('[Identity] Grounded response source=%s', source)
@@ -1596,6 +1694,31 @@ class ALLMACore:
             # Segnala al Dream System: utente attivo → cedi il LLM
             with self._lock:
                 self._user_active.set()
+            from allma_model.utils.saved_references import requested_topic
+            saved_reference_topic = requested_topic(message)
+            if saved_reference_topic is not None:
+                from allma_model.utils.output_contract import requested_contract
+                if requested_contract(message) is None:
+                    try:
+                        saved = self.saved_references.find(user_id, saved_reference_topic)
+                    except (sqlite3.Error, ValueError):
+                        saved = None
+                    review = None
+                    recalled_reference_id = None
+                    if saved is None:
+                        answer = 'Non riesco ad aprire l’archivio delle fonti. Puoi riprovare da Cosa imparo.'
+                    elif len(saved) == 1:
+                        answer = saved[0]['answer']
+                        review = saved[0]['review']
+                        recalled_reference_id = saved[0]['id']
+                    elif saved:
+                        answer = 'Ho più informazioni salvate su questo argomento. Puoi scegliere quella che cerchi in Cosa imparo.'
+                    else:
+                        answer = 'Non trovo informazioni salvate su questo argomento. Puoi consultare l’archivio in Cosa imparo.'
+                    return self._finish_grounded_turn(user_id, conversation_id, message,
+                        (answer, 'saved_reference_recall' if review else 'saved_reference_lookup', []),
+                        cancel_event=cancel_event, stream_callback=stream_callback, reference_review=review,
+                        recalled_reference_id=recalled_reference_id)
             from allma_model.learning_system.message_delivery import preference_request
             delivery_request = preference_request(message)
             if delivery_request:
@@ -1744,7 +1867,14 @@ class ALLMACore:
             recall_history = self.conversational_memory.recent_messages(64,predicate=lambda m:
                 m.conversation_id==conversation_id and (m.user_id or m.metadata.get('user_id'))==user_id
                 and history_eligible(m) and personality_history_eligible(m))
-            recall_context = {'context': context or {}, 'language': self._detect_language_request(message) or self._language_lock.get(conversation_id) or self._guess_language_code(message)}
+            language_request = self._detect_language_request(message)
+            if language_request:
+                self._explicit_language_lock[conversation_id] = language_request
+            language_code = (self._explicit_language_lock.get(conversation_id)
+                             or self._guess_language_code(message) or self._language_lock.get(conversation_id))
+            if language_code:
+                self._language_lock[conversation_id] = language_code
+            recall_context = {'context': context or {}, 'language': language_code}
             recall_context['personality_expression_version'] = self.coalescence_processor.expression_revision(user_id)
             if goal_context is not None:
                 recall_context['goal_reference'] = {k:goal_context[k] for k in ('id','revision')}
@@ -1788,33 +1918,356 @@ class ALLMACore:
             recall_context['dialogue_policy_version'] = DIALOGUE_POLICY
             recall_context['turn_reasoning_version'] = REASONING_POLICY
             from allma_model.utils.output_contract import requested_contract, requested_sentence_count
+            from allma_model.utils.public_references import (
+                explicit_research, freshness_requested, local_only_request, person_or_group_question,
+                public_topic, research_followup, research_language, research_subject, subject_reference,
+            )
+            from allma_model.utils.dialogue_reasoning import dependent_question
+            from allma_model.utils.contextual_references import (
+                contextual_identity_question, contextual_reference_request, lifespan_history,
+            )
+            from allma_model.utils.contribution_review import history_contribution, select_contribution
+            from allma_model.utils.lifespan import lifespan_answer
+            from allma_model.utils.online_weather import city_clarification, weather_request
+            from allma_model.utils.fact_search import fact_question
+            from allma_model.utils.research_intent import primacy_question
+            from allma_model.utils.science_search import science_question
+            from allma_model.utils.technical_search import technical_reference
+            from allma_model.utils.research_choices import (
+                broad_topic, campaign_scope, focus_choices, matches_overview, search_command, selected_research_focus,
+            )
+            from allma_model.utils.response_guidance import is_explicit_correction
+            from allma_model.core.response_feedback import latest_correction
+            from allma_model.utils.web_search import (
+                broad_web_request, comparison_terms, compose_web_answer, feed_plan, public_web_question, render_web_passages,
+                search_query, web_comparison, web_followup,
+            )
             reference_result = {'status':'not_applicable','references':[],'network_used':False}
-            if (dialogue_task is None or not getattr(dialogue_task,'host_route',True)) and requested_contract(message) is None:
-                reference_result = self.brain_activity.call('memory',self.public_references.lookup,
-                    message, anchor=turn_workspace.anchor,
-                    language=recall_context.get('language') or 'it',cancel_event=cancel_event,
-                    activity=(lambda event:stream_callback({'type':'reference','content':event})) if stream_callback else None)
-                if reference_result['references']:
-                    from allma_model.utils.contribution_review import select_contribution
+            contract = requested_contract(message)
+            reference_activity = ((lambda event:stream_callback({'type':'reference','content':event}))
+                                  if stream_callback else None)
+            resolved_search = research_subject(message, attempt_history)
+            plain_search = search_command(message) if resolved_search is None else None
+            if plain_search is not None:
+                resolved_search = plain_search[1]
+            weather = weather_request(resolved_search or message, attempt_history)
+            if weather is not None and contract is None:
+                context_weather = {'city':weather.city, 'day':weather.day, 'daily':weather.daily,
+                                   'rain':weather.rain, 'language':weather.language}
+                if weather.city:
+                    result = self.brain_activity.call('tools', self.public_references.live_lookup,
+                        self.public_references.weather, message, (weather,), cancel_event, reference_activity)
+                else:
+                    result = {'status':'city_required', 'network_used':False}
+                state = result['status']
+                audit = {'basis':'weather_data' if state == 'obtained' else 'none', 'truth_verified':False,
+                         'retrieval_status':state, 'network_used':result['network_used'], 'weather_context':context_weather}
+                source, answer = 'weather_status', ''
+                if state == 'obtained':
+                    source, answer = 'weather_data', result['answer']
+                    audit['citation'] = result['citation']
+                    context_weather['city'] = result['city']
+                elif state in ('city_required', 'city_ambiguous', 'city_not_found'):
+                    context_weather['clarify'] = 'city'
+                    options = result.get('choices', [])
+                    answer = city_clarification(weather.language, options)
+                else:
+                    source = 'reference_unavailable'
+                return self._finish_grounded_turn(user_id, conversation_id, message, (answer,source,[]),
+                    cancel_event=cancel_event, stream_callback=stream_callback, reference_review=audit,
+                    reference_revision=result.get('authorization_revision'))
+            if (dialogue_task is None or not getattr(dialogue_task,'host_route',True)) and contract is None:
+                from allma_model.utils.reference_comparison import clarify_comparison
+                previous = attempt_history[-1] if attempt_history else None
+                clarification = clarify_comparison(message, previous)
+                if clarification is not None:
+                    answer, audit = clarification
+                    return self._finish_grounded_turn(user_id, conversation_id, message,
+                        (answer, 'reference_comparison', []), cancel_event=cancel_event,
+                        stream_callback=stream_callback, reference_review=audit)
+                web_status = self.public_references.status()
+                web_enabled = web_status['enabled'] and not local_only_request(message)
+                voice_request = isinstance(context, dict) and context.get('delivery_mode') == 'voice'
+                if (plain_search and not voice_request and requested_sentence_count(message) is None
+                        and (topic := broad_topic(plain_search[1]))):
+                    language = plain_search[0]
+                    if web_enabled:
+                        reference_result = self.brain_activity.call('memory', self.public_references.lookup,
+                            'Cerca ' + topic, language=language, cancel_event=cancel_event, activity=reference_activity)
+                    references = reference_result['references']
+                    answer, scope = focus_choices(topic, language, references[0] if references else None,
+                                                  original_topic=plain_search[1])
+                    return self._finish_grounded_turn(user_id, conversation_id, message, (answer, 'research_choices', []),
+                        cancel_event=cancel_event, stream_callback=stream_callback,
+                        reference_review={'basis': 'research_choices', 'network_used': reference_result['network_used'],
+                                          'truth_verified': False, 'choices': scope},
+                        reference_revision=reference_result.get('authorization_revision'))
+                disputed_identity = None
+                if len(attempt_history) >= 2 and is_explicit_correction(message):
+                    original, disputed = attempt_history[-2:]
+                    if (original.role == 'user' and disputed.role == 'assistant' and not technical_notice(disputed)
+                            and person_or_group_question(original.content) and public_topic(original.content)):
+                        # A downvote removes the old answer from model context.
+                        # The original user question can still identify what to verify.
+                        if key := disputed.metadata.get('recall_key'):
+                            self.answer_recall.feedback(key, user_id,
+                                disputed.metadata.get('recall_event') or disputed.timestamp.isoformat(), False)
+                        if web_enabled and not local_only_request(original.content):
+                            disputed_identity = original.content
+                identity_question = contextual_identity_question(message, recall_history)
+                resume_reference = bool(continuity.incomplete_answer and web_enabled
+                    and not local_only_request(continuity.reference_content) and public_topic(continuity.reference_content))
+                search_request = resolved_search is not None
+                if resolved_search == '':
+                    return self._finish_grounded_turn(user_id, conversation_id, message,
+                        ('','reference_unavailable',[]), cancel_event=cancel_event, stream_callback=stream_callback,
+                        reference_review={'basis':'none', 'truth_verified':False,
+                            'retrieval_status':'local_only' if local_only_request(message) else 'not_applicable',
+                            'network_used':False})
+                research_message = resolved_search or disputed_identity or (
+                    continuity.reference_content if resume_reference else
+                    identity_question if identity_question and not local_only_request(message) else message)
+                overview_topic, avoid_adaptations = (
+                    selected_research_focus(message, research_message, attempt_history) if search_request else (None, False))
+                # Keep the established broad web and provider routes for inline
+                # commands. Only the actual question is used to bind a referent.
+                routing_message = message if search_request and broad_web_request(message) else research_message
+                count = requested_sentence_count(message if disputed_identity else research_message)
+                focused = (None if disputed_identity or freshness_requested(research_message) else
+                           contextual_reference_request(research_message, recall_history, attempt_history=attempt_history))
+                if focused is not None and focused.kind == 'lifespan':
+                    if not focused.topic:
+                        question = {'en': 'Whose age at death do you mean?', 'es': '¿De quién quieres saber la edad al morir?'}
+                        return self._finish_grounded_turn(user_id, conversation_id, message,
+                            (question.get(focused.language, 'Di chi vuoi sapere l’età alla morte?'), 'clarification', []),
+                            cancel_event=cancel_event, stream_callback=stream_callback)
+                    if not search_request and not explicit_research(message):
+                        reused = history_contribution(lifespan_history(attempt_history), focused, count=None)
+                    else:
+                        reused = None
+                    if reused is None:
+                        reference_result = self.brain_activity.call('memory', self.public_references.lookup,
+                            research_message, language=focused.language, cancel_event=cancel_event,
+                            activity=reference_activity, focused=focused)
+                        contribution = select_contribution(reference_result['references'], focused=focused)
+                        if contribution is not None:
+                            reused = contribution.text, dict(contribution.audit(),
+                                retrieval_status=reference_result['status'], network_used=reference_result['network_used'])
+                    answer = lifespan_answer(focused, *reused) if reused is not None and count in (None, 1) else None
+                    if answer is not None:
+                        content, audit = answer
+                        return self._finish_grounded_turn(user_id, conversation_id, message,
+                            (content, 'reference_calculation', []), cancel_event=cancel_event,
+                            stream_callback=stream_callback, reference_review=audit,
+                            reference_revision=reference_result.get('authorization_revision'))
+                    state = reference_result['status']
+                    if state not in ('consent_revoked', 'unavailable'):
+                        state = 'source_format_unsupported' if reused is not None else 'lifespan_unverified'
+                    return self._finish_grounded_turn(user_id, conversation_id, message,
+                        ('', 'reference_unavailable', []), cancel_event=cancel_event, stream_callback=stream_callback,
+                        reference_review={'basis': 'none', 'truth_verified': False, 'retrieval_status': state,
+                                          'network_used': reference_result['network_used']},
+                        reference_revision=reference_result.get('authorization_revision'))
+                if focused is not None and not search_request and not explicit_research(message):
+                    reused = history_contribution(recall_history, focused, count)
+                    if reused is not None:
+                        answer, audit = reused
+                        return self._finish_grounded_turn(user_id, conversation_id, message,
+                            (answer, 'reference_excerpt', []), cancel_event=cancel_event,
+                            stream_callback=stream_callback, reference_review=audit)
+                broad = not disputed_identity and focused is None and (broad_web_request(routing_message)
+                    or (search_request and broad_web_request(research_message)))
+                needs_subject = dependent_question(research_message) and focused is None
+                previous_audit = ((previous.metadata.get('reference_review') or {})
+                                  if previous and previous.role == 'assistant' else {})
+                followup_request = None if disputed_identity or search_request else web_followup(
+                    message, previous_audit.get('public_topic'))
+                followup_topic = (followup_request[0] if followup_request and
+                                  (followup_request[1] or previous_audit.get('basis') == 'web_passages') else None)
+                fresh = freshness_requested(research_message) or bool(re.search(
+                    r'\b(?:ultim[ei] notizie|notizie di oggi|latest (?:news|updates))\b', research_message, re.I)) or bool(followup_topic and (
+                    followup_request[1] or previous_audit.get('fresh') is True))
+                language = (self._detect_language_request(message) or (plain_search[0] if plain_search else None)
+                    or (self._guess_language_code(research_message) if search_request else None)
+                    or research_language(message)
+                    or recall_context.get('language') or 'it')
+                expanded_allowed = web_enabled and web_status.get('expanded') and focused is None
+                scoped = expanded_allowed and not fresh
+                primacy = primacy_question(research_message, language) if scoped else None
+                fact = fact_question(research_message) if scoped else None
+                science = science_question(research_message) if scoped and fact is None and primacy is None else None
+                technical = technical_reference(research_message) if scoped and not (primacy or fact or science) else None
+                relation = fact or science or technical
+                if relation is not None:
+                    language = relation.language
+                if ((overview_topic or not broad) and followup_topic is None
+                        and not needs_subject and primacy is None and relation is None
+                        and (turn_workspace.purpose != 'followup' or focused is not None)):
+                    reference_result = self.brain_activity.call('memory',self.public_references.lookup,
+                        'Cerca ' + overview_topic if overview_topic else research_message,
+                        anchor='' if search_request else turn_workspace.anchor,
+                        language=language, cancel_event=cancel_event,
+                        activity=reference_activity, **({'focused': focused} if focused is not None else {}))
+                    if overview_topic and reference_result['references']:
+                        references = [ref for ref in reference_result['references']
+                                      if matches_overview(overview_topic, ref.title)
+                                      or matches_overview(overview_topic, ref.matched_title)]
+                        reference_result = dict(
+                            reference_result, references=references,
+                            status=reference_result['status'] if references else 'insufficient_evidence')
+                reference_revision = reference_result.get('authorization_revision')
+                detailed = bool(re.search(r'\b(?:in dettaglio|approfonditamente|in detail|thoroughly)\b',message,re.I))
+                brief = bool(re.search(r'\b(?:brevemente|in breve|briefly|in brief)\b',message,re.I))
+                identity = person_or_group_question(research_message)
+                replacement = subject_reference(message)
+                if reference_result.get('comparison') and reference_result['references']:
+                    from allma_model.utils.reference_comparison import compare_agencies, compare_editions
+                    from allma_model.utils.output_contract import valid_sentence_count
+                    refs, states = reference_result['references'], reference_result['source_states']
+                    answer, audit = (compare_editions(refs, states, count=1 if brief else 4 if detailed else 3)
+                                     if reference_result['comparison']=='editions' else
+                                     compare_agencies(reference_result['agency_topic'], refs, states))
+                    if answer and (count is None or valid_sentence_count(answer, count)):
+                        audit.update(retrieval_status=reference_result['status'], network_used=reference_result['network_used'])
+                        return self._finish_grounded_turn(user_id, conversation_id, message,
+                            (answer, 'reference_comparison', []), cancel_event=cancel_event,
+                            stream_callback=stream_callback, reference_review=audit, reference_revision=reference_revision)
+                if reference_result['references'] and not reference_result.get('comparison'):
                     covered='\n'.join(row.content for row in recall_history[-12:] if row.role=='assistant')[-6000:]
+                    lead = reference_result['references'][0].text[:400]
+                    biography = re.search(r'\b(?:politico|politica|dittatore|cancelliere|statesman|politician)\b', lead, re.I)
+                    short_definition = (identity or replacement) and not biography
                     contribution = select_contribution(reference_result['references'],
-                        previous=covered if turn_workspace.purpose in ('elaboration','research') and not continuity.allow_repeat else '',
-                        count=requested_sentence_count(message))
+                        previous=covered if not disputed_identity and focused is None
+                        and turn_workspace.purpose in ('elaboration','research') and not continuity.allow_repeat else '',
+                        count=count, evidence_terms=reference_result.get('evidence_terms', ()),
+                        default_count=(1 if focused is not None or brief or ((short_definition or reference_result.get('provider')=='NASA Science') and not detailed)
+                                       else 5 if detailed else 3),
+                        reserve_followup=not detailed and turn_workspace.purpose!='elaboration',
+                        focus_evidence=reference_result.get('focus_evidence', False),
+                        year_terms=reference_result.get('year_terms', ()),
+                        focused=focused)
                     if contribution is not None:
                         audit = contribution.audit()
                         audit.update(retrieval_status=reference_result['status'],network_used=reference_result['network_used'])
+                        audit['public_topic'] = overview_topic or public_topic(
+                            focused.candidate_question if focused else research_message,
+                            turn_workspace.anchor if focused is None else '')
+                        if reference_result.get('partial_coverage'):
+                            audit['coverage'] = 'one_subject'
                         return self._finish_grounded_turn(user_id,conversation_id,message,
                             (contribution.text,'reference_excerpt',[]),cancel_event=cancel_event,
-                            stream_callback=stream_callback,reference_review=audit)
-                from allma_model.utils.public_references import research_followup
-                if research_followup(message) or re.match(r'^\s*(?:cerca|verifica|search)\b',message,re.I):
+                            stream_callback=stream_callback,reference_review=audit, reference_revision=reference_revision)
+                if not reference_result.get('comparison') and reference_result['status'] != 'consent_revoked':
+                    topic = public_topic(focused.candidate_question if focused else research_message,
+                                         turn_workspace.anchor if focused is None else '')
+                    retry_web = web_enabled and reference_result['status'] == 'freshness_unsupported'
+                    public_question = expanded_allowed and (primacy or relation or public_web_question(research_message, topic))
+                    full_search = (web_enabled and search_request and focused is None
+                                   and (topic is not None or public_question or not research_followup(message)))
+                    if (broad or followup_topic or retry_web or full_search or public_question
+                            ) and not needs_subject:
+                        # Keep the question's constraint (e.g. a year, cause or
+                        # requested action) when broadening beyond its topic.
+                        query = followup_topic
+                        if query is None:
+                            query = (search_query(research_message) if relation else
+                                     search_query(routing_message, None if expanded_allowed else topic,
+                                         explicit=bool(not expanded_allowed and (explicit_research(routing_message) or broad)
+                                                       or search_request)))
+                        if query and followup_topic and re.search(r'\boggi\b', message, re.I):
+                            query += ' oggi'
+                        covered = ([row['excerpt'] for row in previous_audit.get('sources', [])
+                                    if isinstance(row, dict) and isinstance(row.get('excerpt'), str)]
+                                   if followup_topic and not followup_request[1] else [])
+                        covered_urls = ([row['url'] for row in previous_audit.get('sources', [])
+                                         if isinstance(row, dict) and isinstance(row.get('url'), str)]
+                                        if covered else [])
+                        comparison = bool(query and not fresh and not (science or technical) and comparison_terms(query, language))
+                        result = {'status':'not_applicable','network_used':False}
+                        sources = []
+                        expanded_search = query and expanded_allowed and not comparison
+                        official_updates = bool(expanded_search and fresh and feed_plan(query))
+                        campaign = campaign_scope(query, language) if query and not fresh else None
+                        campaign_evidence = campaign[1].match if campaign else None
+                        if expanded_search and not official_updates:
+                            result = self.brain_activity.call('tools', self.public_references.search_public_pages,
+                                message, query, language, fresh, cancel_event, reference_activity,
+                                previous=covered, expected_revision=reference_revision,
+                                **({'exclude_adaptations': True} if avoid_adaptations else {}))
+                            sources = compose_web_answer(query, result.get('results'), fresh, previous=covered,
+                                previous_urls=covered_urls, read_pages=True, exclude_adaptations=avoid_adaptations,
+                                accept=campaign_evidence, overview_topic=overview_topic)
+                        if query and (official_updates or not expanded_search) and result['status'] != 'consent_revoked':
+                            result = self.brain_activity.call('tools', self.public_references.search_web,
+                                message, query, language, fresh, cancel_event, reference_activity)
+                        if official_updates and result['status'] != 'consent_revoked':
+                            sources = compose_web_answer(query, result.get('results'), fresh)
+                            if not sources:
+                                first_lookup = result
+                                result = self.brain_activity.call('tools', self.public_references.search_public_pages,
+                                    message, query, language, fresh, cancel_event, reference_activity,
+                                    expected_revision=first_lookup.get('authorization_revision'))
+                                result['network_used'] |= first_lookup['network_used']
+                                sources = compose_web_answer(query, result.get('results'), fresh, read_pages=True)
+                        if comparison:
+                            answer, sources = web_comparison(query, result.get('results'), language, previous=covered)
+                        else:
+                            sources = sources or (compose_web_answer(query, result.get('results'), fresh, previous=covered,
+                                       previous_urls=covered_urls,
+                                       accept=focused.matches_passage if focused else campaign_evidence,
+                                       exclude_adaptations=avoid_adaptations, overview_topic=overview_topic) if query else [])
+                            answer = render_web_passages(sources, language, list_updates=fresh and count is None,
+                                partial_scope=result.get('coverage') == 'partial_scope' and count is None) if sources else ''
+                        state = 'insufficient_evidence' if result['status'] == 'obtained' and not sources else result['status']
+                        audit = {'basis':'web_passages' if sources else 'none', 'truth_verified':False,
+                                 'retrieval_status':state, 'network_used':result['network_used']}
+                        source = 'reference_unavailable'
+                        if sources and (count is None or count == len(sources)):
+                            audit.update(sources=sources, public_topic=query, fresh=fresh)
+                            if result.get('coverage'):
+                                audit['coverage'] = result['coverage']
+                            source = 'web_search'
+                        elif sources:
+                            audit.update(basis='none', retrieval_status='source_format_unsupported')
+                            answer = ''
+                        if (sources or not public_question or primacy or relation or fresh or search_request or followup_topic
+                                or result['status'] == 'consent_revoked'):
+                            return self._finish_grounded_turn(user_id, conversation_id, message, (answer, source, []),
+                                cancel_event=cancel_event, stream_callback=stream_callback, reference_review=audit,
+                                reference_revision=result.get('authorization_revision'))
+                if focused is not None and focused.clarification and reference_result['status'] != 'consent_revoked':
+                    return self._finish_grounded_turn(user_id, conversation_id, message,
+                        (focused.clarification, 'clarification', []), cancel_event=cancel_event,
+                        stream_callback=stream_callback, reference_review={'basis': 'none', 'truth_verified': False,
+                            'retrieval_status': 'insufficient_evidence' if reference_result['references'] else reference_result['status'],
+                            'network_used': reference_result['network_used']})
+                if (reference_result.get('comparison') or reference_result['status'] in ('freshness_unsupported', 'consent_revoked')
+                        or (web_enabled and reference_result['status'] != 'not_applicable'
+                            and (focused is not None or identity or identity_question or resume_reference or replacement))
+                        or search_request or explicit_research(research_message) or (reference_result.get('provider') == 'NASA Science'
+                        and reference_result['status'] in ('obtained', 'cached', 'not_found', 'unavailable',
+                                                          'consent_revoked', 'freshness_unsupported'))):
                     # An explicit web request must not silently fall back to
                     # invented model facts when no usable source was obtained.
+                    state = ('local_only' if search_request and not web_enabled else
+                             'insufficient_evidence' if reference_result['references'] else reference_result['status'])
                     return self._finish_grounded_turn(user_id,conversation_id,message,
                         ('','reference_unavailable',[]),cancel_event=cancel_event,stream_callback=stream_callback,
                         reference_review={'basis':'none','truth_verified':False,
-                            'retrieval_status':reference_result['status'],'network_used':reference_result['network_used']})
+                            'retrieval_status':state, 'network_used':reference_result['network_used']})
+                if reference_result['references']:
+                    # The candidate page did not support the requested answer.
+                    # Its presence alone must not imply successful grounding.
+                    reference_result = dict(reference_result, status='insufficient_evidence', references=[])
+            elif contract is not None and (plain_search or explicit_research(message) or broad_web_request(message)
+                                           or weather is not None):
+                return self._finish_grounded_turn(user_id, conversation_id, message,
+                    ('', 'reference_unavailable', []), cancel_event=cancel_event, stream_callback=stream_callback,
+                    reference_review={'basis':'none', 'truth_verified':False,
+                                      'retrieval_status':'source_format_unsupported', 'network_used':False})
             recall_key = self.answer_recall.key(user_id, message, recall_history, recall_context)
+            answer_correction = latest_correction(self.conversational_memory, user_id, message, conversation_id)
             feedback = None if continuity.factual_correction else feedback_kind(message)
             recalled = None
             recall_source = None
@@ -1859,6 +2312,7 @@ class ALLMACore:
                         except Exception as error:
                             logging.warning('Cognitive feedback unavailable: %s', error)
             if (recalled is None and not feedback and not continuity.factual_correction
+                    and not answer_correction
                     and not (context or {}).get('disable_answer_recall')
                     and not (goal_context or {}).get('plan_request')):
                 record = self.answer_recall.lookup(recall_key, user_id)
@@ -1877,6 +2331,7 @@ class ALLMACore:
                     metadata['learning_feedback'] = {'status':'not_saved', 'reason':'state_recovery_required'}
                 if recall_source == 'confirmed_answer_recall':
                     metadata['recall_key'] = recall_key
+                    metadata['response_feedback_id'] = uuid4().hex
                 elif recall_source == 'learning_feedback':
                     metadata['recall_key'] = prior_key
                     metadata['recall_event'] = prior_event
@@ -1900,15 +2355,6 @@ class ALLMACore:
             # Trigger naturale: "buonanotte" avvia comunque il ciclo se il toggle è attivo.
             sleep_keywords = ["buonanotte allma", "buonanotte!", "vado a dormire", "notte allma", "mi corico", "sleep mode activated"]
             msg_lower = message.lower().strip()
-            language_req = self._detect_language_request(message)
-            if language_req:
-                self._language_lock[conversation_id] = language_req
-            language_code = self._language_lock.get(conversation_id)
-            if not language_code:
-                guessed = self._guess_language_code(message)
-                if guessed:
-                    self._language_lock[conversation_id] = guessed
-                    language_code = guessed
             is_sleep_command = any(kw in msg_lower for kw in sleep_keywords) or (msg_lower == "buonanotte") or (msg_lower == "notte")
             is_complex = "?" in message or len(message.split()) > 3
             
@@ -1921,7 +2367,8 @@ class ALLMACore:
                 history = personal_view.filter_history(history)
             turn_decision = (literal_decision if literal_decision is not None else dialogue_task.decision()
                              if dialogue_task is not None and getattr(dialogue_task,'host_route',True)
-                             else self.brain_activity.call('decider', self.decision_runtime.route, continuity.task_content, history, cancel_event))
+                             else self.brain_activity.call('decider', self.decision_runtime.route, continuity.task_content,
+                                 [] if turn_workspace.independent else history, cancel_event))
             if dialogue_task is not None and not getattr(dialogue_task,'host_route',True):
                 turn_decision['task']=dialogue_task.kind
                 turn_decision['task_context_source']='host_dialogue_context'
@@ -1942,6 +2389,9 @@ class ALLMACore:
             # Missing routing need not activate memory for a clear general
             # explanation. Ambiguous personal references retain memory fallback.
             use_personal_memory = personal_request or selected_memory or (not selected_reason and not general_explanation)
+            if turn_workspace.independent or (turn_workspace.purpose == 'followup' and general_explanation):
+                personal_request = explicit_memory_request(continuity.task_content)
+                use_personal_memory = personal_request
             if dialogue_task is not None and getattr(dialogue_task,'skip_episode_lookup',True):
                 # This closed task needs no episode search or second model to
                 # choose a route. Optional personal values come from the host view.
@@ -1966,7 +2416,11 @@ class ALLMACore:
                 for msg in recent_history:
                     role = msg.role  # "user" or "assistant"
                     from allma_model.core.autobiographical_identity import history_content
-                    content = history_content(msg).replace('<|im_start|>', '').replace('<|im_end|>', '')
+                    if role == 'assistant' and msg.metadata.get('source') in (
+                            'reference_excerpt', 'reference_comparison', 'saved_reference_recall', 'web_search', 'weather_data'):
+                        content = '[Testo di fonte pubblica consultabile nella chat.]'
+                    else:
+                        content = history_content(msg).replace('<|im_start|>', '').replace('<|im_end|>', '')
                     
                     # For assistant messages, strip internal blocks (LEGACY [[TH]] and NEW <think>)
                     if role == "assistant":
@@ -2403,7 +2857,7 @@ class ALLMACore:
                     'memories': relevant_memories,
                     'entities': entities,
                     'intent': intent,
-                    'dialogue_history': attempt_history, 'goal_context': goal_context,
+                    'dialogue_history': [] if turn_workspace.independent else attempt_history, 'goal_context': goal_context,
                     'time_info': temporal_info,
                     'personality_expression': expression, 'personality_expression_applied': True
                 }
@@ -2471,7 +2925,8 @@ class ALLMACore:
                 
                 # 2. Retrieve Relevant Traumas (Influence current behavior)
                 # "Deform, don't freeze."
-                relevant_traumas = [item for item in self.conversational_memory.get_relevant_traumas(message)
+                relevant_traumas = [] if turn_workspace.independent else [
+                    item for item in self.conversational_memory.get_relevant_traumas(message)
                     if item.get('context', {}).get('explicit_correction')
                     and item.get('context', {}).get('user_id') == user_id
                     and item.get('context', {}).get('conversation_id') == conversation_id]
@@ -2494,7 +2949,7 @@ class ALLMACore:
                 # Classify query complexity
                 try:
                     # OPTIMIZATION: Reduce from 5 to 3 turns for mobile inference speed
-                    conversation_history = history[-3:]
+                    conversation_history = prompt_history[-3:]
                 except Exception as e:
                     logging.warning(f"Failed to retrieve history for complexity check: {e}")
                     conversation_history = []
@@ -2515,7 +2970,11 @@ class ALLMACore:
                 condensed_context = "\n".join(filter(None, [
                     self._compact_context_part(emotion_context),
                     self._compact_context_part(memory_context_str),
-                    self._compact_context_part(advanced_context_str)
+                    self._compact_context_part(advanced_context_str),
+                    ('Riscontro scritto dall’utente su questa stessa domanda. Tienine conto e attribuisci '
+                     'all’utente i fatti che provengono da questo riscontro: '
+                     + json.dumps(answer_correction.replace('<|im_start|>', '').replace('<|im_end|>', ''),
+                                  ensure_ascii=False)) if answer_correction else '',
                 ]))
                 
                 system_prompt += "\n" + continuity.guidance()
@@ -3142,6 +3601,9 @@ class ALLMACore:
             if processed_response.is_valid and curiosity_focus:
                 processed_response.metadata['curiosity_focus'] = curiosity_focus
             processed_response.voice_params = getattr(response, 'voice_params', None)
+            if (processed_response.is_valid and final_content.strip()
+                    and processed_response.metadata.get('generation', {}).get('status') != 'truncated_answer'):
+                processed_response.metadata['response_feedback_id'] = uuid4().hex
             from allma_model.core.personality_outcomes import delivery_receipt
             receipt = delivery_receipt(user_id,recall_event,message,final_content,
                 processed_response.metadata,processed_response.is_valid,emotional_state)

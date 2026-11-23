@@ -30,8 +30,8 @@ source.exclude_dirs = tests, bin, venv, test_data, test_documents, tools, .githu
 source.exclude_patterns = license,images/*/*.jpg,tools/*,*.pyc,*.md,*.bak,allma_model.zip,allma_model/allma_diary.json,personality_state.json,beta_test_conversations.json,allma.db,allma_memory.json,conversation_history.db,conversation_history.db.init.lock,allma_settings.json,model_binding.json,notifications.json,allma_modules.db,answer_recall.json,answer_recall.db,answer_recall.db.init.lock,incremental_cache/knowledge_states.json,incremental_cache/knowledge_states.db,incremental_cache/knowledge_states.db.init.lock,data/allma_vectors.db,data/dream_journal.json,data/dream_journal.json.pending.json,data/dream_journal.json.processed.json,message_delivery.json,data/dream_journal.json.reviews.db,cognitive_state.json,allma_diary.json
 
 # (str) Application versioning (method 1)
-version = 0.9.1.1
-android.numeric_version = 102593
+version = 0.9.1.41
+android.numeric_version = 102633
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
@@ -107,6 +107,8 @@ android.ndk_path = ./.buildozer_local/android/platform/android-ndk-r27d
 
 # (str) Android Build Tools version to use (force stable version)
 android.build_tools_version = 34.0.0
+# The CI runner supplies a complete SDK and overrides this via APP_ANDROID_SKIP_UPDATE.
+android.skip_update = False
 
 # (bool) Use --private data storage (True) or --dir public storage (False)
 #android.private_storage = True

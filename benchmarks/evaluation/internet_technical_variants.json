@@ -1,0 +1,10 @@
+[
+  {"id":"python_path","category":"tecnologia","language":"en","query":"Python pathlib.Path documentation","expected":[["path","paths"],["concrete","filesystem"]],"hosts":["docs.python.org"]},
+  {"id":"cargo_tree","category":"tecnologia","language":"en","query":"Rust cargo tree documentation","expected":["tree","dependencies"],"hosts":["doc.rust-lang.org"]},
+  {"id":"git_cherry_pick","category":"tecnologia","language":"en","query":"Git cherry-pick documentation","expected":[["apply","applies"],["commit","commits"]],"hosts":["git-scm.com"]},
+  {"id":"git_merge","category":"tecnologia","language":"en","query":"What does git merge do?","expected":[["join","merge"],["histories","history","commits"]],"hosts":["git-scm.com"]},
+  {"id":"http_404","category":"tecnologia","language":"en","query":"What is HTTP status code 404?","expected":[["not found","cannot find","could not find"],["resource","request"]],"hosts":["developer.mozilla.org"]},
+  {"id":"ipv6_length","category":"tecnologia","language":"it","query":"Lunghezza di un indirizzo IPv6 in bit","expected":["ipv6",["128 bit","128-bit"]]},
+  {"id":"dns_fr","category":"tecnologia","language":"fr","query":"À quoi sert le DNS ?","expected":[["nom de domaine","noms de domaine"],["adresse ip","adresses ip"]],"hosts":["developer.mozilla.org"]},
+  {"id":"flex_axes","category":"tecnologia","language":"es","query":"Cuál es la diferencia entre el eje cruzado y el principal en CSS Flexbox","expected":["eje principal",["eje cruzado","eje transversal"]],"hosts":["developer.mozilla.org"]}
+]
